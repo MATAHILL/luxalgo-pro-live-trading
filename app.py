@@ -1,4 +1,29 @@
-<!doctype html>
+"""LuxAlgo PRO: authenticated signal intake + READ-ONLY Gate.io and Binance API connectivity.
+
+NO order submission, funds transfer, or withdrawal functions exist.
+The /gate/plan endpoint only calculates indicative ATR levels; no orders are placed.
+Exchange credentials must be supplied via Railway service variables only.
+"""
+import hmac
+import hashlib
+import json
+import os
+import re
+import time
+import math
+from collections import deque
+from datetime import datetime, timezone
+from threading import Lock
+from urllib.error import HTTPError, URLError
+from urllib.parse import urlencode
+from urllib.request import Request, urlopen
+from flask import Flask, jsonify, render_template_string, request
+
+app = Flask(__name__)
+_records = deque(maxlen=50)
+_lock = Lock()
+
+PAGE = '''<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>LUXALGO PRO · TRADING TERMINAL</title>
 <style>
@@ -6,7 +31,7 @@
 </style></head><body><div class="layout">
 <aside class="sidebar"><div class="side-title">◈ GATE.IO FUTURES RADAR<div class="tiny">USDT Perpetuals · Rolling 24-hour rankings</div></div><label for="rank">Market ranking</label><select id="rank"><option value="gainers">🚀 24h Top Gainers</option><option value="losers">🔻 24h Top Losers</option><option value="volume">📊 Top Volume</option></select><label for="volume">24h volume filter</label><select id="volume"><option value="0">All trading pairs</option><option value="1000000">At least $1M</option><option value="3000000">At least $3M</option><option value="10000000">At least $10M</option></select><div class="status" id="radarStatus">Loading public Gate.io market rankings…</div><div id="radarList"></div><p class="tiny">Choose ↗ to display a pair in the main candlestick chart. Public price data only; not trade recommendations.</p><button class="btn wide" id="refreshRadar">↻ Refresh market data</button></aside>
 <main class="main">
-<header class="hero"><div class="hero-line"><h1>◈ LUXALGO PRO · TRADING TERMINAL</h1><span class="chip">◉ GATE.IO · CLOUD</span></div><div class="row" style="margin-top:8px"><span class="tiny">Gate.io USDT perpetuals · LuxAlgo webhook monitor · Coded by SUBHASISH</span><span class="tiny">Read-only dashboard · No orders placed</span></div></header>
+<header class="hero"><div class="hero-line"><h1>◈ LUXALGO PRO · TRADING TERMINAL</h1><span class="chip">◉ GATE.IO · CLOUD</span></div><div class="row" style="margin-top:8px"><span class="tiny">Gate.io USDT perpetuals · LuxAlgo webhook monitor · Railway</span><span class="tiny">Read-only dashboard · No orders placed</span></div></header>
 <div class="mode"><div>● SIGNAL RECEIVER CONFIGURED</div><div>LIVE TRADING OFF</div><div>Gate.io private check previously succeeded. Live execution and position sync not installed.</div></div>
 <div class="news"><strong>LATEST CRYPTO NEWS</strong><span class="news-text">News feed is not connected yet — market information displayed elsewhere uses Gate.io public API data.</span><button class="btn" disabled title="News feed not connected">↻ Refresh News</button></div>
 <section class="section"><div class="bar">1 · MANUALLY CLOSE FUTURES POSITION</div><div class="panel two"><div><button class="btn wide" disabled>✕ Close Position — unavailable</button><p class="tiny gap">Disabled until authenticated position tracking, permission checks and protective order handling are implemented.</p></div><div class="callout">Real trading is OFF. No position can be closed from this interface. This control will not submit an exchange order.</div></div></section>
@@ -16,7 +41,7 @@
 <section class="section"><div class="bar purple">4 · RECENT COMPLETED GATE.IO TRADES</div><div class="panel"><div class="tablewrap"><table><thead><tr><th>Closed UTC</th><th>Pair</th><th>Side</th><th>Entry</th><th>Exit</th><th>Qty</th><th>Net P&amp;L</th><th>Status</th></tr></thead><tbody><tr><td colspan="8" class="placeholder">Verified exchange trade history is not connected. No simulated trades are shown as actual executions.</td></tr></tbody></table></div></div></section>
 <section class="section"><div class="bar blue">PERFORMANCE ANALYTICS</div><div class="panel"><div class="tabs"><span class="pill">All records</span><span class="pill">7 days</span><span class="pill">30 days</span><span class="pill">90 days</span><span class="tiny">Filters unavailable until verified trade records are connected</span></div><div class="analytics"><div class="card"><div class="caption">Total realized P&amp;L</div><strong>— USDT</strong></div><div class="card"><div class="caption">Exit records</div><strong>—</strong></div><div class="card"><div class="caption">Win rate</div><strong>—</strong></div><div class="card"><div class="caption">Profit factor</div><strong>—</strong></div></div><div class="two gap"><div class="info">REALIZED P&amp;L PROGRESSION<br><br>Awaiting verified trade history</div><div class="info">WINNING VS LOSING TRADES<br><br>Awaiting verified trade history</div></div></div></section>
 <section class="section"><div class="bar blue">DAILY REALIZED P&amp;L · LAST 7 DAYS</div><div class="panel"><div class="daily" id="dailyCards"></div><p class="tiny gap">Daily values cannot be calculated without authenticated, persistent order-fill history.</p></div></section>
-<section class="section"><div class="bar blue">🔔 RECENT LUXALGO SIGNALS</div><div class="panel"><div class="tablewrap"><table><thead><tr><th>Received UTC</th><th>Pair</th><th>Direction</th><th>Timeframe</th><th>Source</th><th>Entry</th><th>SL</th><th>TP1</th></tr></thead><tbody><tr><td colspan="8" class="placeholder">0 signal(s) received since this Railway restart. Signal details are private and not exposed on this public page.</td></tr></tbody></table></div><div class="tiny gap">Signal records currently live only in server memory; a restart clears them. Secure, persistent storage and dashboard authentication are required for full history.</div></div></section>
+<section class="section"><div class="bar blue">🔔 RECENT LUXALGO SIGNALS</div><div class="panel"><div class="tablewrap"><table><thead><tr><th>Received UTC</th><th>Pair</th><th>Direction</th><th>Timeframe</th><th>Source</th><th>Entry</th><th>SL</th><th>TP1</th></tr></thead><tbody><tr><td colspan="8" class="placeholder">{{ count }} signal(s) received since this Railway restart. Signal details are private and not exposed on this public page.</td></tr></tbody></table></div><div class="tiny gap">Signal records currently live only in server memory; a restart clears them. Secure, persistent storage and dashboard authentication are required for full history.</div></div></section>
 <div class="footer">LUXALGO PRO · Gate.io public market data · LuxAlgo receiver and authenticated diagnostics preserved · Live trading OFF · No orders, transfers or withdrawals.</div>
 </main></div>
 <script>
@@ -29,4 +54,281 @@ function renderRadar(){const mode=document.getElementById('rank').value,min=Numb
 function renderScanner(){const list=sorted(markets,view).slice(0,12),target=document.getElementById('scannerRows');target.replaceChildren();for(const x of list){const tr=document.createElement('tr');for(const v of [x.contract.replace('_',''),(x.change>=0?'+':'')+x.change.toFixed(2)+'%',fmt(x.last),'$'+money(x.volume),'Gate.io 24h ticker']){const td=document.createElement('td');td.textContent=v;tr.appendChild(td)}target.appendChild(tr)}if(!list.length){const tr=document.createElement('tr'),td=document.createElement('td');td.colSpan=5;td.className='placeholder';td.textContent='No market data available';tr.appendChild(td);target.appendChild(tr)}document.getElementById('totalMarkets').textContent=markets.length||'—';document.getElementById('positiveMarkets').textContent=markets.length?markets.filter(x=>x.change>0).length:'—';document.getElementById('negativeMarkets').textContent=markets.length?markets.filter(x=>x.change<0).length:'—'}
 async function updateMarkets(){for(const id of ['refreshRadar','refreshScanner'])document.getElementById(id).disabled=true;document.getElementById('scannerStatus').textContent='Loading Gate.io public ticker data…';try{const res=await fetch('/market/radar',{cache:'no-store'});if(!res.ok)throw Error('Public ticker API HTTP '+res.status);const obj=await res.json();if(!Array.isArray(obj.markets))throw Error('Invalid market response');markets=obj.markets;renderRadar();renderScanner();document.getElementById('scannerStatus').textContent='Updated '+new Date().toLocaleTimeString()+' · 24h price changes are not buy/sell signals; no AI predictions are active.'}catch(e){document.getElementById('scannerStatus').textContent='Market radar unavailable: '+e.message}finally{for(const id of ['refreshRadar','refreshScanner'])document.getElementById(id).disabled=false}}
 pair.addEventListener('change',updateChart);tf.addEventListener('change',updateChart);refresh.addEventListener('click',updateChart);window.addEventListener('resize',draw);document.getElementById('refreshRadar').addEventListener('click',updateMarkets);document.getElementById('refreshScanner').addEventListener('click',updateMarkets);document.getElementById('rank').addEventListener('change',renderRadar);document.getElementById('volume').addEventListener('change',renderRadar);document.querySelectorAll('[data-view]').forEach(b=>b.addEventListener('click',()=>{view=b.dataset.view;document.querySelectorAll('[data-view]').forEach(x=>x.classList.toggle('active',x===b));renderScanner()}));const days=document.getElementById('dailyCards');for(let i=6;i>=0;i--){const d=new Date();d.setDate(d.getDate()-i);const box=document.createElement('div');box.className='card';const label=document.createElement('div');label.className='caption';label.textContent=d.toLocaleDateString([],{weekday:'short',day:'numeric'});const value=document.createElement('strong');value.textContent='—';const note=document.createElement('span');note.className='tiny';note.textContent='Not connected';box.append(label,value,note);days.appendChild(box)}updateChart();updateMarkets();})();
-</script></body></html>
+</script></body></html>'''
+
+
+def expected_webhook_token():
+    return os.getenv('LUXALGO_WEBHOOK_TOKEN', '')
+
+
+def authorized(data):
+    expected = expected_webhook_token()
+    if len(expected) < 24:
+        return False
+    supplied = data.get('token', '')
+    return isinstance(supplied, str) and hmac.compare_digest(supplied, expected)
+
+
+@app.get('/')
+def home():
+    with _lock:
+        count = len(_records)
+    return render_template_string(PAGE, configured=len(expected_webhook_token()) >= 24, count=count)
+
+
+@app.get('/health')
+def health():
+    return jsonify(status='ok', live_trading=False, orders_enabled=False, kind='signal_receiver_with_readonly_exchange_checks')
+
+
+@app.post('/webhook')
+def webhook():
+    if len(expected_webhook_token()) < 24:
+        return jsonify(error='Webhook token not configured'), 503
+    if not request.is_json:
+        return jsonify(error='JSON required'), 400
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify(error='JSON object required'), 400
+    if not authorized(data):
+        return jsonify(error='Unauthorized'), 401
+    symbol = str(data.get('symbol', data.get('ticker', ''))).upper().removeprefix('BINANCE:').removesuffix('.P')
+    side = str(data.get('side', data.get('alert', ''))).strip().upper()
+    tf = str(data.get('tf', '')).strip().lower()
+    allowed = {'BUY': 'LONG', 'LONG': 'LONG', 'BULLISH CONFIRMATION': 'LONG', 'SELL': 'SHORT', 'SHORT': 'SHORT', 'BEARISH CONFIRMATION': 'SHORT'}
+    if not re.fullmatch(r'[A-Z0-9]{3,25}USDT', symbol) or side not in allowed or tf not in ('15', '15m', '15min', '15 minutes'):
+        return jsonify(error='Invalid symbol, side, or 15-minute timeframe'), 422
+    with _lock:
+        _records.append({'time': datetime.now(timezone.utc).isoformat(), 'symbol': symbol, 'side': allowed[side], 'tf': '15m'})
+    return jsonify(status='signal_received', mode='SIGNAL_ONLY', symbol=symbol, side=allowed[side], orders_placed=0), 200
+
+
+def binance_read_only_ping(api_key, api_secret):
+    # GET only: never execute any exchange orders.
+    params = urlencode({'timestamp': int(time.time() * 1000), 'recvWindow': 5000})
+    signature = hmac.new(api_secret.encode('utf-8'), params.encode('utf-8'), hashlib.sha256).hexdigest()
+    url = 'https://fapi.binance.com/fapi/v2/account?' + params + '&signature=' + signature
+    req = Request(url, headers={'X-MBX-APIKEY': api_key, 'User-Agent': 'LuxAlgo-PRO-Readonly/1.0'}, method='GET')
+    with urlopen(req, timeout=8) as res:
+        doc = json.loads(res.read(65536))
+    if not isinstance(doc, dict) or 'canTrade' not in doc:
+        raise ValueError('Unexpected Binance API response')
+    return True
+
+
+@app.post('/binance/check')
+def binance_check():
+    # Auth check occurs before any exchange/network request.
+    if len(expected_webhook_token()) < 24:
+        return jsonify(error='Authentication not configured'), 503
+    data = request.get_json(silent=True) if request.is_json else None
+    if not isinstance(data, dict) or not authorized(data):
+        return jsonify(error='Unauthorized'), 401
+    api_key = os.getenv('BINANCE_API_KEY', '').strip()
+    api_secret = os.getenv('BINANCE_API_SECRET', '').strip()
+    if not api_key or not api_secret:
+        return jsonify(status='credentials_not_configured', orders_enabled=False), 503
+    try:
+        binance_read_only_ping(api_key, api_secret)
+        return jsonify(status='binance_read_only_connection_ok', orders_enabled=False, live_trading=False), 200
+    except HTTPError as exc:
+        # Do not expose account data, raw Binance payloads, or secret values.
+        return jsonify(status='binance_auth_or_access_failed', binance_http_status=exc.code, orders_enabled=False), 502
+    except (URLError, TimeoutError, ValueError, OSError) as exc:
+        app.logger.warning('Binance read-only connectivity failed: %s', type(exc).__name__)
+        return jsonify(status='binance_unreachable_or_invalid_response', orders_enabled=False), 502
+
+
+def gate_read_only_ping(api_key, api_secret):
+    """Gate.io APIv4 authenticated GET only; do not expose account information."""
+    method = 'GET'
+    path = '/api/v4/futures/usdt/accounts'
+    timestamp = str(int(time.time()))
+    payload_hash = hashlib.sha512(b'').hexdigest()
+    message = '\n'.join([method, path, '', payload_hash, timestamp])
+    signature = hmac.new(api_secret.encode('utf-8'), message.encode('utf-8'), hashlib.sha512).hexdigest()
+    req = Request(
+        'https://api.gateio.ws' + path,
+        headers={
+            'KEY': api_key,
+            'Timestamp': timestamp,
+            'SIGN': signature,
+            'Accept': 'application/json',
+            'User-Agent': 'LuxAlgo-PRO-Readonly/1.0',
+        },
+        method='GET',
+    )
+    with urlopen(req, timeout=10) as res:
+        doc = json.loads(res.read(65536))
+    if not isinstance(doc, dict) or 'currency' not in doc:
+        raise ValueError('Unexpected Gate.io Futures account response')
+    return True
+
+
+@app.post('/gate/check')
+def gate_check():
+    if len(expected_webhook_token()) < 24:
+        return jsonify(error='Authentication not configured'), 503
+    data = request.get_json(silent=True) if request.is_json else None
+    if not isinstance(data, dict) or not authorized(data):
+        return jsonify(error='Unauthorized'), 401
+    api_key = os.getenv('GATE_API_KEY', '').strip()
+    api_secret = os.getenv('GATE_API_SECRET', '').strip()
+    if not api_key or not api_secret:
+        return jsonify(status='gate_credentials_not_configured', orders_enabled=False), 503
+    try:
+        gate_read_only_ping(api_key, api_secret)
+        return jsonify(status='gate_read_only_connection_ok', orders_enabled=False, live_trading=False), 200
+    except HTTPError as exc:
+        return jsonify(status='gate_auth_or_access_failed', gate_http_status=exc.code, orders_enabled=False), 502
+    except (URLError, TimeoutError, ValueError, OSError) as exc:
+        app.logger.warning('Gate.io read-only connectivity failed: %s', type(exc).__name__)
+        return jsonify(status='gate_unreachable_or_invalid_response', orders_enabled=False), 502
+
+
+
+def _gate_atr_plan(symbol, direction):
+    """Read ONLY public, completed 15m candles. Return an illustrative plan.
+
+    Not order sizing: 0.5% risk requires verified available funds, instrument
+    contract multiplier, minimum contract count, open positions, and margin rules.
+    """
+    contract = symbol[:-4] + '_USDT'
+    url = ('https://api.gateio.ws/api/v4/futures/usdt/candlesticks?' +
+           urlencode({'contract': contract, 'interval': '15m', 'limit': 60}))
+    req = Request(url, headers={'Accept': 'application/json', 'User-Agent': 'LuxAlgo-PRO-Readonly/1.0'}, method='GET')
+    with urlopen(req, timeout=10) as res:
+        candles = json.loads(res.read(131072))
+    if not isinstance(candles, list):
+        raise ValueError('Invalid Gate candle response')
+    now = int(time.time())
+    complete = []
+    for c in candles:
+        start = int(c['t'])
+        if start + 900 > now:  # Exclude unfinished interval
+            continue
+        high, low, close = float(c['h']), float(c['l']), float(c['c'])
+        if not all(math.isfinite(v) and v > 0 for v in (high,low,close)) or high < low:
+            raise ValueError('Invalid OHLC data')
+        complete.append((start, high, low, close))
+    complete.sort(key=lambda x:x[0])
+    complete = list({c[0]: c for c in complete}.values())
+    complete.sort(key=lambda x:x[0])
+    if len(complete) < 16 or any(b[0]-a[0] != 900 for a,b in zip(complete[-16:-1],complete[-15:])):
+        raise ValueError('Insufficient consecutive completed 15m candles')
+    # Wilder ATR(14) computed over all available completed candles.
+    true_ranges = [max(c[1]-c[2], abs(c[1]-prev[3]), abs(c[2]-prev[3]))
+                   for prev,c in zip(complete, complete[1:])]
+    atr = sum(true_ranges[:14]) / 14
+    for tr in true_ranges[14:]:
+        atr = (atr*13 + tr)/14
+    entry = complete[-1][3]  # Last 15m closing price, NOT an execution price
+    if direction == 'LONG':
+        sl, tp1, tp2 = entry - 1.5*atr, entry + 2*atr, entry + 3*atr
+    else:
+        sl, tp1, tp2 = entry + 1.5*atr, entry - 2*atr, entry - 3*atr
+    if min(entry,sl,tp1,tp2,atr) <= 0:
+        raise ValueError('Plan would produce nonpositive prices')
+    return {
+        'contract':contract, 'side':direction, 'timeframe':'15m',
+        'reference':'most_recent_completed_15m_close_NOT_order_fill',
+        'last_candle_start_utc':datetime.fromtimestamp(complete[-1][0], timezone.utc).isoformat(),
+        'reference_entry':entry, 'atr_14_wilder':atr,
+        'stop_loss_1_5_atr':sl, 'take_profit_1_2_atr':tp1,
+        'take_profit_2_3_atr':tp2, 'planned_leverage':5,
+        'intended_risk_fraction':0.005,
+        'margin_mode':'CROSS', 'position_mode':'HEDGE',
+        'position_size':'NOT_CALCULATED', 'exchange_orders_sent':0,
+        'warning':'Planning only; prices are not executable quotes. No SL/TP orders exist.'
+    }
+
+
+@app.post('/gate/plan')
+def gate_plan():
+    """Protected diagnostic plan; no authenticated Gate trading API call."""
+    data = request.get_json(silent=True) if request.is_json else None
+    if not isinstance(data,dict) or not authorized(data):
+        return jsonify(error='Unauthorized'),401
+    symbol = str(data.get('symbol','')).upper().removeprefix('BINANCE:').removesuffix('.P')
+    side = str(data.get('side','')).upper()
+    side = {'BUY':'LONG','SELL':'SHORT','LONG':'LONG','SHORT':'SHORT'}.get(side)
+    if not re.fullmatch(r'[A-Z0-9]{3,25}USDT',symbol) or not side:
+        return jsonify(error='Expected supported USDT symbol and BUY/SELL side'),422
+    try:
+        plan = _gate_atr_plan(symbol,side)
+        return jsonify(status='illustrative_plan_only',live_trading=False,orders_enabled=False,plan=plan),200
+    except HTTPError as exc:
+        return jsonify(error='Gate market data unavailable',gate_http_status=exc.code,orders_enabled=False),502
+    except (URLError,TimeoutError,ValueError,KeyError,TypeError,OSError):
+        return jsonify(error='Market data invalid or temporarily unavailable',orders_enabled=False),502
+
+
+@app.get('/market/candles')
+def public_market_candles():
+    """Public chart data only. Never returns account or private trading data."""
+    contract = request.args.get('contract', 'BTC_USDT')
+    if not re.fullmatch(r'[A-Z0-9]{2,24}_USDT', contract):
+        return jsonify(error='Unsupported chart contract'), 422
+    interval = request.args.get('interval', '15m')
+    if interval not in ('5m', '15m', '1h'):
+        return jsonify(error='Unsupported timeframe'), 422
+    seconds = {'5m':300,'15m':900,'1h':3600}[interval]
+    url = 'https://api.gateio.ws/api/v4/futures/usdt/candlesticks?' + urlencode(
+        {'contract': contract, 'interval': interval, 'limit': 60})
+    req = Request(url, headers={'Accept': 'application/json', 'User-Agent': 'LuxAlgo-PRO-MarketChart/1.0'}, method='GET')
+    try:
+        with urlopen(req, timeout=8) as res:
+            raw = json.loads(res.read(120000))
+        if not isinstance(raw, list):
+            raise ValueError('Invalid response')
+        now = int(time.time())
+        candles = []
+        for bar in raw:
+            t = int(bar['t'])
+            if t + seconds > now:
+                continue
+            o, h, l, c = [float(bar[k]) for k in ('o', 'h', 'l', 'c')]
+            if not all(math.isfinite(v) and v > 0 for v in (o,h,l,c)) or h < max(o,l,c) or l > min(o,c):
+                raise ValueError('Invalid OHLC')
+            candles.append({'t': t, 'o': o, 'h': h, 'l': l, 'c': c})
+        candles = sorted({b['t']: b for b in candles}.values(), key=lambda b:b['t'])[-55:]
+        response = jsonify(contract=contract, timeframe=interval, candles=candles, orders_enabled=False)
+        response.headers['Cache-Control'] = 'public, max-age=30'
+        return response
+    except (HTTPError, URLError, TimeoutError, ValueError, KeyError, TypeError, OSError):
+        return jsonify(error='Market data temporarily unavailable', orders_enabled=False), 502
+
+
+@app.get('/market/radar')
+def public_gate_radar():
+    """Market data only: never expose private credentials or trading instructions."""
+    url = 'https://api.gateio.ws/api/v4/futures/usdt/tickers'
+    req = Request(url, headers={'Accept':'application/json','User-Agent':'LuxAlgo-PRO-Radar/1.0'}, method='GET')
+    try:
+        with urlopen(req, timeout=10) as res:
+            doc = json.loads(res.read(1500000))
+        if not isinstance(doc, list):
+            raise ValueError('Invalid ticker response')
+        rows = []
+        for v in doc:
+            try:
+                name = str(v.get('contract',''))
+                if not re.fullmatch(r'[A-Z0-9]{2,24}_USDT',name):
+                    continue
+                change = float(v.get('change_percentage',0))
+                last = float(v.get('last',0))
+                volume = float(v.get('volume_24h_quote',0))
+                if not all(math.isfinite(x) for x in (change,last,volume)) or last<=0 or volume<0:
+                    continue
+                rows.append({'contract':name,'change':round(change,4),'last':last,'volume':volume})
+            except (ValueError,TypeError,AttributeError):
+                continue
+        result = jsonify(markets=rows,source='Gate.io public USDT Futures 24h tickers',orders_enabled=False)
+        result.headers['Cache-Control']='public, max-age=30'
+        return result
+    except (HTTPError, URLError, TimeoutError, ValueError, TypeError, OSError):
+        return jsonify(error='Gate.io public tickers unavailable',orders_enabled=False),502
+
+
+if __name__ == '__main__':
+    app.run(host='0.0.0.0', port=int(os.getenv('PORT', '8080')))
