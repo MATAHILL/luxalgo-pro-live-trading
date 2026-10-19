@@ -1,0 +1,10 @@
+"""Read-only deployment shell for LuxAlgo PRO. No trading functions or API credentials."""
+import os
+from flask import Flask, render_template_string, jsonify
+app = Flask(__name__)
+PAGE = '''<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>LUXALGO PRO · LIVE TRADING TERMINAL</title><style>body{margin:0;background:#0b1424;color:#e7efff;font:16px system-ui,sans-serif}.wrap{max-width:1050px;margin:40px auto;padding:20px}header{padding:24px;background:#14253c;border:1px solid #294360;border-radius:14px}h1{font-size:28px;margin:0 0 6px}.muted{color:#a9bdd8}section{margin-top:22px;display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:14px}.tile{background:#14253c;border:1px solid #294360;padding:22px;border-radius:14px}.label{font-size:12px;color:#adbed4}.value{font-size:22px;margin-top:12px}.warn{color:#ffcb7a}footer{margin-top:28px;color:#9fb0c7}</style></head><body><main class="wrap"><header><h1>LUXALGO PRO · LIVE TRADING TERMINAL</h1><div class="muted">Railway deployment starter · Status page only</div></header><section><div class="tile"><div class="label">TRADING STATUS</div><div class="value warn">LIVE TRADING OFF</div></div><div class="tile"><div class="label">BINANCE CONNECTION</div><div class="value">Not configured</div></div><div class="tile"><div class="label">TRADINGVIEW WEBHOOK</div><div class="value">Not configured</div></div><div class="tile"><div class="label">OPEN POSITIONS</div><div class="value">Not available</div></div></section><footer>This is a safe read-only deployment placeholder, not a live trading dashboard. It does not accept signals, store funds or place orders. Do not expose a future trading terminal without authentication.</footer></main></body></html>'''
+@app.get('/')
+def home(): return render_template_string(PAGE)
+@app.get('/health')
+def health(): return jsonify(status='ok',live_trading=False,orders_enabled=False,kind='deployment_starter')
+if __name__ == '__main__': app.run(host='0.0.0.0', port=int(os.getenv('PORT','8080')))
