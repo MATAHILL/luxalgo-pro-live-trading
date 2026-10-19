@@ -1,7 +1,7 @@
-"""LuxAlgo PRO: authenticated signal intake + READ-ONLY Binance API connectivity.
+"""LuxAlgo PRO: authenticated signal intake + READ-ONLY Gate.io and Binance API connectivity.
 
 NO trading endpoints, orders, funds transfers, or withdrawal functions exist.
-Binance credentials must be supplied via Railway service variables only.
+Exchange credentials must be supplied via Railway service variables only.
 """
 import hmac
 import hashlib
@@ -21,7 +21,7 @@ app = Flask(__name__)
 _records = deque(maxlen=50)
 _lock = Lock()
 
-PAGE = '''<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>LUXALGO PRO · LIVE TRADING TERMINAL</title><style>body{margin:0;padding:24px;background:#0b1424;color:#e9f2ff;font:16px system-ui,Arial}header,.tile{background:#13253c;border:1px solid #2c4868;border-radius:14px;padding:22px}h1{font-size:28px;margin:4px 0 8px}p{color:#acd0f3}main{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px;margin-top:20px}.label{font-size:12px;color:#9db8d3}.value{font-size:21px;margin-top:12px}.off{color:#ffbf62}.ok{color:#4ce0ae}.note{margin-top:20px;line-height:1.6}</style></head><body><header><h1>LUXALGO PRO · LIVE TRADING TERMINAL</h1><p>Railway signal intake · Live Binance trading disabled</p></header><main><section class="tile"><div class="label">TRADING STATUS</div><div class="value off">LIVE TRADING OFF</div></section><section class="tile"><div class="label">BINANCE API</div><div class="value">Read-only check available · not publicly exposed</div></section><section class="tile"><div class="label">TRADINGVIEW WEBHOOK</div><div class="value {{ 'ok' if configured else 'off' }}">{{ 'Receiver configured' if configured else 'Awaiting private token' }}</div></section><section class="tile"><div class="label">SIGNALS RECEIVED SINCE RESTART</div><div class="value">{{ count }}</div></section></main><p class="note">This app NEVER submits orders. To check Binance API authentication use the private /binance/check endpoint with your webhook token; do not expose your credentials.</p></body></html>'''
+PAGE = '''<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>LUXALGO PRO · LIVE TRADING TERMINAL</title><style>body{margin:0;padding:24px;background:#0b1424;color:#e9f2ff;font:16px system-ui,Arial}header,.tile{background:#13253c;border:1px solid #2c4868;border-radius:14px;padding:22px}h1{font-size:28px;margin:4px 0 8px}p{color:#acd0f3}main{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px;margin-top:20px}.label{font-size:12px;color:#9db8d3}.value{font-size:21px;margin-top:12px}.off{color:#ffbf62}.ok{color:#4ce0ae}.note{margin-top:20px;line-height:1.6}</style></head><body><header><h1>LUXALGO PRO · LIVE TRADING TERMINAL</h1><p>Railway signal intake · Live exchange trading disabled</p></header><main><section class="tile"><div class="label">TRADING STATUS</div><div class="value off">LIVE TRADING OFF</div></section><section class="tile"><div class="label">GATE.IO FUTURES API</div><div class="value">Private read-only check available · trading OFF</div></section><section class="tile"><div class="label">TRADINGVIEW WEBHOOK</div><div class="value {{ 'ok' if configured else 'off' }}">{{ 'Receiver configured' if configured else 'Awaiting private token' }}</div></section><section class="tile"><div class="label">SIGNALS RECEIVED SINCE RESTART</div><div class="value">{{ count }}</div></section></main><p class="note">This app NEVER submits orders. Use the private POST /gate/check endpoint to test Gate.io API authentication. Binance private POST /binance/check remains available. Never share API credentials.</p></body></html>'''
 
 
 def expected_webhook_token():
@@ -45,7 +45,7 @@ def home():
 
 @app.get('/health')
 def health():
-    return jsonify(status='ok', live_trading=False, orders_enabled=False, kind='signal_receiver_with_readonly_binance_check')
+    return jsonify(status='ok', live_trading=False, orders_enabled=False, kind='signal_receiver_with_readonly_exchange_checks')
 
 
 @app.post('/webhook')
@@ -104,6 +104,53 @@ def binance_check():
     except (URLError, TimeoutError, ValueError, OSError) as exc:
         app.logger.warning('Binance read-only connectivity failed: %s', type(exc).__name__)
         return jsonify(status='binance_unreachable_or_invalid_response', orders_enabled=False), 502
+
+
+def gate_read_only_ping(api_key, api_secret):
+    """Gate.io APIv4 authenticated GET only; do not expose account information."""
+    method = 'GET'
+    path = '/api/v4/futures/usdt/accounts'
+    timestamp = str(int(time.time()))
+    payload_hash = hashlib.sha512(b'').hexdigest()
+    message = '\n'.join([method, path, '', payload_hash, timestamp])
+    signature = hmac.new(api_secret.encode('utf-8'), message.encode('utf-8'), hashlib.sha512).hexdigest()
+    req = Request(
+        'https://api.gateio.ws' + path,
+        headers={
+            'KEY': api_key,
+            'Timestamp': timestamp,
+            'SIGN': signature,
+            'Accept': 'application/json',
+            'User-Agent': 'LuxAlgo-PRO-Readonly/1.0',
+        },
+        method='GET',
+    )
+    with urlopen(req, timeout=10) as res:
+        doc = json.loads(res.read(65536))
+    if not isinstance(doc, dict) or 'currency' not in doc:
+        raise ValueError('Unexpected Gate.io Futures account response')
+    return True
+
+
+@app.post('/gate/check')
+def gate_check():
+    if len(expected_webhook_token()) < 24:
+        return jsonify(error='Authentication not configured'), 503
+    data = request.get_json(silent=True) if request.is_json else None
+    if not isinstance(data, dict) or not authorized(data):
+        return jsonify(error='Unauthorized'), 401
+    api_key = os.getenv('GATE_API_KEY', '').strip()
+    api_secret = os.getenv('GATE_API_SECRET', '').strip()
+    if not api_key or not api_secret:
+        return jsonify(status='gate_credentials_not_configured', orders_enabled=False), 503
+    try:
+        gate_read_only_ping(api_key, api_secret)
+        return jsonify(status='gate_read_only_connection_ok', orders_enabled=False, live_trading=False), 200
+    except HTTPError as exc:
+        return jsonify(status='gate_auth_or_access_failed', gate_http_status=exc.code, orders_enabled=False), 502
+    except (URLError, TimeoutError, ValueError, OSError) as exc:
+        app.logger.warning('Gate.io read-only connectivity failed: %s', type(exc).__name__)
+        return jsonify(status='gate_unreachable_or_invalid_response', orders_enabled=False), 502
 
 
 if __name__ == '__main__':
