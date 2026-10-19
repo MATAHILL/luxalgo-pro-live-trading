@@ -1,6 +1,7 @@
 """LuxAlgo PRO: authenticated signal intake + READ-ONLY Gate.io and Binance API connectivity.
 
 NO order submission, funds transfer, or withdrawal functions exist.
+Authenticated /bot/status reports in-memory DRY RUN intent records only.
 The /gate/plan endpoint only calculates indicative ATR levels; no orders are placed.
 Exchange credentials must be supplied via Railway service variables only.
 """
@@ -12,6 +13,7 @@ import re
 import time
 import math
 from collections import deque
+from hashlib import sha256
 from datetime import datetime, timezone
 from threading import Lock
 from urllib.error import HTTPError, URLError
@@ -22,6 +24,9 @@ from flask import Flask, jsonify, render_template_string, request
 app = Flask(__name__)
 _records = deque(maxlen=50)
 _lock = Lock()
+# Volatile, non-executing intent monitor. Cleared at deployment/restart.
+_intents = deque(maxlen=50)
+_seen_events = {}
 
 PAGE = '''<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
@@ -83,6 +88,23 @@ def health():
     return jsonify(status='ok', live_trading=False, orders_enabled=False, kind='signal_receiver_with_readonly_exchange_checks')
 
 
+@app.post('/bot/status')
+def bot_status():
+    """Authenticated DRY RUN monitor; no order execution or sensitive account data."""
+    data = request.get_json(silent=True) if request.is_json else None
+    if not isinstance(data, dict) or not authorized(data):
+        return jsonify(error='Unauthorized'), 401
+    with _lock:
+        recent = list(_intents)[-15:][::-1]
+        signal_count = len(_records)
+    return jsonify(mode='DRY_RUN_ONLY', live_trading=False,
+                   orders_enabled=False, exchange='Gate.io',
+                   signals_since_restart=signal_count,
+                   dry_run_intents=recent,
+                   persistent_history=False,
+                   warning='No positions, order submissions, fills, SL or TP orders exist.')
+
+
 @app.post('/webhook')
 def webhook():
     if len(expected_webhook_token()) < 24:
@@ -101,8 +123,28 @@ def webhook():
     if not re.fullmatch(r'[A-Z0-9]{3,25}USDT', symbol) or side not in allowed or tf not in ('15', '15m', '15min', '15 minutes'):
         return jsonify(error='Invalid symbol, side, or 15-minute timeframe'), 422
     with _lock:
-        _records.append({'time': datetime.now(timezone.utc).isoformat(), 'symbol': symbol, 'side': allowed[side], 'tf': '15m'})
-    return jsonify(status='signal_received', mode='SIGNAL_ONLY', symbol=symbol, side=allowed[side], orders_placed=0), 200
+        received_at = datetime.now(timezone.utc)
+        record = {'time': received_at.isoformat(), 'symbol': symbol,
+                  'side': allowed[side], 'tf': '15m'}
+        _records.append(record)
+        # Incoming webhook is signal-only; do not treat it as an order.
+        # Repeated alerts for same pair/direction in the 15-minute UTC bucket
+        # are logged but only create one non-executable DRY RUN intent.
+        bucket = int(received_at.timestamp()) // 900
+        event_id = sha256(f'{symbol}|{allowed[side]}|15m|{bucket}'.encode()).hexdigest()[:20]
+        duplicate = event_id in _seen_events
+        if not duplicate:
+            _seen_events[event_id] = received_at.timestamp()
+            _intents.append({'event_id': event_id, **record,
+                             'status': 'DRY_RUN_ONLY', 'orders_placed': 0})
+            if len(_seen_events) > 1000:
+                cutoff = received_at.timestamp() - 86400
+                for key, stamp in list(_seen_events.items()):
+                    if stamp < cutoff:
+                        _seen_events.pop(key, None)
+    return jsonify(status='signal_received', mode='SIGNAL_ONLY', symbol=symbol,
+                   side=allowed[side], duplicate_in_candle=duplicate,
+                   dry_run_intent_id=event_id, orders_placed=0), 200
 
 
 def binance_read_only_ping(api_key, api_secret):
