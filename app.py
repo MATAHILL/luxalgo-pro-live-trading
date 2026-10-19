@@ -1,298 +1,32 @@
-"""LuxAlgo PRO: authenticated signal intake + READ-ONLY Gate.io and Binance API connectivity.
-
-NO order submission, funds transfer, or withdrawal functions exist.
-The /gate/plan endpoint only calculates indicative ATR levels; no orders are placed.
-Exchange credentials must be supplied via Railway service variables only.
-"""
-import hmac
-import hashlib
-import json
-import os
-import re
-import time
-import math
-from collections import deque
-from datetime import datetime, timezone
-from threading import Lock
-from urllib.error import HTTPError, URLError
-from urllib.parse import urlencode
-from urllib.request import Request, urlopen
-from flask import Flask, jsonify, render_template_string, request
-
-app = Flask(__name__)
-_records = deque(maxlen=50)
-_lock = Lock()
-
-PAGE = '''<!doctype html>
+<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>LUXALGO PRO · TRADING TERMINAL</title>
 <style>
-:root{color-scheme:dark;--bg:#080f1c;--surface:#121f32;--surface2:#172942;--border:#273b55;--text:#eaf3ff;--dim:#9fb3cb;--muted:#718aa6;--teal:#39d6b1;--red:#ff7188;--gold:#ffc576}
-*{box-sizing:border-box}body{margin:0;background:var(--bg);font:14px/1.5 system-ui,-apple-system,Segoe UI,Arial,sans-serif;color:var(--text)}
-.shell{max-width:1580px;padding:24px;margin:auto}h1,h2,h3,p{margin:0}h1{font-size:27px;letter-spacing:.7px}h2{font-size:15px;letter-spacing:.55px}h3{font-size:13px}small,.small{font-size:12px;color:var(--dim)}
-.top{padding:23px 25px;background:linear-gradient(115deg,#182c49,#101f33);border:1px solid var(--border);border-radius:16px}.topline,.subhead,.row{display:flex;align-items:center;justify-content:space-between;gap:15px;flex-wrap:wrap}.tag{border:1px solid #885d36;color:var(--gold);background:#47321c55;border-radius:999px;padding:5px 12px;font-size:12px;font-weight:700;white-space:nowrap}.subhead{margin-top:12px;color:var(--dim)}.grid{display:grid;gap:14px}.stats{grid-template-columns:repeat(5,minmax(0,1fr));margin-top:15px}.panel,.stat{border:1px solid var(--border);background:var(--surface);border-radius:13px;min-width:0}.stat{padding:18px}.stat .label{color:var(--dim);font-size:11px;letter-spacing:.45px}.stat .value{font-size:18px;margin-top:12px;font-weight:650}.ok{color:var(--teal)}.off{color:var(--gold)}.muted{color:var(--dim)}.content{grid-template-columns:minmax(0,1.75fr) minmax(310px,1fr);margin-top:15px}.panel{padding:19px}.paneltitle{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:17px;flex-wrap:wrap}.pills{display:flex;gap:7px;flex-wrap:wrap}.pill{border:1px solid var(--border);background:var(--surface2);border-radius:6px;padding:6px 9px;font-size:12px;color:var(--dim)}.btn,select{background:#203855;border:1px solid #365476;color:#e8f4ff;border-radius:7px;padding:7px 11px;cursor:pointer;font:inherit}.btn:hover{background:#294465}.btn:focus-visible,select:focus-visible{outline:2px solid var(--teal)}.btn:disabled{opacity:.5;cursor:not-allowed}.chartbox{height:308px;position:relative;background:linear-gradient(#101c2d,#111e32);border-radius:9px;border:1px solid #213751;overflow:hidden}.chartbox canvas{display:block;width:100%;height:100%}.empty{padding:25px 15px;min-height:95px;display:flex;align-items:center;justify-content:center;text-align:center;color:var(--dim);background:#101c2c;border:1px dashed #38506c;border-radius:8px}.summary{display:grid;grid-template-columns:1fr 1fr;gap:10px}.mini{background:#0d1929;border:1px solid var(--border);border-radius:9px;padding:13px}.mini span{font-size:11px;color:var(--dim)}.mini strong{display:block;font-size:17px;margin-top:5px}.stack{display:grid;gap:13px}.below{margin-top:14px;grid-template-columns:minmax(0,1.45fr) minmax(330px,1fr)}.tablewrap{overflow:auto}table{border-collapse:collapse;width:100%;min-width:610px;text-align:left}th,td{padding:11px 10px;border-bottom:1px solid #2a4057;font-size:12px}th{color:#9bb4cf;font-weight:600;white-space:nowrap}td{color:#d4e4f5}.note{margin-top:12px;padding:11px 13px;background:#11253a;border-left:3px solid #6c9ac9;color:#b9cee1;border-radius:5px;font-size:12px}.sectionfoot{margin-top:7px;color:var(--dim);font-size:12px}.statusdot{display:inline-block;height:8px;width:8px;background:var(--teal);border-radius:50%;margin-right:6px}.foot{font-size:12px;color:var(--dim);margin:18px 2px 8px}.placeholder{color:var(--muted)}
-@media(max-width:1100px){.stats{grid-template-columns:repeat(3,minmax(0,1fr))}.content,.below{grid-template-columns:1fr}}@media(max-width:620px){.shell{padding:12px}.stats{grid-template-columns:repeat(2,minmax(0,1fr))}.top{padding:17px}.stat{padding:13px}.stat .value{font-size:15px}h1{font-size:21px}.panel{padding:14px}.chartbox{height:240px}}
-</style></head><body><div class="shell">
-<header class="top"><div class="topline"><h1>LUXALGO PRO · TRADING TERMINAL</h1><span class="tag">● LIVE TRADING OFF</span></div><div class="subhead"><span>Gate.io Futures · LuxAlgo signals · Cloud trading monitors · Coded by SUBHASISH</span><span>Read-only dashboard · No exchange orders placed</span></div></header>
-<section class="grid stats" aria-label="Trading overview">
-<div class="stat"><div class="label">GATE.IO FUTURES API</div><div class="value ok"><span class="statusdot"></span>Configured</div><div class="small">Previous private check succeeded; not continuously monitored</div></div>
-<div class="stat"><div class="label">TRADINGVIEW WEBHOOK</div><div class="value {{ 'ok' if configured else 'off' }}">{{ 'Configured' if configured else 'Not configured' }}</div><div class="small">Receiver status</div></div>
-<div class="stat"><div class="label">SIGNALS SINCE RESTART</div><div class="value">{{ count }}</div><div class="small">Stored in server memory</div></div>
-<div class="stat"><div class="label">OPEN BOT POSITIONS</div><div class="value muted">Not connected</div><div class="small">No exchange position sync</div></div>
-<div class="stat"><div class="label">REALIZED P&amp;L</div><div class="value muted">Not connected</div><div class="small">No execution records</div></div>
-</section>
-<section class="grid content"><article class="panel"><div class="paneltitle"><h2>RECENT CANDLE CHART</h2><div class="row"><label class="small" for="pair">Market</label><select id="pair"><option value="BTC_USDT">BTC / USDT</option><option value="ETH_USDT">ETH / USDT</option><option value="SOL_USDT">SOL / USDT</option><option value="XRP_USDT">XRP / USDT</option></select><span class="pill">15 MINUTES</span><button class="btn" id="refresh" type="button">↻ Refresh</button></div></div><div class="chartbox"><canvas id="candles" aria-label="Gate.io public 15-minute candlestick chart" role="img"></canvas></div><div class="sectionfoot" id="marketStatus" aria-live="polite">Loading public Gate.io candle data…</div><p class="note">Public market prices only. Chart is informational, not a trading signal, entry fill or execution record.</p></article>
-<aside class="stack"><section class="panel"><div class="paneltitle"><h2>LIVE PAPER / REAL POSITION</h2><span class="pill">EXECUTION DISABLED</span></div><div class="empty">No synchronized bot positions.<br>Actual Gate.io position monitoring is not connected yet.</div><div class="summary" style="margin-top:12px"><div class="mini"><span>Entry</span><strong>—</strong></div><div class="mini"><span>Position side</span><strong>—</strong></div><div class="mini"><span>Stop loss</span><strong>—</strong></div><div class="mini"><span>Take profit 1 / 2</span><strong>—</strong></div></div></section>
-<section class="panel"><div class="paneltitle"><h2>RISK CONFIGURATION</h2><span class="pill">PLANNED · NOT ACTIVE</span></div><div class="summary"><div class="mini"><span>Timeframe</span><strong>15m</strong></div><div class="mini"><span>Leverage</span><strong>5×</strong></div><div class="mini"><span>Risk per trade</span><strong>0.5%</strong></div><div class="mini"><span>Maximum positions</span><strong>1</strong></div><div class="mini"><span>Stop-loss plan</span><strong>1.5 ATR</strong></div><div class="mini"><span>TP1 / TP2 plan</span><strong>2 / 3 ATR</strong></div></div><p class="sectionfoot">Cross margin · Hedge mode. Values are targets for future controls, not active exchange protections.</p></section></aside></section>
-<section class="grid below"><article class="panel"><div class="paneltitle"><h2>RECENT LUXALGO SIGNALS</h2><span class="pill">PRIVACY PROTECTED</span></div><div class="tablewrap"><table><thead><tr><th>Received (UTC)</th><th>Trading pair</th><th>Direction</th><th>Timeframe</th><th>Status</th></tr></thead><tbody><tr><td colspan="5" style="text-align:center;color:#94aec7;padding:26px">{{ count }} signal(s) received since restart. Individual signal details are not shown on the public page.</td></tr></tbody></table></div><p class="sectionfoot">Signal records remain in memory only and are lost at Railway restart. Private authenticated monitoring is required before showing pair/side history.</p></article>
-<article class="panel"><div class="paneltitle"><h2>AI FUTURES OPPORTUNITY SCANNER</h2><span class="pill">NOT CONNECTED</span></div><div class="empty">Scanner integration pending.<br>No pump/bearish predictions are being generated.</div><p class="sectionfoot">Market chart above is live public data, not a recommendation.</p></article></section>
-<section class="grid below"><article class="panel"><div class="paneltitle"><h2>COMPLETED PAPER / LIVE TRADES</h2><span class="pill">NO EXECUTION ENGINE</span></div><div class="tablewrap"><table><thead><tr><th>Pair</th><th>Side</th><th>Entry</th><th>Exit</th><th>SL / TP</th><th>Realized P&amp;L</th><th>Status</th></tr></thead><tbody><tr><td colspan="7" style="text-align:center;color:#94aec7;padding:26px">No verified executed trades are available in this application.</td></tr></tbody></table></div></article><article class="panel"><div class="paneltitle"><h2>PERFORMANCE ANALYTICS</h2><span class="pill">AWAITING VERIFIED TRADES</span></div><div class="summary"><div class="mini"><span>Win rate</span><strong>—</strong></div><div class="mini"><span>Total trades</span><strong>—</strong></div><div class="mini"><span>Net P&amp;L</span><strong>—</strong></div><div class="mini"><span>Maximum drawdown</span><strong>—</strong></div></div><p class="sectionfoot">Analytics require verified order fills and persistent trade history.</p></article></section>
-<p class="foot">LUXALGO PRO · Railway monitor · Gate.io public market feed · Private API diagnostics preserved · Webhook preserved · Orders disabled. Protect this page with authentication before adding account or position details.</p>
-</div><script>
-(()=>{'use strict';const canvas=document.getElementById('candles'),pair=document.getElementById('pair'),status=document.getElementById('marketStatus'),button=document.getElementById('refresh');let candles=[];
-function draw(){const rect=canvas.getBoundingClientRect(),w=Math.max(300,rect.width),h=Math.max(190,rect.height),scale=Math.min(devicePixelRatio||1,2);canvas.width=Math.round(w*scale);canvas.height=Math.round(h*scale);const ctx=canvas.getContext('2d');ctx.scale(scale,scale);ctx.clearRect(0,0,w,h);ctx.fillStyle='#101c2d';ctx.fillRect(0,0,w,h);if(!candles.length){ctx.fillStyle='#9db8d3';ctx.font='13px system-ui';ctx.fillText('No candle data available',16,30);return;}const left=13,right=65,top=13,bottom=27,plotW=w-left-right,plotH=h-top-bottom;const lo=Math.min(...candles.map(c=>c.l)),hi=Math.max(...candles.map(c=>c.h)),pad=Math.max((hi-lo)*.07,hi*.000001),min=lo-pad,max=hi+pad;const y=v=>top+(max-v)/(max-min)*plotH;ctx.strokeStyle='#213955';ctx.lineWidth=1;ctx.font='11px system-ui';ctx.fillStyle='#92a9c3';for(let i=0;i<=4;i++){const value=max-(max-min)*i/4,py=top+plotH*i/4;ctx.beginPath();ctx.moveTo(left,py);ctx.lineTo(w-right+5,py);ctx.stroke();ctx.fillText(value.toLocaleString(undefined,{maximumFractionDigits:value<1?5:value<100?3:1}),w-right+8,py+4)}let step=plotW/candles.length;let bar=Math.max(2,Math.min(11,step*.57));candles.forEach((c,i)=>{const x=left+step*(i+.5);ctx.strokeStyle=ctx.fillStyle=c.c>=c.o?'#35d2ab':'#f46b88';ctx.beginPath();ctx.moveTo(x,y(c.h));ctx.lineTo(x,y(c.l));ctx.stroke();const y1=y(Math.max(c.o,c.c)),y2=y(Math.min(c.o,c.c));ctx.fillRect(x-bar/2,y1,bar,Math.max(1,y2-y1))});ctx.fillStyle='#9db8d3';let indexes=[0,Math.floor((candles.length-1)/2),candles.length-1];indexes.forEach((i)=>{let d=new Date(candles[i].t*1000);ctx.fillText(d.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'}),left+step*i,h-7)})}
-async function update(){button.disabled=true;status.textContent='Loading Gate.io public candles…';try{const response=await fetch('/market/candles?contract='+encodeURIComponent(pair.value),{cache:'no-store'});if(!response.ok)throw new Error('Market data unavailable (HTTP '+response.status+')');const data=await response.json();if(!Array.isArray(data.candles))throw new Error('Unexpected market response');candles=data.candles;draw();status.textContent=pair.value.replace('_',' / ')+' · 15m public candles · '+candles.length+' completed bars · updated '+new Date().toLocaleTimeString()}catch(err){candles=[];draw();status.textContent=err.message+' · Retry with Refresh'}finally{button.disabled=false}}
-pair.addEventListener('change',update);button.addEventListener('click',update);window.addEventListener('resize',draw);update();})();
-</script></body></html>'''
-
-
-def expected_webhook_token():
-    return os.getenv('LUXALGO_WEBHOOK_TOKEN', '')
-
-
-def authorized(data):
-    expected = expected_webhook_token()
-    if len(expected) < 24:
-        return False
-    supplied = data.get('token', '')
-    return isinstance(supplied, str) and hmac.compare_digest(supplied, expected)
-
-
-@app.get('/')
-def home():
-    with _lock:
-        count = len(_records)
-    return render_template_string(PAGE, configured=len(expected_webhook_token()) >= 24, count=count)
-
-
-@app.get('/health')
-def health():
-    return jsonify(status='ok', live_trading=False, orders_enabled=False, kind='signal_receiver_with_readonly_exchange_checks')
-
-
-@app.post('/webhook')
-def webhook():
-    if len(expected_webhook_token()) < 24:
-        return jsonify(error='Webhook token not configured'), 503
-    if not request.is_json:
-        return jsonify(error='JSON required'), 400
-    data = request.get_json(silent=True)
-    if not isinstance(data, dict):
-        return jsonify(error='JSON object required'), 400
-    if not authorized(data):
-        return jsonify(error='Unauthorized'), 401
-    symbol = str(data.get('symbol', data.get('ticker', ''))).upper().removeprefix('BINANCE:').removesuffix('.P')
-    side = str(data.get('side', data.get('alert', ''))).strip().upper()
-    tf = str(data.get('tf', '')).strip().lower()
-    allowed = {'BUY': 'LONG', 'LONG': 'LONG', 'BULLISH CONFIRMATION': 'LONG', 'SELL': 'SHORT', 'SHORT': 'SHORT', 'BEARISH CONFIRMATION': 'SHORT'}
-    if not re.fullmatch(r'[A-Z0-9]{3,25}USDT', symbol) or side not in allowed or tf not in ('15', '15m', '15min', '15 minutes'):
-        return jsonify(error='Invalid symbol, side, or 15-minute timeframe'), 422
-    with _lock:
-        _records.append({'time': datetime.now(timezone.utc).isoformat(), 'symbol': symbol, 'side': allowed[side], 'tf': '15m'})
-    return jsonify(status='signal_received', mode='SIGNAL_ONLY', symbol=symbol, side=allowed[side], orders_placed=0), 200
-
-
-def binance_read_only_ping(api_key, api_secret):
-    # GET only: never execute any exchange orders.
-    params = urlencode({'timestamp': int(time.time() * 1000), 'recvWindow': 5000})
-    signature = hmac.new(api_secret.encode('utf-8'), params.encode('utf-8'), hashlib.sha256).hexdigest()
-    url = 'https://fapi.binance.com/fapi/v2/account?' + params + '&signature=' + signature
-    req = Request(url, headers={'X-MBX-APIKEY': api_key, 'User-Agent': 'LuxAlgo-PRO-Readonly/1.0'}, method='GET')
-    with urlopen(req, timeout=8) as res:
-        doc = json.loads(res.read(65536))
-    if not isinstance(doc, dict) or 'canTrade' not in doc:
-        raise ValueError('Unexpected Binance API response')
-    return True
-
-
-@app.post('/binance/check')
-def binance_check():
-    # Auth check occurs before any exchange/network request.
-    if len(expected_webhook_token()) < 24:
-        return jsonify(error='Authentication not configured'), 503
-    data = request.get_json(silent=True) if request.is_json else None
-    if not isinstance(data, dict) or not authorized(data):
-        return jsonify(error='Unauthorized'), 401
-    api_key = os.getenv('BINANCE_API_KEY', '').strip()
-    api_secret = os.getenv('BINANCE_API_SECRET', '').strip()
-    if not api_key or not api_secret:
-        return jsonify(status='credentials_not_configured', orders_enabled=False), 503
-    try:
-        binance_read_only_ping(api_key, api_secret)
-        return jsonify(status='binance_read_only_connection_ok', orders_enabled=False, live_trading=False), 200
-    except HTTPError as exc:
-        # Do not expose account data, raw Binance payloads, or secret values.
-        return jsonify(status='binance_auth_or_access_failed', binance_http_status=exc.code, orders_enabled=False), 502
-    except (URLError, TimeoutError, ValueError, OSError) as exc:
-        app.logger.warning('Binance read-only connectivity failed: %s', type(exc).__name__)
-        return jsonify(status='binance_unreachable_or_invalid_response', orders_enabled=False), 502
-
-
-def gate_read_only_ping(api_key, api_secret):
-    """Gate.io APIv4 authenticated GET only; do not expose account information."""
-    method = 'GET'
-    path = '/api/v4/futures/usdt/accounts'
-    timestamp = str(int(time.time()))
-    payload_hash = hashlib.sha512(b'').hexdigest()
-    message = '\n'.join([method, path, '', payload_hash, timestamp])
-    signature = hmac.new(api_secret.encode('utf-8'), message.encode('utf-8'), hashlib.sha512).hexdigest()
-    req = Request(
-        'https://api.gateio.ws' + path,
-        headers={
-            'KEY': api_key,
-            'Timestamp': timestamp,
-            'SIGN': signature,
-            'Accept': 'application/json',
-            'User-Agent': 'LuxAlgo-PRO-Readonly/1.0',
-        },
-        method='GET',
-    )
-    with urlopen(req, timeout=10) as res:
-        doc = json.loads(res.read(65536))
-    if not isinstance(doc, dict) or 'currency' not in doc:
-        raise ValueError('Unexpected Gate.io Futures account response')
-    return True
-
-
-@app.post('/gate/check')
-def gate_check():
-    if len(expected_webhook_token()) < 24:
-        return jsonify(error='Authentication not configured'), 503
-    data = request.get_json(silent=True) if request.is_json else None
-    if not isinstance(data, dict) or not authorized(data):
-        return jsonify(error='Unauthorized'), 401
-    api_key = os.getenv('GATE_API_KEY', '').strip()
-    api_secret = os.getenv('GATE_API_SECRET', '').strip()
-    if not api_key or not api_secret:
-        return jsonify(status='gate_credentials_not_configured', orders_enabled=False), 503
-    try:
-        gate_read_only_ping(api_key, api_secret)
-        return jsonify(status='gate_read_only_connection_ok', orders_enabled=False, live_trading=False), 200
-    except HTTPError as exc:
-        return jsonify(status='gate_auth_or_access_failed', gate_http_status=exc.code, orders_enabled=False), 502
-    except (URLError, TimeoutError, ValueError, OSError) as exc:
-        app.logger.warning('Gate.io read-only connectivity failed: %s', type(exc).__name__)
-        return jsonify(status='gate_unreachable_or_invalid_response', orders_enabled=False), 502
-
-
-
-def _gate_atr_plan(symbol, direction):
-    """Read ONLY public, completed 15m candles. Return an illustrative plan.
-
-    Not order sizing: 0.5% risk requires verified available funds, instrument
-    contract multiplier, minimum contract count, open positions, and margin rules.
-    """
-    contract = symbol[:-4] + '_USDT'
-    url = ('https://api.gateio.ws/api/v4/futures/usdt/candlesticks?' +
-           urlencode({'contract': contract, 'interval': '15m', 'limit': 60}))
-    req = Request(url, headers={'Accept': 'application/json', 'User-Agent': 'LuxAlgo-PRO-Readonly/1.0'}, method='GET')
-    with urlopen(req, timeout=10) as res:
-        candles = json.loads(res.read(131072))
-    if not isinstance(candles, list):
-        raise ValueError('Invalid Gate candle response')
-    now = int(time.time())
-    complete = []
-    for c in candles:
-        start = int(c['t'])
-        if start + 900 > now:  # Exclude unfinished interval
-            continue
-        high, low, close = float(c['h']), float(c['l']), float(c['c'])
-        if not all(math.isfinite(v) and v > 0 for v in (high,low,close)) or high < low:
-            raise ValueError('Invalid OHLC data')
-        complete.append((start, high, low, close))
-    complete.sort(key=lambda x:x[0])
-    complete = list({c[0]: c for c in complete}.values())
-    complete.sort(key=lambda x:x[0])
-    if len(complete) < 16 or any(b[0]-a[0] != 900 for a,b in zip(complete[-16:-1],complete[-15:])):
-        raise ValueError('Insufficient consecutive completed 15m candles')
-    # Wilder ATR(14) computed over all available completed candles.
-    true_ranges = [max(c[1]-c[2], abs(c[1]-prev[3]), abs(c[2]-prev[3]))
-                   for prev,c in zip(complete, complete[1:])]
-    atr = sum(true_ranges[:14]) / 14
-    for tr in true_ranges[14:]:
-        atr = (atr*13 + tr)/14
-    entry = complete[-1][3]  # Last 15m closing price, NOT an execution price
-    if direction == 'LONG':
-        sl, tp1, tp2 = entry - 1.5*atr, entry + 2*atr, entry + 3*atr
-    else:
-        sl, tp1, tp2 = entry + 1.5*atr, entry - 2*atr, entry - 3*atr
-    if min(entry,sl,tp1,tp2,atr) <= 0:
-        raise ValueError('Plan would produce nonpositive prices')
-    return {
-        'contract':contract, 'side':direction, 'timeframe':'15m',
-        'reference':'most_recent_completed_15m_close_NOT_order_fill',
-        'last_candle_start_utc':datetime.fromtimestamp(complete[-1][0], timezone.utc).isoformat(),
-        'reference_entry':entry, 'atr_14_wilder':atr,
-        'stop_loss_1_5_atr':sl, 'take_profit_1_2_atr':tp1,
-        'take_profit_2_3_atr':tp2, 'planned_leverage':5,
-        'intended_risk_fraction':0.005,
-        'margin_mode':'CROSS', 'position_mode':'HEDGE',
-        'position_size':'NOT_CALCULATED', 'exchange_orders_sent':0,
-        'warning':'Planning only; prices are not executable quotes. No SL/TP orders exist.'
-    }
-
-
-@app.post('/gate/plan')
-def gate_plan():
-    """Protected diagnostic plan; no authenticated Gate trading API call."""
-    data = request.get_json(silent=True) if request.is_json else None
-    if not isinstance(data,dict) or not authorized(data):
-        return jsonify(error='Unauthorized'),401
-    symbol = str(data.get('symbol','')).upper().removeprefix('BINANCE:').removesuffix('.P')
-    side = str(data.get('side','')).upper()
-    side = {'BUY':'LONG','SELL':'SHORT','LONG':'LONG','SHORT':'SHORT'}.get(side)
-    if not re.fullmatch(r'[A-Z0-9]{3,25}USDT',symbol) or not side:
-        return jsonify(error='Expected supported USDT symbol and BUY/SELL side'),422
-    try:
-        plan = _gate_atr_plan(symbol,side)
-        return jsonify(status='illustrative_plan_only',live_trading=False,orders_enabled=False,plan=plan),200
-    except HTTPError as exc:
-        return jsonify(error='Gate market data unavailable',gate_http_status=exc.code,orders_enabled=False),502
-    except (URLError,TimeoutError,ValueError,KeyError,TypeError,OSError):
-        return jsonify(error='Market data invalid or temporarily unavailable',orders_enabled=False),502
-
-
-@app.get('/market/candles')
-def public_market_candles():
-    """Public chart data only. Never returns account or private trading data."""
-    contract = request.args.get('contract', 'BTC_USDT')
-    if contract not in ('BTC_USDT', 'ETH_USDT', 'SOL_USDT', 'XRP_USDT'):
-        return jsonify(error='Unsupported chart contract'), 422
-    url = 'https://api.gateio.ws/api/v4/futures/usdt/candlesticks?' + urlencode(
-        {'contract': contract, 'interval': '15m', 'limit': 60})
-    req = Request(url, headers={'Accept': 'application/json', 'User-Agent': 'LuxAlgo-PRO-MarketChart/1.0'}, method='GET')
-    try:
-        with urlopen(req, timeout=8) as res:
-            raw = json.loads(res.read(120000))
-        if not isinstance(raw, list):
-            raise ValueError('Invalid response')
-        now = int(time.time())
-        candles = []
-        for bar in raw:
-            t = int(bar['t'])
-            if t + 900 > now:
-                continue
-            o, h, l, c = [float(bar[k]) for k in ('o', 'h', 'l', 'c')]
-            if not all(math.isfinite(v) and v > 0 for v in (o,h,l,c)) or h < max(o,l,c) or l > min(o,c):
-                raise ValueError('Invalid OHLC')
-            candles.append({'t': t, 'o': o, 'h': h, 'l': l, 'c': c})
-        candles = sorted({b['t']: b for b in candles}.values(), key=lambda b:b['t'])[-55:]
-        response = jsonify(contract=contract, timeframe='15m', candles=candles, orders_enabled=False)
-        response.headers['Cache-Control'] = 'public, max-age=30'
-        return response
-    except (HTTPError, URLError, TimeoutError, ValueError, KeyError, TypeError, OSError):
-        return jsonify(error='Market data temporarily unavailable', orders_enabled=False), 502
-
-
-if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=int(os.getenv('PORT', '8080')))
+:root{color-scheme:dark;--bg:#090f1b;--panel:#10223c;--panel2:#132b4c;--b:#28496e;--text:#e9f3ff;--dim:#a3bddb;--green:#37df98;--red:#ff6077;--blue:#3aabff;--purple:#ac79ff}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:13px/1.5 system-ui,Segoe UI,Arial}.layout{display:flex;min-height:100vh}.sidebar{width:250px;flex:none;background:linear-gradient(150deg,#122a4c,#091427);border-right:1px solid #254365;padding:15px 12px;position:sticky;top:0;height:100vh;overflow:auto}.side-title{border:1px solid #39679b;border-radius:9px;padding:14px 11px;background:#0d2747;font-weight:800;font-size:14px}.tiny{font-size:11px;color:var(--dim)}label{font-size:11px;font-weight:650;display:block;margin:12px 0 5px}select,button{font:inherit;color:var(--text);background:#182d4b;border:1px solid #32567b;border-radius:7px;padding:9px;cursor:pointer}select{width:100%}button:hover:not(:disabled){background:#23476d}button:disabled{opacity:.52;cursor:not-allowed}.btn{padding:9px 13px}.wide{width:100%}.sidebar .status{color:var(--dim);font-size:11px;padding:10px 0}.radar-row{border-top:1px solid #294565;padding:7px 0;display:flex;justify-content:space-between;gap:6px;align-items:center}.radar-row strong{font-size:12px}.radar-row small{display:block;font-size:10px;color:var(--dim)}.pick{padding:5px 9px;flex:none}.up{color:#53e981}.down{color:#ff8291}.main{flex:1;min-width:0;padding:29px clamp(15px,4vw,58px);max-width:1660px;margin:0 auto}.hero{border:1px solid #31537e;border-radius:15px;padding:23px 25px;background:linear-gradient(125deg,#162c4b,#0b1830)}.hero-line,.row{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}h1{font-size:27px;margin:0;letter-spacing:.5px}h2{font-size:15px;margin:0;font-weight:750}.chip{border:1px solid #355b82;border-radius:9px;padding:8px 14px;background:#173456;font-size:12px;color:var(--dim)}.mode{display:grid;grid-template-columns:1fr 1fr 1.4fr;gap:12px;margin:12px 0}.mode>div{padding:10px 16px;border-radius:7px;background:#193a39;color:var(--green);font-weight:700}.mode>div:nth-child(2){background:#163253;color:#60b5ff}.mode>div:nth-child(3){background:transparent;color:var(--dim);font-size:11px;font-weight:400}.news{display:flex;gap:12px;align-items:center;background:#102744;border:1px solid #335c88;border-radius:8px;padding:10px 13px;margin:0 0 17px}.news strong{color:#8bf16d;font-size:11px;white-space:nowrap}.news-text{flex:1;white-space:nowrap;overflow:hidden;color:#c9def3}.section{margin-top:18px}.bar{border:1px solid #745089;border-radius:8px 8px 0 0;background:linear-gradient(90deg,#4d2145,#151b36);padding:11px 15px;font-size:13px;font-weight:800}.bar.blue{border-color:#355e94;background:linear-gradient(90deg,#193c69,#11243d)}.bar.purple{border-color:#664daa;background:linear-gradient(90deg,#442761,#18223d)}.panel{background:#102039;border:1px solid #284467;padding:14px;border-radius:0 0 9px 9px}.two{display:grid;grid-template-columns:minmax(0,1fr) minmax(280px,.85fr);gap:14px}.cards{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}.card{border:1px solid #2d4d72;border-radius:9px;background:linear-gradient(130deg,#182e4b,#0d1c34);padding:13px}.card .caption{color:var(--dim);font-size:10px}.card strong{display:block;font-size:20px;margin-top:6px}.big-pnl{font-size:35px!important}.callout{border-radius:6px;background:#17375b;color:#acd3ff;padding:14px}.muted{color:var(--dim)}.gap{margin:13px 0}.chartrow{display:grid;grid-template-columns:minmax(0,1fr) 270px;gap:15px}.chart-controls{display:grid;grid-template-columns:1fr 140px auto;align-items:end;gap:9px;margin-bottom:10px}.chartbox{height:370px;background:#0e192c;border:1px solid #263e61;border-radius:7px;overflow:hidden}.chartbox canvas{display:block;width:100%;height:100%}.info{padding:12px;background:#173255;border-radius:6px;font-size:12px;color:#a9c9ef}.grid2{display:grid;grid-template-columns:1fr 1fr;gap:9px}.summary{font-size:18px;font-weight:750}.pill{font-size:11px;color:#a6d0ff;border:1px solid #305a83;padding:6px 10px;border-radius:5px}.tabs{display:flex;gap:6px;flex-wrap:wrap;margin:12px 0}.tabs button.active{background:#235276;border-color:#6a92c5}.tablewrap{overflow:auto}table{border-collapse:collapse;width:100%;min-width:690px}th,td{padding:10px;border:1px solid #2b4058;font-size:11px;text-align:left}th{background:#142941;color:#abc8e8}td{background:#0b192b}.placeholder{text-align:center;color:var(--dim);padding:24px}.scanner-head{display:grid;grid-template-columns:1fr 215px;gap:15px}.analytics{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}.daily{display:grid;grid-template-columns:repeat(7,1fr);gap:8px}.footer{font-size:11px;color:var(--dim);margin:24px 0}.alert{color:#ffc98b}.onewide{grid-column:1/-1}@media(max-width:1050px){.sidebar{width:205px}.main{padding:15px}.chartrow,.two{grid-template-columns:1fr}.cards,.analytics{grid-template-columns:repeat(2,1fr)}}@media(max-width:680px){.layout{display:block}.sidebar{position:relative;width:auto;height:auto;max-height:420px}.mode,.scanner-head{grid-template-columns:1fr}.chart-controls{grid-template-columns:1fr 1fr}.chart-controls button{grid-column:1/-1}.daily{grid-template-columns:repeat(4,1fr)}h1{font-size:21px}.main{padding:12px}}
+</style></head><body><div class="layout">
+<aside class="sidebar"><div class="side-title">◈ GATE.IO FUTURES RADAR<div class="tiny">USDT Perpetuals · Rolling 24-hour rankings</div></div><label for="rank">Market ranking</label><select id="rank"><option value="gainers">🚀 24h Top Gainers</option><option value="losers">🔻 24h Top Losers</option><option value="volume">📊 Top Volume</option></select><label for="volume">24h volume filter</label><select id="volume"><option value="0">All trading pairs</option><option value="1000000">At least $1M</option><option value="3000000">At least $3M</option><option value="10000000">At least $10M</option></select><div class="status" id="radarStatus">Loading public Gate.io market rankings…</div><div id="radarList"></div><p class="tiny">Choose ↗ to display a pair in the main candlestick chart. Public price data only; not trade recommendations.</p><button class="btn wide" id="refreshRadar">↻ Refresh market data</button></aside>
+<main class="main">
+<header class="hero"><div class="hero-line"><h1>◈ LUXALGO PRO · TRADING TERMINAL</h1><span class="chip">◉ GATE.IO · CLOUD</span></div><div class="row" style="margin-top:8px"><span class="tiny">Gate.io USDT perpetuals · LuxAlgo webhook monitor · Coded by SUBHASISH</span><span class="tiny">Read-only dashboard · No orders placed</span></div></header>
+<div class="mode"><div>● SIGNAL RECEIVER CONFIGURED</div><div>LIVE TRADING OFF</div><div>Gate.io private check previously succeeded. Live execution and position sync not installed.</div></div>
+<div class="news"><strong>LATEST CRYPTO NEWS</strong><span class="news-text">News feed is not connected yet — market information displayed elsewhere uses Gate.io public API data.</span><button class="btn" disabled title="News feed not connected">↻ Refresh News</button></div>
+<section class="section"><div class="bar">1 · MANUALLY CLOSE FUTURES POSITION</div><div class="panel two"><div><button class="btn wide" disabled>✕ Close Position — unavailable</button><p class="tiny gap">Disabled until authenticated position tracking, permission checks and protective order handling are implemented.</p></div><div class="callout">Real trading is OFF. No position can be closed from this interface. This control will not submit an exchange order.</div></div></section>
+<section class="section"><div class="bar">2 · OPEN GATE.IO FUTURES POSITIONS &amp; LIVE P&amp;L</div><div class="panel two"><div><div class="card"><div class="caption">UNREALIZED P&amp;L</div><strong class="big-pnl">— USDT</strong><span class="tiny">Not connected to private account positions</span></div><div class="grid2 gap"><div class="card"><div class="caption">Open verified positions</div><strong>—</strong></div><div class="card"><div class="caption">TP strategy</div><strong>TP1 / TP2</strong><span class="tiny">Planned, not active</span></div></div></div><div><div class="callout">Position synchronization has not been implemented. No live trading data is being displayed.</div><p class="tiny gap">Never interpret this blank status as confirmation that your exchange account has zero positions. Check Gate.io directly.</p></div></div></section>
+<section class="section"><div class="bar blue">3 · GATE.IO FUTURES POSITION &amp; CANDLESTICK CHART</div><div class="panel chartrow"><div><div class="chart-controls"><div><label for="pair">Search / select Gate.io USDT perpetual pair</label><select id="pair"><option value="BTC_USDT">BTCUSDT</option><option value="ETH_USDT">ETHUSDT</option><option value="SOL_USDT">SOLUSDT</option><option value="XRP_USDT">XRPUSDT</option></select></div><div><label for="tf">Timeframe</label><select id="tf"><option value="15m">15m</option><option value="5m">5m</option><option value="1h">1h</option></select></div><button class="btn" id="refresh">↻ Refresh</button></div><div class="chartbox"><canvas id="candles"></canvas></div><p class="tiny gap" id="marketStatus">Loading public Gate.io candles…</p><div class="info">The chart uses public completed market candles, not authenticated fills, position prices or trading recommendations.</div></div><div><h2>POSITION DETAILS</h2><div class="info gap">No synchronized Gate.io position data.</div><div class="grid2"><div class="card"><div class="caption">Pair / Direction</div><strong>—</strong></div><div class="card"><div class="caption">Entry / Quantity</div><strong>—</strong></div><div class="card"><div class="caption">Stop Loss</div><strong>—</strong></div><div class="card"><div class="caption">TP1 / TP2</div><strong>—</strong></div></div><h2 class="gap">PLANNED RISK SETTINGS</h2><div class="grid2"><div class="card"><div class="caption">Timeframe / Leverage</div><strong>15m · 5×</strong></div><div class="card"><div class="caption">Risk / Max positions</div><strong>0.5% · 1</strong></div><div class="card"><div class="caption">SL ATR</div><strong>1.5×</strong></div><div class="card"><div class="caption">TP1 / TP2 ATR</div><strong>2× / 3×</strong></div></div><p class="tiny gap">Hedge mode · Cross margin. These are planned values, not active exchange orders.</p></div></div></section>
+<section class="section"><div class="bar purple">AI FUTURES OPPORTUNITY SCANNER · PUBLIC MARKET WATCH</div><div class="panel"><div class="scanner-head"><div><h2>GATE.IO USDT PERPETUALS · MARKET OVERVIEW</h2><div class="tiny">Public 24h relative price change / volume data only. EMA, RSI, MACD, breakout and predictive scoring not implemented.</div></div><div><button class="btn wide" id="refreshScanner">↻ Refresh Market Watch</button><p class="tiny">Manual refresh · Public API</p></div></div><div class="cards gap"><div class="card"><div class="caption">MARKETS LOADED</div><strong id="totalMarkets">—</strong></div><div class="card"><div class="caption">24H POSITIVE CHANGE</div><strong id="positiveMarkets">—</strong></div><div class="card"><div class="caption">24H NEGATIVE CHANGE</div><strong id="negativeMarkets">—</strong></div><div class="card"><div class="caption">FULL AI SCORES</div><strong>Not active</strong></div></div><div class="tabs"><button class="btn active" data-view="gainers">🚀 24H GAINERS</button><button class="btn" data-view="losers">🔻 24H LOSERS</button><button class="btn" data-view="volume">📊 TOP VOLUME</button></div><div class="tablewrap"><table><thead><tr><th>Pair</th><th>24h change</th><th>Last</th><th>24h volume (USDT)</th><th>Source</th></tr></thead><tbody id="scannerRows"><tr><td colspan="5" class="placeholder">Loading public data…</td></tr></tbody></table></div><p class="tiny gap" id="scannerStatus">No AI predictions or automated trade signals are generated by this market-watch panel.</p></div></section>
+<section class="section"><div class="bar purple">4 · RECENT COMPLETED GATE.IO TRADES</div><div class="panel"><div class="tablewrap"><table><thead><tr><th>Closed UTC</th><th>Pair</th><th>Side</th><th>Entry</th><th>Exit</th><th>Qty</th><th>Net P&amp;L</th><th>Status</th></tr></thead><tbody><tr><td colspan="8" class="placeholder">Verified exchange trade history is not connected. No simulated trades are shown as actual executions.</td></tr></tbody></table></div></div></section>
+<section class="section"><div class="bar blue">PERFORMANCE ANALYTICS</div><div class="panel"><div class="tabs"><span class="pill">All records</span><span class="pill">7 days</span><span class="pill">30 days</span><span class="pill">90 days</span><span class="tiny">Filters unavailable until verified trade records are connected</span></div><div class="analytics"><div class="card"><div class="caption">Total realized P&amp;L</div><strong>— USDT</strong></div><div class="card"><div class="caption">Exit records</div><strong>—</strong></div><div class="card"><div class="caption">Win rate</div><strong>—</strong></div><div class="card"><div class="caption">Profit factor</div><strong>—</strong></div></div><div class="two gap"><div class="info">REALIZED P&amp;L PROGRESSION<br><br>Awaiting verified trade history</div><div class="info">WINNING VS LOSING TRADES<br><br>Awaiting verified trade history</div></div></div></section>
+<section class="section"><div class="bar blue">DAILY REALIZED P&amp;L · LAST 7 DAYS</div><div class="panel"><div class="daily" id="dailyCards"></div><p class="tiny gap">Daily values cannot be calculated without authenticated, persistent order-fill history.</p></div></section>
+<section class="section"><div class="bar blue">🔔 RECENT LUXALGO SIGNALS</div><div class="panel"><div class="tablewrap"><table><thead><tr><th>Received UTC</th><th>Pair</th><th>Direction</th><th>Timeframe</th><th>Source</th><th>Entry</th><th>SL</th><th>TP1</th></tr></thead><tbody><tr><td colspan="8" class="placeholder">0 signal(s) received since this Railway restart. Signal details are private and not exposed on this public page.</td></tr></tbody></table></div><div class="tiny gap">Signal records currently live only in server memory; a restart clears them. Secure, persistent storage and dashboard authentication are required for full history.</div></div></section>
+<div class="footer">LUXALGO PRO · Gate.io public market data · LuxAlgo receiver and authenticated diagnostics preserved · Live trading OFF · No orders, transfers or withdrawals.</div>
+</main></div>
+<script>
+(()=>{'use strict';const chart=document.getElementById('candles'),pair=document.getElementById('pair'),tf=document.getElementById('tf'),ms=document.getElementById('marketStatus'),refresh=document.getElementById('refresh');let candles=[],markets=[],view='gainers';const money=n=>Number.isFinite(n)?Number(n).toLocaleString('en-US',{maximumFractionDigits:0}):'—';const fmt=n=>Number.isFinite(n)?Number(n).toLocaleString('en-US',{maximumSignificantDigits:7}):'—';
+function draw(){const rect=chart.getBoundingClientRect(),w=Math.max(300,rect.width),h=Math.max(180,rect.height),scale=Math.min(devicePixelRatio||1,2);chart.width=Math.round(w*scale);chart.height=Math.round(h*scale);const c=chart.getContext('2d');c.scale(scale,scale);c.fillStyle='#0e192c';c.fillRect(0,0,w,h);if(!candles.length){c.fillStyle='#afc9e3';c.fillText('No market candle data',15,28);return}const left=12,right=78,top=17,bottom=29,plotW=w-left-right,plotH=h-top-bottom;const lo=Math.min(...candles.map(x=>x.l)),hi=Math.max(...candles.map(x=>x.h)),pad=Math.max((hi-lo)*.07,hi*.000001),min=lo-pad,max=hi+pad,y=v=>top+(max-v)/(max-min)*plotH;c.strokeStyle='#263b56';c.font='11px system-ui';for(let j=0;j<=4;j++){const p=top+j*plotH/4,v=max-(max-min)*j/4;c.beginPath();c.moveTo(left,p);c.lineTo(w-right,p);c.stroke();c.fillStyle='#9db5d1';c.fillText(fmt(v),w-right+7,p+3)}const step=plotW/candles.length,bar=Math.max(2,Math.min(11,step*.62));candles.forEach((x,i)=>{const xx=left+step*(i+.5);c.fillStyle=c.strokeStyle=x.c>=x.o?'#50e887':'#ff5c77';c.beginPath();c.moveTo(xx,y(x.h));c.lineTo(xx,y(x.l));c.stroke();c.fillRect(xx-bar/2,y(Math.max(x.o,x.c)),bar,Math.max(1,Math.abs(y(x.c)-y(x.o))))});c.fillStyle='#9db5d1';for(const i of [0,Math.floor(candles.length/2),candles.length-1])c.fillText(new Date(candles[i].t*1000).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'}),left+step*i,h-7)}
+async function updateChart(){refresh.disabled=true;ms.textContent='Loading public Gate.io candles…';try{const r=await fetch('/market/candles?contract='+encodeURIComponent(pair.value)+'&interval='+encodeURIComponent(tf.value),{cache:'no-store'});if(!r.ok)throw Error('Market data error HTTP '+r.status);const j=await r.json();if(!Array.isArray(j.candles))throw Error('Invalid candle data');candles=j.candles;draw();ms.textContent=pair.value+' · '+tf.value+' · '+candles.length+' completed candles · updated '+new Date().toLocaleTimeString()}catch(e){candles=[];draw();ms.textContent=e.message}finally{refresh.disabled=false}}
+function sorted(list,sort){const x=list.slice();if(sort==='gainers')x.sort((a,b)=>b.change-a.change);else if(sort==='losers')x.sort((a,b)=>a.change-b.change);else x.sort((a,b)=>b.volume-a.volume);return x}
+function addPair(k){if(!Array.from(pair.options).some(o=>o.value===k)){const o=document.createElement('option');o.value=k;o.textContent=k.replace('_','');pair.appendChild(o)}pair.value=k;updateChart();document.querySelector('.chartbox').scrollIntoView({behavior:'smooth',block:'center'})}
+function renderRadar(){const mode=document.getElementById('rank').value,min=Number(document.getElementById('volume').value);const rows=sorted(markets.filter(x=>x.volume>=min),mode).slice(0,20);const box=document.getElementById('radarList');box.replaceChildren();for(const [i,m] of rows.entries()){const d=document.createElement('div');d.className='radar-row';const a=document.createElement('div'),b=document.createElement('button');const name=document.createElement('strong');name.textContent=(i+1)+'. '+m.contract.replace('_','')+' ';const ch=document.createElement('span');ch.className=m.change>=0?'up':'down';ch.textContent=(m.change>=0?'+':'')+m.change.toFixed(2)+'%';name.appendChild(ch);const vol=document.createElement('small');vol.textContent='24h quote volume $'+money(m.volume);a.append(name,vol);b.className='pick';b.textContent='↗';b.title='View on candle chart';b.addEventListener('click',()=>addPair(m.contract));d.append(a,b);box.appendChild(d)}if(!rows.length)box.textContent='No matching market data';document.getElementById('radarStatus').textContent=markets.length+' public futures tickers · '+new Date().toLocaleTimeString()+' · Manual refresh'}
+function renderScanner(){const list=sorted(markets,view).slice(0,12),target=document.getElementById('scannerRows');target.replaceChildren();for(const x of list){const tr=document.createElement('tr');for(const v of [x.contract.replace('_',''),(x.change>=0?'+':'')+x.change.toFixed(2)+'%',fmt(x.last),'$'+money(x.volume),'Gate.io 24h ticker']){const td=document.createElement('td');td.textContent=v;tr.appendChild(td)}target.appendChild(tr)}if(!list.length){const tr=document.createElement('tr'),td=document.createElement('td');td.colSpan=5;td.className='placeholder';td.textContent='No market data available';tr.appendChild(td);target.appendChild(tr)}document.getElementById('totalMarkets').textContent=markets.length||'—';document.getElementById('positiveMarkets').textContent=markets.length?markets.filter(x=>x.change>0).length:'—';document.getElementById('negativeMarkets').textContent=markets.length?markets.filter(x=>x.change<0).length:'—'}
+async function updateMarkets(){for(const id of ['refreshRadar','refreshScanner'])document.getElementById(id).disabled=true;document.getElementById('scannerStatus').textContent='Loading Gate.io public ticker data…';try{const res=await fetch('/market/radar',{cache:'no-store'});if(!res.ok)throw Error('Public ticker API HTTP '+res.status);const obj=await res.json();if(!Array.isArray(obj.markets))throw Error('Invalid market response');markets=obj.markets;renderRadar();renderScanner();document.getElementById('scannerStatus').textContent='Updated '+new Date().toLocaleTimeString()+' · 24h price changes are not buy/sell signals; no AI predictions are active.'}catch(e){document.getElementById('scannerStatus').textContent='Market radar unavailable: '+e.message}finally{for(const id of ['refreshRadar','refreshScanner'])document.getElementById(id).disabled=false}}
+pair.addEventListener('change',updateChart);tf.addEventListener('change',updateChart);refresh.addEventListener('click',updateChart);window.addEventListener('resize',draw);document.getElementById('refreshRadar').addEventListener('click',updateMarkets);document.getElementById('refreshScanner').addEventListener('click',updateMarkets);document.getElementById('rank').addEventListener('change',renderRadar);document.getElementById('volume').addEventListener('change',renderRadar);document.querySelectorAll('[data-view]').forEach(b=>b.addEventListener('click',()=>{view=b.dataset.view;document.querySelectorAll('[data-view]').forEach(x=>x.classList.toggle('active',x===b));renderScanner()}));const days=document.getElementById('dailyCards');for(let i=6;i>=0;i--){const d=new Date();d.setDate(d.getDate()-i);const box=document.createElement('div');box.className='card';const label=document.createElement('div');label.className='caption';label.textContent=d.toLocaleDateString([],{weekday:'short',day:'numeric'});const value=document.createElement('strong');value.textContent='—';const note=document.createElement('span');note.className='tiny';note.textContent='Not connected';box.append(label,value,note);days.appendChild(box)}updateChart();updateMarkets();})();
+</script></body></html>
