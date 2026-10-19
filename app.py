@@ -306,7 +306,7 @@ def _scan_http_json(path):
     req = Request('https://api.gateio.ws' + path,
                   headers={'Accept':'application/json','User-Agent':'LuxAlgo-PRO-PublicScanner/1.0'},method='GET')
     with urlopen(req, timeout=8) as res:
-        return json.loads(res.read(350000))
+        return json.loads(res.read(2000000))
 
 
 def _ema(values, n):
