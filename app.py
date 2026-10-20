@@ -103,7 +103,7 @@ def _db_record(record,event_id):
             duplicate = cur.fetchone() is None
     return duplicate
 
-PAGE = '''<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>LUXALGO PRO · Trading Terminal</title>
+PAGE = '''<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>LUXALGO PRO · Trading Terminal</title><script defer src="https://cdn.jsdelivr.net/npm/lightweight-charts@5.0.8/dist/lightweight-charts.standalone.production.js"></script>
 <style>:root{color-scheme:dark}*{box-sizing:border-box}body{margin:0;background:#08111f;color:#edf5ff;font:14px/1.5 system-ui,Segoe UI,Arial}.wrap{max-width:1180px;margin:auto;padding:24px}header,.panel,.metric{background:#122238;border:1px solid #29415e;border-radius:12px;padding:19px}header{display:flex;justify-content:space-between;gap:12px;align-items:center}h1{font-size:23px;margin:0}h2{font-size:15px;margin:0 0 15px}p{margin:5px 0;color:#a8bed6}.tag{color:#ffc47c;font-weight:700}.grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin:15px 0}.metric small{color:#9fb5cf}.metric strong{display:block;margin-top:8px;font-size:18px}.panel{margin-top:14px}.tablewrap{overflow:auto}table{border-collapse:collapse;width:100%;min-width:650px}th,td{padding:11px 9px;border-bottom:1px solid #2b435e;text-align:left}th{color:#a7c0dc;font-size:12px}td{font-size:13px}.light{color:#a8bed6}.ok{color:#47dfae}.off{color:#ffc47c}.btn{background:#203b5c;color:#eef6ff;border:1px solid #46749d;border-radius:7px;padding:8px 12px;cursor:pointer}.btn:disabled{opacity:.5}#planResults{white-space:pre-wrap;font:13px/1.7 ui-monospace,Consolas,monospace;background:#0b1a2b;border:1px solid #2b435e;border-radius:8px;padding:14px}.controls{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:12px;margin:14px 0}.controls label{display:flex;flex-direction:column;color:#a8bed6;font-size:12px;gap:5px}.controls input,.controls select{background:#0b1a2b;color:#edf5ff;border:1px solid #46749d;border-radius:7px;padding:9px;font:inherit}.controls input:read-only{opacity:.7}.foot{padding:18px 2px;font-size:12px;color:#a8bed6}@media(max-width:800px){.grid{grid-template-columns:repeat(2,minmax(0,1fr))}header{display:block}.wrap{padding:12px}}.market-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:14px}.market-grid .panel{margin-top:0}.market-panel{min-width:0}.panel-heading{display:flex;justify-content:space-between;align-items:center;gap:9px}.panel-heading h2{margin:0}.market-tabs{display:flex;flex-wrap:wrap;gap:6px;margin:12px 0}.market-tabs .btn{font-size:11px;padding:7px}.market-tabs .selected{background:linear-gradient(140deg,#1c5377,#17416a);border-color:#49e3e9;color:#e6fdff;box-shadow:0 0 10px #00c9e740}.market-filters{display:flex;gap:8px;margin-bottom:9px}.market-filters input,.market-filters select{min-width:0;max-width:100%;background:#0b1a2b;border:1px solid #3b5b7c;color:#eaf7ff;border-radius:7px;padding:9px}.market-filters input{flex:1}.market-scroll{max-height:360px;overflow:auto}.market-scroll table{min-width:390px}.market-scroll th{position:sticky;top:0;background:#162c45;z-index:1}.pairlink{border:0;background:transparent;color:#a9e9ff;text-align:left;cursor:pointer;text-decoration:underline;font-weight:700}.gloss-gold,.gloss-cyan,.positive,.negative{font-weight:750}.gloss-gold{background:linear-gradient(#fff7c8,#ffd368 45%,#d68c3f);background-clip:text;-webkit-background-clip:text;color:transparent}.gloss-cyan{background:linear-gradient(#fff,#56eaff 40%,#16a5d9);background-clip:text;-webkit-background-clip:text;color:transparent}.positive{color:#57f6bd;text-shadow:0 0 9px #28dd9550}.negative{color:#ff829e;text-shadow:0 0 8px #f8527450}header h1,h2{background:linear-gradient(180deg,#ffffff 12%,#b9e7ff 56%,#78bcef 100%);-webkit-background-clip:text;background-clip:text;color:transparent}.tag{background:linear-gradient(180deg,#ffeac8,#ffbf58 65%,#c18134);-webkit-background-clip:text;background-clip:text;color:transparent}.metric strong.ok{color:#5bffd1;text-shadow:0 0 8px #3beacb55}@media(max-width:1080px){.market-grid{grid-template-columns:1fr}}
 
 /* Desktop terminal redesign: preserves original JS bindings and backend routes. */
@@ -158,7 +158,8 @@ h2{font-size:15px;font-weight:850;letter-spacing:.3px}
 <div class="tablewrap"><table><thead><tr><th>PAIR</th><th>SIDE</th><th>ENTRY</th><th>MARK PRICE</th><th>UNREALIZED P&amp;L</th><th>LEVERAGE</th><th>SL</th><th>TP1</th><th>STATE</th></tr></thead><tbody><tr><td colspan="9" class="empty-state">Open positions are not synchronized with Gate.io. No actual trades are displayed. Manual closing will be enabled only after verified positions and safe exchange-side closing orders are implemented.</td></tr></tbody></table></div></section><section class="panel"><h2>IN-TERMINAL MARKET CHART</h2>
 <p class="light">Select a signal above, or enter a Gate.io USDT perpetual pair. Charts use public market candles only (not position/fill data).</p>
 <div class="controls"><label>Trading pair <input id="chartSymbol" value="BTCUSDT" maxlength="29" autocomplete="off"></label><label>Chart timeframe<select id="chartTf"><option value="15m">15 minutes</option><option value="5m">5 minutes</option></select></label><label>Chart refresh <button class="btn" id="chartRefresh" type="button">Refresh Chart</button></label></div>
-<canvas id="tradeChart" width="1050" height="360" style="display:block;width:100%;height:360px;background:#0b1a2b;border:1px solid #29415e;border-radius:8px" aria-label="Public candlestick price chart"></canvas>
+<div class="chart-toolbar" style="display:flex;flex-wrap:wrap;gap:8px;margin:10px 0;align-items:center"><button class="btn" id="zoomIn" type="button">＋ Zoom In</button><button class="btn" id="zoomOut" type="button">－ Zoom Out</button><button class="btn" id="resetChart" type="button">Reset View</button><button class="btn" id="olderChart" type="button">Load Older Candles</button><button class="btn" id="fullChart" type="button">⛶ Fullscreen</button><button class="btn" id="openTradingView" type="button">Open in TradingView ↗</button><span class="light" style="font-size:12px">Wheel: zoom · drag: pan · scroll back for history</span></div>
+<div id="chartShell" style="position:relative;background:#0b1a2b;border:1px solid #29415e;border-radius:8px;overflow:hidden"><div id="tradeChart" style="height:410px;width:100%;min-height:320px" role="img" aria-label="Interactive candlestick market chart"></div></div>
 <p class="light" id="chartStatus" aria-live="polite">Select a token to load its market chart.</p>
 </section>
 <div class="market-grid">
@@ -192,26 +193,77 @@ document.querySelectorAll('.plan').forEach(b=>b.addEventListener('click',async()
 }));
 
 (function(){
-const canvas=document.getElementById('tradeChart'), ctx=canvas.getContext('2d'),symbol=document.getElementById('chartSymbol'),tf=document.getElementById('chartTf'),status=document.getElementById('chartStatus'),refresh=document.getElementById('chartRefresh');
-async function loadChart(){
- const pair=symbol.value.trim().toUpperCase().replaceAll(' ','');
- if(!/^[A-Z0-9]{3,25}USDT$/.test(pair)){status.textContent='Enter a valid USDT perpetual symbol, e.g. BTCUSDT';return;}
- refresh.disabled=true;status.textContent='Loading '+pair+' '+tf.value+' public candles…';
- try{
-  const q=new URLSearchParams({symbol:pair,tf:tf.value});const r=await fetch('/terminal/chart?'+q,{cache:'no-store'});const data=await r.json();if(!r.ok)throw Error(data.error||'Market data unavailable');
-  const bars=data.candles;if(!bars.length)throw Error('No completed candles');
-  const W=canvas.width,H=canvas.height,L=14,R=88,T=18,B=28,pW=W-L-R,pH=H-T-B;
-  const lo=Math.min(...bars.map(b=>b.l)),hi=Math.max(...bars.map(b=>b.h)),pad=Math.max((hi-lo)*0.06,hi*0.00001),min=lo-pad,max=hi+pad;
-  const y=v=>T+(max-v)/(max-min)*pH;
-  ctx.fillStyle='#0b1a2b';ctx.fillRect(0,0,W,H);ctx.lineWidth=1;ctx.font='13px system-ui';
-  for(let k=0;k<=5;k++){const val=max-(max-min)*k/5,py=T+pH*k/5;ctx.strokeStyle='#263d57';ctx.beginPath();ctx.moveTo(L,py);ctx.lineTo(W-R,py);ctx.stroke();ctx.fillStyle='#a8bed6';ctx.fillText(val.toPrecision(6),W-R+9,py+4)}
-  const step=pW/bars.length,bw=Math.max(3,Math.min(12,step*.65));
-  bars.forEach((b,i)=>{const x=L+step*(i+.5),green=b.c>=b.o;ctx.strokeStyle=ctx.fillStyle=green?'#47dfae':'#ef6983';ctx.beginPath();ctx.moveTo(x,y(b.h));ctx.lineTo(x,y(b.l));ctx.stroke();const upper=y(Math.max(b.c,b.o)),lower=y(Math.min(b.c,b.o));ctx.fillRect(x-bw/2,upper,bw,Math.max(1,lower-upper));});
-  ctx.fillStyle='#a8bed6';for(const i of [0,Math.floor((bars.length-1)/2),bars.length-1]){const date=new Date(bars[i].t*1000);ctx.fillText(date.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'}),L+step*i,H-7)}
-  status.textContent=pair+' · '+tf.value+' · '+bars.length+' completed public candles · refreshed '+new Date().toLocaleTimeString()+' · Informational, not an execution chart';
- }catch(e){ctx.clearRect(0,0,canvas.width,canvas.height);status.textContent='Chart unavailable: '+e.message}finally{refresh.disabled=false}
+'use strict';
+const container=document.getElementById('tradeChart'),shell=document.getElementById('chartShell');
+const symbol=document.getElementById('chartSymbol'),tf=document.getElementById('chartTf'),status=document.getElementById('chartStatus'),refresh=document.getElementById('chartRefresh');
+let chart=null, series=null, bars=[],loading=false,olderLoading=false,loadedPair='',loadedTf='',pending=0;
+const validPair=()=>symbol.value.trim().toUpperCase().replaceAll(' ','');
+function initialize(){
+ if(chart)return true;
+ if(typeof LightweightCharts==='undefined'){
+  status.textContent='Chart library did not load. Check network or browser content blockers, then refresh the page.';return false;
+ }
+ chart=LightweightCharts.createChart(container,{autoSize:true,layout:{background:{type:'solid',color:'#0b1a2b'},textColor:'#b8d5ed',attributionLogo:true},grid:{vertLines:{color:'#193047'},horzLines:{color:'#193047'}},rightPriceScale:{borderColor:'#365471'},timeScale:{borderColor:'#365471',timeVisible:true,secondsVisible:false,rightOffset:5},crosshair:{mode:LightweightCharts.CrosshairMode.Normal},handleScroll:{mouseWheel:true,pressedMouseMove:true,horzTouchDrag:true,vertTouchDrag:true},handleScale:{mouseWheel:true,pinch:true,axisPressedMouseMove:true}});
+ series=chart.addSeries(LightweightCharts.CandlestickSeries,{upColor:'#3fe6ad',downColor:'#ef6983',borderVisible:false,wickUpColor:'#3fe6ad',wickDownColor:'#ef6983'});
+ return true;
 }
-refresh.addEventListener('click',loadChart);tf.addEventListener('change',loadChart);symbol.addEventListener('change',loadChart);window.loadChart=loadChart;loadChart();setInterval(()=>{if(!document.hidden)loadChart()},30000);
+async function readCandles(before){
+ const q=new URLSearchParams({symbol:validPair(),tf:tf.value});if(before)q.set('before',String(before));
+ const r=await fetch('/terminal/chart?'+q,{cache:'no-store'}),d=await r.json();
+ if(!r.ok)throw Error(d.error||'Market data unavailable');
+ return (d.candles||[]).map(b=>({time:b.t,open:b.o,high:b.h,low:b.l,close:b.c})).sort((a,b)=>a.time-b.time);
+}
+async function loadChart(){
+ const pair=validPair();if(!/^[A-Z0-9]{3,25}USDT$/.test(pair)){status.textContent='Enter a valid USDT pair, such as BTCUSDT';return;}
+ if(!initialize())return;
+ if(loading)return;
+ const ticket=++pending;loading=true;refresh.disabled=true;
+ const same=(loadedPair===pair&&loadedTf===tf.value);
+ status.textContent='Loading '+pair+' · '+tf.value+' candles…';
+ try{
+  const batch=await readCandles();if(!batch.length)throw Error('No completed candles');
+  if(ticket!==pending)return;
+  if(!same){bars=batch;loadedPair=pair;loadedTf=tf.value;series.setData(bars);chart.timeScale().fitContent();}
+  else{
+   const range=chart.timeScale().getVisibleLogicalRange();
+   bars=Array.from(new Map([...bars,...batch].map(b=>[b.time,b])).values()).sort((a,b)=>a.time-b.time);
+   series.setData(bars);
+   if(range)chart.timeScale().setVisibleLogicalRange(range);
+  }
+  status.textContent=pair+' · '+tf.value+' · '+bars.length+' historical completed candles · '+new Date().toLocaleTimeString()+' · Wheel to zoom, drag to pan. Read-only market chart.';
+ }catch(e){status.textContent='Chart unavailable: '+e.message;}finally{loading=false;refresh.disabled=false;}
+}
+async function loadOlder(){
+ if(olderLoading||!bars.length||!initialize())return;
+ olderLoading=true;document.getElementById('olderChart').disabled=true;
+ const pair=validPair(),oldest=bars[0].time,range=chart.timeScale().getVisibleLogicalRange();
+ try{
+  const batch=await readCandles(oldest);
+  if(pair!==loadedPair||tf.value!==loadedTf)return;
+  const earlier=batch.filter(b=>b.time<oldest);if(!earlier.length){status.textContent='No older candles were returned for this contract.';return;}
+  bars=Array.from(new Map([...earlier,...bars].map(b=>[b.time,b])).values()).sort((a,b)=>a.time-b.time);
+  series.setData(bars);
+  if(range)chart.timeScale().setVisibleLogicalRange({from:range.from+earlier.length,to:range.to+earlier.length});
+  status.textContent='Loaded '+earlier.length+' older candles · '+bars.length+' total · drag to browse history.';
+ }catch(e){status.textContent='Historical data unavailable: '+e.message;}finally{olderLoading=false;document.getElementById('olderChart').disabled=false;}
+}
+refresh.addEventListener('click',loadChart);tf.addEventListener('change',loadChart);symbol.addEventListener('change',loadChart);
+document.getElementById('zoomIn').addEventListener('click',()=>{if(initialize())chart.timeScale().setBarSpacing(Math.min(55,chart.timeScale().options().barSpacing*1.35));});
+document.getElementById('zoomOut').addEventListener('click',()=>{if(initialize())chart.timeScale().setBarSpacing(Math.max(2,chart.timeScale().options().barSpacing/1.35));});
+document.getElementById('resetChart').addEventListener('click',()=>{if(initialize())chart.timeScale().fitContent();});
+document.getElementById('olderChart').addEventListener('click',loadOlder);
+document.getElementById('fullChart').addEventListener('click',async()=>{try{if(document.fullscreenElement)await document.exitFullscreen();else await shell.requestFullscreen();}catch(e){status.textContent='Fullscreen blocked by browser: '+e.message;}});
+document.getElementById('openTradingView').addEventListener('click',()=>{
+ const pair=validPair();if(!/^[A-Z0-9]{3,25}USDT$/.test(pair))return;
+ // TradingView account workspace opens separately: indicator availability is account-dependent.
+ const tv='https://www.tradingview.com/chart/?symbol='+encodeURIComponent('GATEIO:'+pair+'.P');
+ window.open(tv,'_blank','noopener,noreferrer');
+});
+window.loadChart=loadChart;
+// Defer initialization until the external TradingView Lightweight Charts script has loaded.
+function start(){if(typeof LightweightCharts==='undefined'){status.textContent='Loading interactive chart library…';setTimeout(start,400);return;}loadChart();}
+start();
+setInterval(()=>{if(!document.hidden)loadChart();},30000);
 })();
 
 (function(){
@@ -222,7 +274,7 @@ let tickerData=[],radarMode='gainers',scanMode='bullish',scanData=[],scanTf='15m
 const fmtPrice=n=>Number(n).toLocaleString(undefined,{maximumSignificantDigits:7});
 const fmtVol=n=>n>=1e9?(n/1e9).toFixed(2)+'B':n>=1e6?(n/1e6).toFixed(2)+'M':n>=1e3?(n/1e3).toFixed(1)+'K':n.toFixed(0);
 function addCell(tr,value,className){const td=document.createElement('td');td.textContent=value;if(className)td.className=className;tr.appendChild(td);return td;}
-function addPair(tr,sym,tf){const td=tr.insertCell(),btn=document.createElement('button');btn.className='pairlink';btn.textContent=sym.replace('_','/');btn.addEventListener('click',()=>{document.getElementById('chartSymbol').value=sym.replace('_','');document.getElementById('chartTf').value=tf;window.loadChart();document.getElementById('tradeChart').scrollIntoView({behavior:'smooth',block:'center'});});td.appendChild(btn);}
+function addPair(tr,sym,tf){const td=tr.insertCell(),btn=document.createElement('button');btn.className='pairlink';btn.textContent=sym.replace('_','/');btn.addEventListener('click',()=>{document.getElementById('chartSymbol').value=sym.replace('_','');document.getElementById('chartTf').value=tf;window.loadChart();document.getElementById('chartShell').scrollIntoView({behavior:'smooth',block:'center'});});td.appendChild(btn);}
 function renderRadar(){let list=tickerData.slice();const q=document.getElementById('radarSearch').value.trim().toUpperCase();if(q)list=list.filter(x=>x.contract.includes(q));list.sort((a,b)=>radarMode==='gainers'?b.change-a.change:radarMode==='losers'?a.change-b.change:radarMode==='volume'?b.volume-a.volume:a.contract.localeCompare(b.contract));const lim=document.getElementById('radarLimit').value;if(lim!=='all')list=list.slice(0,Number(lim));radarBody.replaceChildren();for(const x of list){const tr=document.createElement('tr');addPair(tr,x.contract,document.getElementById('chartTf').value);addCell(tr,fmtPrice(x.last));addCell(tr,(x.change>0?'+':'')+x.change.toFixed(2)+'%',x.change>=0?'positive':'negative');addCell(tr,fmtVol(x.volume));radarBody.appendChild(tr);}if(!list.length){const tr=radarBody.insertRow();addCell(tr,'No pairs match').colSpan=4;}}
 async function loadRadar(){const b=document.getElementById('radarRefresh');b.disabled=true;radarStatus.textContent='Updating public Gate.io tickers…';try{const r=await fetch('/terminal/radar',{cache:'no-store'}),d=await r.json();if(!r.ok)throw Error(d.error||'Radar error');tickerData=d.results;radarStatus.textContent=d.total+' USDT perpetual pairs · updated '+new Date(d.generated_at*1000).toLocaleTimeString()+' · refresh every 60s';renderRadar();}catch(e){radarStatus.textContent='Radar unavailable: '+e.message;}finally{b.disabled=false}}
 function renderScanner(){let list=scanData.filter(x=>scanMode==='all'||x.bias===scanMode);const q=document.getElementById('scannerSearch').value.trim().toUpperCase();if(q)list=list.filter(x=>x.contract.includes(q));list.sort((a,b)=>Math.abs(b.score)-Math.abs(a.score)||a.contract.localeCompare(b.contract));scanBody.replaceChildren();for(const x of list.slice(0,150)){const tr=document.createElement('tr');addPair(tr,x.contract,scanTf);addCell(tr,x.bias.toUpperCase(),x.bias==='bullish'?'positive':x.bias==='bearish'?'negative':'');addCell(tr,String(x.score));addCell(tr,x.rsi.toFixed(1));addCell(tr,x.volume_ratio.toFixed(2)+'x');scanBody.appendChild(tr);}if(!list.length){const tr=scanBody.insertRow();addCell(tr,'No matching scans yet').colSpan=5;}}
@@ -318,11 +370,11 @@ def terminal_chart():
     contract = symbol[:-4] + '_USDT'
     seconds = 300 if tf == '5m' else 900
     url = 'https://api.gateio.ws/api/v4/futures/usdt/candlesticks?' + urlencode(
-        {'contract':contract,'interval':tf,'limit':70})
+        ({'contract':contract,'interval':tf,'from':max(0, int(request.args['before'])-400*seconds),'to':int(request.args['before'])-1} if request.args.get('before','').isdigit() else {'contract':contract,'interval':tf,'limit':400}))
     try:
         req = Request(url, headers={'Accept':'application/json','User-Agent':'LuxAlgo-PRO-Terminal/1.0'},method='GET')
-        with urlopen(req,timeout=8) as res:
-            raw=json.loads(res.read(150000))
+        with urlopen(req,timeout=10) as res:
+            raw=json.loads(res.read(650000))
         now=int(time.time())
         candles=[]
         if not isinstance(raw,list): raise ValueError('Invalid candle payload')
@@ -333,7 +385,7 @@ def terminal_chart():
             if not all(math.isfinite(v) and v>0 for v in (o,h,l,c)) or h<max(o,c,l) or l>min(o,c):
                 raise ValueError('Invalid candle OHLC')
             candles.append(dict(t=t,o=o,h=h,l=l,c=c))
-        candles=sorted({b['t']:b for b in candles}.values(), key=lambda x:x['t'])[-65:]
+        candles=sorted({b['t']:b for b in candles}.values(), key=lambda x:x['t'])[-400:]
         response=jsonify(symbol=symbol,timeframe=tf,candles=candles,orders_enabled=False)
         response.headers['Cache-Control']='private, max-age=10'
         return response
