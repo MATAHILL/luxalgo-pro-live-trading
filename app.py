@@ -105,13 +105,57 @@ def _db_record(record,event_id):
 
 PAGE = '''<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>LUXALGO PRO · Trading Terminal</title>
 <style>:root{color-scheme:dark}*{box-sizing:border-box}body{margin:0;background:#08111f;color:#edf5ff;font:14px/1.5 system-ui,Segoe UI,Arial}.wrap{max-width:1180px;margin:auto;padding:24px}header,.panel,.metric{background:#122238;border:1px solid #29415e;border-radius:12px;padding:19px}header{display:flex;justify-content:space-between;gap:12px;align-items:center}h1{font-size:23px;margin:0}h2{font-size:15px;margin:0 0 15px}p{margin:5px 0;color:#a8bed6}.tag{color:#ffc47c;font-weight:700}.grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin:15px 0}.metric small{color:#9fb5cf}.metric strong{display:block;margin-top:8px;font-size:18px}.panel{margin-top:14px}.tablewrap{overflow:auto}table{border-collapse:collapse;width:100%;min-width:650px}th,td{padding:11px 9px;border-bottom:1px solid #2b435e;text-align:left}th{color:#a7c0dc;font-size:12px}td{font-size:13px}.light{color:#a8bed6}.ok{color:#47dfae}.off{color:#ffc47c}.btn{background:#203b5c;color:#eef6ff;border:1px solid #46749d;border-radius:7px;padding:8px 12px;cursor:pointer}.btn:disabled{opacity:.5}#planResults{white-space:pre-wrap;font:13px/1.7 ui-monospace,Consolas,monospace;background:#0b1a2b;border:1px solid #2b435e;border-radius:8px;padding:14px}.controls{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:12px;margin:14px 0}.controls label{display:flex;flex-direction:column;color:#a8bed6;font-size:12px;gap:5px}.controls input,.controls select{background:#0b1a2b;color:#edf5ff;border:1px solid #46749d;border-radius:7px;padding:9px;font:inherit}.controls input:read-only{opacity:.7}.foot{padding:18px 2px;font-size:12px;color:#a8bed6}@media(max-width:800px){.grid{grid-template-columns:repeat(2,minmax(0,1fr))}header{display:block}.wrap{padding:12px}}.market-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:14px}.market-grid .panel{margin-top:0}.market-panel{min-width:0}.panel-heading{display:flex;justify-content:space-between;align-items:center;gap:9px}.panel-heading h2{margin:0}.market-tabs{display:flex;flex-wrap:wrap;gap:6px;margin:12px 0}.market-tabs .btn{font-size:11px;padding:7px}.market-tabs .selected{background:linear-gradient(140deg,#1c5377,#17416a);border-color:#49e3e9;color:#e6fdff;box-shadow:0 0 10px #00c9e740}.market-filters{display:flex;gap:8px;margin-bottom:9px}.market-filters input,.market-filters select{min-width:0;max-width:100%;background:#0b1a2b;border:1px solid #3b5b7c;color:#eaf7ff;border-radius:7px;padding:9px}.market-filters input{flex:1}.market-scroll{max-height:360px;overflow:auto}.market-scroll table{min-width:390px}.market-scroll th{position:sticky;top:0;background:#162c45;z-index:1}.pairlink{border:0;background:transparent;color:#a9e9ff;text-align:left;cursor:pointer;text-decoration:underline;font-weight:700}.gloss-gold,.gloss-cyan,.positive,.negative{font-weight:750}.gloss-gold{background:linear-gradient(#fff7c8,#ffd368 45%,#d68c3f);background-clip:text;-webkit-background-clip:text;color:transparent}.gloss-cyan{background:linear-gradient(#fff,#56eaff 40%,#16a5d9);background-clip:text;-webkit-background-clip:text;color:transparent}.positive{color:#57f6bd;text-shadow:0 0 9px #28dd9550}.negative{color:#ff829e;text-shadow:0 0 8px #f8527450}header h1,h2{background:linear-gradient(180deg,#ffffff 12%,#b9e7ff 56%,#78bcef 100%);-webkit-background-clip:text;background-clip:text;color:transparent}.tag{background:linear-gradient(180deg,#ffeac8,#ffbf58 65%,#c18134);-webkit-background-clip:text;background-clip:text;color:transparent}.metric strong.ok{color:#5bffd1;text-shadow:0 0 8px #3beacb55}@media(max-width:1080px){.market-grid{grid-template-columns:1fr}}
+
+/* Desktop terminal redesign: preserves original JS bindings and backend routes. */
+:root{--cyan:#59e5ff;--teal:#33efb5;--red:#ff769b;--gold:#ffd47e}
+body{background:radial-gradient(ellipse at 50% -20%,#163b62 0%,#07101d 60%);font-size:14px}
+.wrap{max-width:1740px;padding:19px 24px 36px}
+header{border-color:#38618a;background:linear-gradient(120deg,#132e4d,#0d1c30);box-shadow:inset 0 1px 0 #8ccfff22,0 12px 28px #0004;padding:22px 24px}
+header h1{font-size:26px;font-weight:850;letter-spacing:.3px}
+header p{font-size:13px;margin-top:5px}
+h2{font-size:15px;font-weight:850;letter-spacing:.3px}
+.panel,.metric{background:linear-gradient(162deg,#102943 0%,#102039 62%,#102138 100%);border:1px solid #2a5178;box-shadow:inset 0 1px 0 #8dc7ed1f,0 8px 16px #0002;border-radius:12px}
+.panel{padding:18px 19px}
+.metric-grid{grid-template-columns:repeat(6,minmax(0,1fr));gap:11px;margin:13px 0}
+.metric{padding:17px 14px;min-height:108px}
+.metric small{display:block;font-size:11px;letter-spacing:.25px;color:#a4c2dd}
+.metric strong{display:block;font-size:21px;margin:11px 0 4px;background:linear-gradient(#ffffff,#a6d8fb);background-clip:text;-webkit-background-clip:text;color:transparent}
+.metric span{display:block;color:#a0b9ce;font-size:11px}
+.metric .gloss-cyan{background:linear-gradient(#e7fdff,#58dcfc,#2698e3);background-clip:text;-webkit-background-clip:text;color:transparent}
+.position-panel{margin-top:12px}
+.position-panel table{min-width:950px}
+.position-panel .panel-heading{margin-bottom:14px}
+.empty-state{text-align:center;color:#a8bed6;padding:24px 15px}
+.btn-danger{background:#482236;border-color:#97516b;color:#ffbdc8}
+.btn-danger:disabled{opacity:.62;cursor:not-allowed}
+#tradeChart{height:390px!important}
+.market-grid{grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:12px}
+.market-panel{min-height:470px}
+.market-scroll{max-height:385px}
+.bottom-grid{display:grid;grid-template-columns:minmax(0,1.65fr) minmax(315px,1fr);gap:12px;margin-top:14px}
+.bottom-grid>.panel{margin-top:0}
+.perf-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:12px 0}
+.perf-grid>div{background:linear-gradient(130deg,#0e1c31,#14314b);border:1px solid #2b4d70;border-radius:8px;padding:12px}
+.perf-grid span{display:block;color:#9dbbd6;font-size:11px}
+.perf-grid strong{display:block;font-size:19px;margin-top:6px;color:#dcefff}
+.label-muted{font-size:10px;color:#a2bbd6;letter-spacing:.4px}
+.tag{font-weight:800}
+.btn:not(:disabled):hover{border-color:#5ae6e9;box-shadow:0 0 15px #13c9e334}
+.positive{background:linear-gradient(#dcfff0,#51edb8 60%,#25b990);background-clip:text;-webkit-background-clip:text;color:transparent;filter:drop-shadow(0 0 4px #24eab244)}
+.negative{background:linear-gradient(#ffe5ec,#ff7596 60%,#dd3762);background-clip:text;-webkit-background-clip:text;color:transparent;filter:drop-shadow(0 0 4px #fa487a44)}
+@media(max-width:1300px){.metric-grid{grid-template-columns:repeat(3,minmax(0,1fr))}.bottom-grid{grid-template-columns:1fr}}
+@media(max-width:900px){.market-grid{grid-template-columns:1fr}.wrap{padding:12px}.metric-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:540px){.metric-grid{grid-template-columns:1fr 1fr}.metric strong{font-size:17px}header h1{font-size:20px}.panel{padding:13px}.btn-danger{font-size:11px}}
 </style></head><body><div class="wrap"><header><div><h1>LUXALGO PRO · TRADING TERMINAL</h1><p>Gate.io USDT Perpetual · LuxAlgo 5m / 15m · Hello, Subhasish</p></div><div class="tag">● LIVE TRADING OFF</div></header>
-<div class="grid"><div class="metric"><small>WEBHOOK</small><strong class="{{ 'ok' if configured else 'off' }}">{{ 'Configured' if configured else 'Not configured' }}</strong></div><div class="metric"><small>SIGNALS STORED IN DATABASE</small><strong>{{ count }}</strong></div><div class="metric"><small>GATE.IO API</small><strong>Read-only</strong></div><div class="metric"><small>REALIZED PROFIT / LOSS</small><strong>Not available</strong></div></div>
-<section class="panel"><h2>RECENT LUXALGO SIGNALS</h2><div class="tablewrap"><table><thead><tr><th>Received (UTC)</th><th>Token</th><th>Signal</th><th>Timeframe</th><th>Status</th><th>Entry / SL / TP Plan</th></tr></thead><tbody>{% for r in records %}<tr><td>{{r.time[:19]|e}}</td><td>{{r.symbol|e}}</td><td>{{r.side|e}}</td><td>{{r.tf|e}}</td><td>Received · Not executed</td><td><button class="btn plan" data-symbol="{{r.symbol|e}}" data-side="{{r.side|e}}" data-tf="{{r.tf|e}}">Plan + Chart</button></td></tr>{% else %}<tr><td colspan="6">No signals stored in the database yet.</td></tr>{% endfor %}</tbody></table></div><p class="light">Signals are received events, not fills. Signal receipts and dry-run intent IDs are saved in PostgreSQL. Duplicate signals may not create separate dry-run intents.</p></section>
-<section class="panel"><h2>TRADE PLAN · SL · TP1 <span class="tag">READ ONLY</span></h2>
-<div class="controls"><label>Entry reference <input id="entry" type="number" step="any" placeholder="Choose a signal" readonly></label><label>Stop Loss · 1.5 ATR <input id="sl" type="number" step="any" readonly></label><label>TP1 · 2 ATR · 100% exit <input id="tp1" type="number" step="any" readonly></label></div>
-<div id="planResults">Select Plan + Chart beside a signal to calculate illustrative entry, SL and TP1. No orders are placed.</div></section>
-<section class="panel"><h2>IN-TERMINAL MARKET CHART</h2>
+<div class="grid metric-grid">
+<div class="metric"><small>GATE.IO CONNECTION</small><strong class="gloss-cyan">READ-ONLY</strong><span>Trading orders disabled</span></div>
+<div class="metric"><small>OPEN POSITIONS</small><strong>—</strong><span>Exchange sync not implemented</span></div>
+<div class="metric"><small>UNREALIZED P&amp;L</small><strong>—</strong><span>Waiting for actual Gate.io positions</span></div>
+<div class="metric"><small>TOTAL REALIZED P&amp;L</small><strong>—</strong><span>Verified fills not available</span></div>
+<div class="metric"><small>WIN RATE</small><strong>—</strong><span>Requires completed trades</span></div>
+<div class="metric"><small>DATABASE SIGNALS</small><strong>{{ count }}</strong><span>Webhook: {{ 'configured' if configured else 'not configured' }}</span></div>
+</div><section class="panel position-panel"><div class="panel-heading"><h2>OPEN POSITIONS <span class="gloss-cyan">· GATE.IO FUTURES</span></h2><button class="btn btn-danger" disabled title="Verified exchange positions and safe close-order execution are not connected">MANUALLY CLOSE SELECTED POSITION · DISABLED</button></div>
+<div class="tablewrap"><table><thead><tr><th>PAIR</th><th>SIDE</th><th>ENTRY</th><th>MARK PRICE</th><th>UNREALIZED P&amp;L</th><th>LEVERAGE</th><th>SL</th><th>TP1</th><th>STATE</th></tr></thead><tbody><tr><td colspan="9" class="empty-state">Open positions are not synchronized with Gate.io. No actual trades are displayed. Manual closing will be enabled only after verified positions and safe exchange-side closing orders are implemented.</td></tr></tbody></table></div></section><section class="panel"><h2>IN-TERMINAL MARKET CHART</h2>
 <p class="light">Select a signal above, or enter a Gate.io USDT perpetual pair. Charts use public market candles only (not position/fill data).</p>
 <div class="controls"><label>Trading pair <input id="chartSymbol" value="BTCUSDT" maxlength="29" autocomplete="off"></label><label>Chart timeframe<select id="chartTf"><option value="15m">15 minutes</option><option value="5m">5 minutes</option></select></label><label>Chart refresh <button class="btn" id="chartRefresh" type="button">Refresh Chart</button></label></div>
 <canvas id="tradeChart" width="1050" height="360" style="display:block;width:100%;height:360px;background:#0b1a2b;border:1px solid #29415e;border-radius:8px" aria-label="Public candlestick price chart"></canvas>
@@ -133,19 +177,17 @@ PAGE = '''<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name=
 <div class="tablewrap market-scroll"><table><thead><tr><th>PAIR · CHART ↗</th><th>BIAS</th><th>SCORE</th><th>RSI</th><th>VOL RATIO</th></tr></thead><tbody id="scannerBody"><tr><td colspan="5">Scanning…</td></tr></tbody></table></div>
 <p class="light">Technical labels reflect EMA trend, RSI, recent price-range break and candle volume. They are not LuxAlgo orders.</p>
 </section></div>
-<section class="panel"><h2>OPEN POSITIONS & MANUAL CLOSE</h2>
-<p class="light">No verified Gate.io positions are currently synchronized. Manual closing is unavailable until position IDs, sizes and actual exchange fills are verified. The control below cannot submit an order.</p>
-<button class="btn" disabled title="No verified exchange position / trade execution engine">Close selected position — NOT AVAILABLE</button>
-</section>
-<section class="panel"><h2>POSITION & PROFIT SUMMARY</h2><div class="tablewrap"><table><thead><tr><th>Pair</th><th>Entry fill</th><th>SL order</th><th>TP1 order</th><th>Realized P&amp;L</th><th>State</th></tr></thead><tbody><tr><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>No execution engine; no verified fills</td></tr></tbody></table></div><p class="light">Profit and win rate will appear only after a secure Gate.io fills/order synchronization and persistent record system are implemented. Nothing is simulated as realized profit.</p></section>
-<div class="foot">Read-only terminal · No orders are submitted · Never share API keys · Safeguards and exchange-side SL/TP are not yet implemented.</div></div>
-<script>
+<div class="bottom-grid"><section class="panel"><h2>RECENT LUXALGO SIGNALS · 5m / 15m</h2><div class="tablewrap"><table><thead><tr><th>Received (UTC)</th><th>Token</th><th>Signal</th><th>Timeframe</th><th>Status</th><th>Entry / SL / TP Plan</th></tr></thead><tbody>{% for r in records %}<tr><td>{{r.time[:19]|e}}</td><td>{{r.symbol|e}}</td><td>{{r.side|e}}</td><td>{{r.tf|e}}</td><td>Received · Not executed</td><td><button class="btn plan" data-symbol="{{r.symbol|e}}" data-side="{{r.side|e}}" data-tf="{{r.tf|e}}">Plan + Chart</button></td></tr>{% else %}<tr><td colspan="6">No signals stored in the database yet.</td></tr>{% endfor %}</tbody></table></div><p class="light">Signals are received events, not fills. Signal receipts and dry-run intent IDs are saved in PostgreSQL. Duplicate signals may not create separate dry-run intents.</p></section>
+<section class="panel performance-panel"><div class="panel-heading"><h2>PERFORMANCE ANALYTICS</h2><span class="label-muted">VERIFIED FILLS ONLY</span></div><div class="perf-grid"><div><span>Total Closed Trades</span><strong>—</strong></div><div><span>Winning Trades</span><strong>—</strong></div><div><span>Losing Trades</span><strong>—</strong></div><div><span>Win Rate</span><strong>—</strong></div><div><span>Total Realized P&amp;L</span><strong>—</strong></div><div><span>Unrealized P&amp;L</span><strong>—</strong></div></div><p class="light">Waiting for authenticated position and fill synchronization. No synthetic P&amp;L or win statistics.</p></section></div><section class="panel"><h2>TRADE PLAN · SL · TP1 <span class="tag">READ ONLY</span></h2>
+<div class="controls"><label>Entry reference <input id="entry" type="number" step="any" placeholder="Choose a signal" readonly></label><label>Stop Loss · 1.5 ATR <input id="sl" type="number" step="any" readonly></label><label>TP1 · 2 ATR · 100% exit <input id="tp1" type="number" step="any" readonly></label></div>
+<div id="planResults">Select Plan + Chart beside a signal to calculate illustrative entry, SL and TP1. No orders are placed.</div></section>
+<section class="panel"><div class="panel-heading"><h2>COMPLETED TRADES · EXIT RECORD</h2><span class="label-muted">PENDING ACCOUNT HISTORY INTEGRATION</span></div><div class="tablewrap"><table><thead><tr><th>TIME (UTC)</th><th>PAIR</th><th>DIRECTION</th><th>ENTRY FILL</th><th>EXIT FILL</th><th>NET REALIZED P&amp;L</th><th>RESULT</th></tr></thead><tbody><tr><td colspan="7" class="empty-state">No verified exchange fills have been synchronized. Signal receipts are not executed trades.</td></tr></tbody></table></div></section><div class="foot">LUXALGO PRO · Private terminal · Market data is public Gate.io data. Scanners are technical watchlists, not LuxAlgo entry signals. No account positions, fills, profit or loss are available until authenticated exchange sync is implemented. LIVE TRADING OFF; no orders are placed.</div></div><script>
 const entry=document.getElementById('entry'), sl=document.getElementById('sl'), tp1=document.getElementById('tp1');
 document.querySelectorAll('.plan').forEach(b=>b.addEventListener('click',async()=>{
  const out=document.querySelector('#planResults');b.disabled=true;out.textContent='Calculating read-only ATR plan…';
  try{const r=await fetch('/terminal/plan',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({symbol:b.dataset.symbol,side:b.dataset.side,tf:b.dataset.tf})});const d=await r.json();if(!r.ok)throw Error(d.error||'Plan unavailable');const p=d.plan;
  entry.value=p.reference_entry;sl.value=p.stop_loss_1_5_atr;tp1.value=p.take_profit_1_2_atr;document.getElementById('chartSymbol').value=b.dataset.symbol;document.getElementById('chartTf').value=b.dataset.tf;window.loadChart();
- out.textContent=['Contract: '+p.contract,'Signal: '+p.side,'Timeframe: '+p.timeframe,'Reference: latest completed candle close (not a fill)','AUTO Stop Loss: 1.5 × ATR','AUTO TP1: 2 × ATR (100% close intended)','Order count: 0','Manual changes are previews only. No exchange orders or protection exist.'].join('\n');
+ out.textContent=['Contract: '+p.contract,'Signal: '+p.side,'Timeframe: '+p.timeframe,'Reference: latest completed candle close (not a fill)','AUTO Stop Loss: 1.5 × ATR','AUTO TP1: 2 × ATR (100% close intended)','Order count: 0','Manual changes are previews only. No exchange orders or protection exist.'].join('\\n');
  }catch(e){out.textContent=e.message}finally{b.disabled=false}
 }));
 
@@ -443,14 +485,17 @@ def gate_check():
 
 
 def _gate_atr_plan(symbol, direction, tf="15m"):
-    """Read ONLY public, completed 15m candles. Return an illustrative plan.
+    """Read ONLY public, completed timeframe candles. Return an illustrative plan.
 
     Not order sizing: 0.5% risk requires verified available funds, instrument
     contract multiplier, minimum contract count, open positions, and margin rules.
     """
+    if tf not in ('5m', '15m'):
+        raise ValueError('Unsupported timeframe')
+    seconds = 300 if tf == '5m' else 900
     contract = symbol[:-4] + '_USDT'
     url = ('https://api.gateio.ws/api/v4/futures/usdt/candlesticks?' +
-           urlencode({'contract': contract, 'interval': '15m', 'limit': 60}))
+           urlencode({'contract': contract, 'interval': tf, 'limit': 60}))
     req = Request(url, headers={'Accept': 'application/json', 'User-Agent': 'LuxAlgo-PRO-Readonly/1.0'}, method='GET')
     with urlopen(req, timeout=10) as res:
         candles = json.loads(res.read(131072))
