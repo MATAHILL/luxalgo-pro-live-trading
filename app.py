@@ -29,13 +29,33 @@ _intents = deque(maxlen=50)
 _seen_events = {}
 
 PAGE = '''<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>LUXALGO PRO · Trading Terminal</title>
-<style>:root{color-scheme:dark}*{box-sizing:border-box}body{margin:0;background:#08111f;color:#edf5ff;font:14px/1.5 system-ui,Segoe UI,Arial}.wrap{max-width:1180px;margin:auto;padding:24px}header,.panel,.metric{background:#122238;border:1px solid #29415e;border-radius:12px;padding:19px}header{display:flex;justify-content:space-between;gap:12px;align-items:center}h1{font-size:23px;margin:0}h2{font-size:15px;margin:0 0 15px}p{margin:5px 0;color:#a8bed6}.tag{color:#ffc47c;font-weight:700}.grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin:15px 0}.metric small{color:#9fb5cf}.metric strong{display:block;margin-top:8px;font-size:18px}.panel{margin-top:14px}.tablewrap{overflow:auto}table{border-collapse:collapse;width:100%;min-width:650px}th,td{padding:11px 9px;border-bottom:1px solid #2b435e;text-align:left}th{color:#a7c0dc;font-size:12px}td{font-size:13px}.light{color:#a8bed6}.ok{color:#47dfae}.off{color:#ffc47c}.btn{background:#203b5c;color:#eef6ff;border:1px solid #46749d;border-radius:7px;padding:8px 12px;cursor:pointer}.btn:disabled{opacity:.5}#planResults{white-space:pre-wrap;font:13px/1.7 ui-monospace,Consolas,monospace;background:#0b1a2b;border:1px solid #2b435e;border-radius:8px;padding:14px}.foot{padding:18px 2px;font-size:12px;color:#a8bed6}@media(max-width:800px){.grid{grid-template-columns:repeat(2,minmax(0,1fr))}header{display:block}.wrap{padding:12px}}</style></head><body><div class="wrap"><header><div><h1>LUXALGO PRO · TRADING TERMINAL</h1><p>Gate.io USDT Perpetual · LuxAlgo 15m · Hello, Subhasish</p></div><div class="tag">● LIVE TRADING OFF</div></header>
+<style>:root{color-scheme:dark}*{box-sizing:border-box}body{margin:0;background:#08111f;color:#edf5ff;font:14px/1.5 system-ui,Segoe UI,Arial}.wrap{max-width:1180px;margin:auto;padding:24px}header,.panel,.metric{background:#122238;border:1px solid #29415e;border-radius:12px;padding:19px}header{display:flex;justify-content:space-between;gap:12px;align-items:center}h1{font-size:23px;margin:0}h2{font-size:15px;margin:0 0 15px}p{margin:5px 0;color:#a8bed6}.tag{color:#ffc47c;font-weight:700}.grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin:15px 0}.metric small{color:#9fb5cf}.metric strong{display:block;margin-top:8px;font-size:18px}.panel{margin-top:14px}.tablewrap{overflow:auto}table{border-collapse:collapse;width:100%;min-width:650px}th,td{padding:11px 9px;border-bottom:1px solid #2b435e;text-align:left}th{color:#a7c0dc;font-size:12px}td{font-size:13px}.light{color:#a8bed6}.ok{color:#47dfae}.off{color:#ffc47c}.btn{background:#203b5c;color:#eef6ff;border:1px solid #46749d;border-radius:7px;padding:8px 12px;cursor:pointer}.btn:disabled{opacity:.5}#planResults{white-space:pre-wrap;font:13px/1.7 ui-monospace,Consolas,monospace;background:#0b1a2b;border:1px solid #2b435e;border-radius:8px;padding:14px}.controls{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:12px;margin:14px 0}.controls label{display:flex;flex-direction:column;color:#a8bed6;font-size:12px;gap:5px}.controls input,.controls select{background:#0b1a2b;color:#edf5ff;border:1px solid #46749d;border-radius:7px;padding:9px;font:inherit}.controls input:read-only{opacity:.7}.foot{padding:18px 2px;font-size:12px;color:#a8bed6}@media(max-width:800px){.grid{grid-template-columns:repeat(2,minmax(0,1fr))}header{display:block}.wrap{padding:12px}}</style></head><body><div class="wrap"><header><div><h1>LUXALGO PRO · TRADING TERMINAL</h1><p>Gate.io USDT Perpetual · LuxAlgo 15m · Hello, Subhasish</p></div><div class="tag">● LIVE TRADING OFF</div></header>
 <div class="grid"><div class="metric"><small>WEBHOOK</small><strong class="{{ 'ok' if configured else 'off' }}">{{ 'Configured' if configured else 'Not configured' }}</strong></div><div class="metric"><small>SIGNALS SINCE RESTART</small><strong>{{ count }}</strong></div><div class="metric"><small>GATE.IO API</small><strong>Read-only</strong></div><div class="metric"><small>REALIZED PROFIT / LOSS</small><strong>Not available</strong></div></div>
 <section class="panel"><h2>RECENT LUXALGO SIGNALS</h2><div class="tablewrap"><table><thead><tr><th>Received (UTC)</th><th>Token</th><th>Signal</th><th>Timeframe</th><th>Status</th><th>Entry / SL / TP Plan</th></tr></thead><tbody>{% for r in records %}<tr><td>{{r.time[:19]|e}}</td><td>{{r.symbol|e}}</td><td>{{r.side|e}}</td><td>15m</td><td>Received · Not executed</td><td><button class="btn plan" data-symbol="{{r.symbol|e}}" data-side="{{r.side|e}}">Calculate</button></td></tr>{% else %}<tr><td colspan="6">No signals received since this server restarted.</td></tr>{% endfor %}</tbody></table></div><p class="light">Signals are received events, not fills. Records are memory-only and can be lost on redeploy. Duplicate signals may not create separate dry-run intents.</p></section>
-<section class="panel"><h2>INDICATIVE ENTRY · STOP LOSS · TAKE PROFIT</h2><div id="planResults">Select Calculate beside a signal to obtain an ATR-based plan using the latest completed 15-minute Gate.io candles. It is not an execution price or a placed protective order.</div></section>
-<section class="panel"><h2>POSITION & PROFIT SUMMARY</h2><div class="tablewrap"><table><thead><tr><th>Pair</th><th>Entry fill</th><th>SL order</th><th>TP1 / TP2 orders</th><th>Realized P&amp;L</th><th>State</th></tr></thead><tbody><tr><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>No execution engine; no verified fills</td></tr></tbody></table></div><p class="light">Profit and win rate will appear only after a secure Gate.io fills/order synchronization and persistent record system are implemented. Nothing is simulated as realized profit.</p></section>
+<section class="panel"><h2>AUTO TRADING SETTINGS — PLANNING ONLY</h2>
+<p class="light">AUTO is the default. You may preview changes graphically, but these settings are not saved and cannot place or modify orders.</p>
+<div class="controls"><label>Mode<select id="mode"><option value="AUTO">AUTO (ATR-based)</option><option value="MANUAL">MANUAL (preview overrides)</option></select></label>
+<label>Leverage <input id="leverage" type="number" value="5" min="1" max="20" step="1"></label>
+<label>Position notional (USDT) <input id="notional" type="number" value="100" min="1" step="1"></label>
+<label>Margin<select id="margin"><option value="CROSS">Cross</option><option value="ISOLATED">Isolated</option></select></label>
+<label>Entry reference <input id="entry" type="number" step="any" placeholder="Select a signal" readonly></label>
+<label>Stop Loss <input id="sl" type="number" step="any" placeholder="1.5 × ATR" readonly></label>
+<label>TP1 — 100% exit <input id="tp1" type="number" step="any" placeholder="2 × ATR" readonly></label></div>
+<div id="planResults">Select Calculate beside a signal to obtain a read-only 15m ATR-based plan. Reference entry is not a fill; SL and TP1 are not placed orders.</div>
+</section>
+<section class="panel"><h2>POSITION & PROFIT SUMMARY</h2><div class="tablewrap"><table><thead><tr><th>Pair</th><th>Entry fill</th><th>SL order</th><th>TP1 order</th><th>Realized P&amp;L</th><th>State</th></tr></thead><tbody><tr><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>No execution engine; no verified fills</td></tr></tbody></table></div><p class="light">Profit and win rate will appear only after a secure Gate.io fills/order synchronization and persistent record system are implemented. Nothing is simulated as realized profit.</p></section>
 <div class="foot">Read-only terminal · No orders are submitted · Never share API keys · Safeguards and exchange-side SL/TP are not yet implemented.</div></div>
-<script>document.querySelectorAll('.plan').forEach(b=>b.addEventListener('click',async()=>{const out=document.querySelector('#planResults');b.disabled=true;out.textContent='Calculating read-only ATR plan…';try{const r=await fetch('/terminal/plan',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({symbol:b.dataset.symbol,side:b.dataset.side})});const d=await r.json();if(!r.ok)throw Error(d.error||'Plan unavailable');const p=d.plan;out.textContent=['Token: '+p.contract,'Direction: '+p.side,'Entry reference (last completed 15m close): '+p.reference_entry,'Stop loss (1.5 ATR): '+p.stop_loss_1_5_atr,'Take profit 1 (2 ATR): '+p.take_profit_1_2_atr,'Take profit 2 (3 ATR): '+p.take_profit_2_3_atr,'Planned leverage: 5×','Orders placed: 0','Plan only — no executable orders exist.'].join('\n')}catch(e){out.textContent=e.message}finally{b.disabled=false}}));</script></body></html>'''
+<script>
+const mode=document.getElementById('mode'), entry=document.getElementById('entry'), sl=document.getElementById('sl'), tp1=document.getElementById('tp1');
+mode.addEventListener('change',()=>{const manual=mode.value==='MANUAL';for(const el of [entry,sl,tp1])el.readOnly=!manual;});
+document.querySelectorAll('.plan').forEach(b=>b.addEventListener('click',async()=>{
+ const out=document.querySelector('#planResults');b.disabled=true;out.textContent='Calculating read-only ATR plan…';
+ try{const r=await fetch('/terminal/plan',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({symbol:b.dataset.symbol,side:b.dataset.side})});const d=await r.json();if(!r.ok)throw Error(d.error||'Plan unavailable');const p=d.plan;
+ entry.value=p.reference_entry;sl.value=p.stop_loss_1_5_atr;tp1.value=p.take_profit_1_2_atr;
+ out.textContent=['Contract: '+p.contract,'Signal: '+p.side,'Reference: latest completed 15m close (not a fill)','AUTO Stop Loss: 1.5 × ATR','AUTO TP1: 2 × ATR (100% close intended)','Order count: 0','Manual changes are previews only. No exchange orders or protection exist.'].join('\n');
+ }catch(e){out.textContent=e.message}finally{b.disabled=false}
+}));
+</script></body></html>'''
 
 def expected_webhook_token():
     return os.getenv('LUXALGO_WEBHOOK_TOKEN', '')
@@ -289,10 +309,10 @@ def _gate_atr_plan(symbol, direction):
         atr = (atr*13 + tr)/14
     entry = complete[-1][3]  # Last 15m closing price, NOT an execution price
     if direction == 'LONG':
-        sl, tp1, tp2 = entry - 1.5*atr, entry + 2*atr, entry + 3*atr
+        sl, tp1 = entry - 1.5*atr, entry + 2*atr
     else:
-        sl, tp1, tp2 = entry + 1.5*atr, entry - 2*atr, entry - 3*atr
-    if min(entry,sl,tp1,tp2,atr) <= 0:
+        sl, tp1 = entry + 1.5*atr, entry - 2*atr
+    if min(entry,sl,tp1,atr) <= 0:
         raise ValueError('Plan would produce nonpositive prices')
     return {
         'contract':contract, 'side':direction, 'timeframe':'15m',
@@ -300,7 +320,7 @@ def _gate_atr_plan(symbol, direction):
         'last_candle_start_utc':datetime.fromtimestamp(complete[-1][0], timezone.utc).isoformat(),
         'reference_entry':entry, 'atr_14_wilder':atr,
         'stop_loss_1_5_atr':sl, 'take_profit_1_2_atr':tp1,
-        'take_profit_2_3_atr':tp2, 'planned_leverage':5,
+        'planned_leverage':5,
         'intended_risk_fraction':0.005,
         'margin_mode':'CROSS', 'position_mode':'HEDGE',
         'position_size':'NOT_CALCULATED', 'exchange_orders_sent':0,
