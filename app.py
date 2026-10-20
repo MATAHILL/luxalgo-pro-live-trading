@@ -104,26 +104,35 @@ def _db_record(record,event_id):
     return duplicate
 
 PAGE = '''<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>LUXALGO PRO · Trading Terminal</title>
-<style>:root{color-scheme:dark}*{box-sizing:border-box}body{margin:0;background:#08111f;color:#edf5ff;font:14px/1.5 system-ui,Segoe UI,Arial}.wrap{max-width:1180px;margin:auto;padding:24px}header,.panel,.metric{background:#122238;border:1px solid #29415e;border-radius:12px;padding:19px}header{display:flex;justify-content:space-between;gap:12px;align-items:center}h1{font-size:23px;margin:0}h2{font-size:15px;margin:0 0 15px}p{margin:5px 0;color:#a8bed6}.tag{color:#ffc47c;font-weight:700}.grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin:15px 0}.metric small{color:#9fb5cf}.metric strong{display:block;margin-top:8px;font-size:18px}.panel{margin-top:14px}.tablewrap{overflow:auto}table{border-collapse:collapse;width:100%;min-width:650px}th,td{padding:11px 9px;border-bottom:1px solid #2b435e;text-align:left}th{color:#a7c0dc;font-size:12px}td{font-size:13px}.light{color:#a8bed6}.ok{color:#47dfae}.off{color:#ffc47c}.btn{background:#203b5c;color:#eef6ff;border:1px solid #46749d;border-radius:7px;padding:8px 12px;cursor:pointer}.btn:disabled{opacity:.5}#planResults{white-space:pre-wrap;font:13px/1.7 ui-monospace,Consolas,monospace;background:#0b1a2b;border:1px solid #2b435e;border-radius:8px;padding:14px}.controls{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:12px;margin:14px 0}.controls label{display:flex;flex-direction:column;color:#a8bed6;font-size:12px;gap:5px}.controls input,.controls select{background:#0b1a2b;color:#edf5ff;border:1px solid #46749d;border-radius:7px;padding:9px;font:inherit}.controls input:read-only{opacity:.7}.foot{padding:18px 2px;font-size:12px;color:#a8bed6}@media(max-width:800px){.grid{grid-template-columns:repeat(2,minmax(0,1fr))}header{display:block}.wrap{padding:12px}}</style></head><body><div class="wrap"><header><div><h1>LUXALGO PRO · TRADING TERMINAL</h1><p>Gate.io USDT Perpetual · LuxAlgo 5m / 15m · Hello, Subhasish</p></div><div class="tag">● LIVE TRADING OFF</div></header>
+<style>:root{color-scheme:dark}*{box-sizing:border-box}body{margin:0;background:#08111f;color:#edf5ff;font:14px/1.5 system-ui,Segoe UI,Arial}.wrap{max-width:1180px;margin:auto;padding:24px}header,.panel,.metric{background:#122238;border:1px solid #29415e;border-radius:12px;padding:19px}header{display:flex;justify-content:space-between;gap:12px;align-items:center}h1{font-size:23px;margin:0}h2{font-size:15px;margin:0 0 15px}p{margin:5px 0;color:#a8bed6}.tag{color:#ffc47c;font-weight:700}.grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin:15px 0}.metric small{color:#9fb5cf}.metric strong{display:block;margin-top:8px;font-size:18px}.panel{margin-top:14px}.tablewrap{overflow:auto}table{border-collapse:collapse;width:100%;min-width:650px}th,td{padding:11px 9px;border-bottom:1px solid #2b435e;text-align:left}th{color:#a7c0dc;font-size:12px}td{font-size:13px}.light{color:#a8bed6}.ok{color:#47dfae}.off{color:#ffc47c}.btn{background:#203b5c;color:#eef6ff;border:1px solid #46749d;border-radius:7px;padding:8px 12px;cursor:pointer}.btn:disabled{opacity:.5}#planResults{white-space:pre-wrap;font:13px/1.7 ui-monospace,Consolas,monospace;background:#0b1a2b;border:1px solid #2b435e;border-radius:8px;padding:14px}.controls{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:12px;margin:14px 0}.controls label{display:flex;flex-direction:column;color:#a8bed6;font-size:12px;gap:5px}.controls input,.controls select{background:#0b1a2b;color:#edf5ff;border:1px solid #46749d;border-radius:7px;padding:9px;font:inherit}.controls input:read-only{opacity:.7}.foot{padding:18px 2px;font-size:12px;color:#a8bed6}@media(max-width:800px){.grid{grid-template-columns:repeat(2,minmax(0,1fr))}header{display:block}.wrap{padding:12px}}.market-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:14px}.market-grid .panel{margin-top:0}.market-panel{min-width:0}.panel-heading{display:flex;justify-content:space-between;align-items:center;gap:9px}.panel-heading h2{margin:0}.market-tabs{display:flex;flex-wrap:wrap;gap:6px;margin:12px 0}.market-tabs .btn{font-size:11px;padding:7px}.market-tabs .selected{background:linear-gradient(140deg,#1c5377,#17416a);border-color:#49e3e9;color:#e6fdff;box-shadow:0 0 10px #00c9e740}.market-filters{display:flex;gap:8px;margin-bottom:9px}.market-filters input,.market-filters select{min-width:0;max-width:100%;background:#0b1a2b;border:1px solid #3b5b7c;color:#eaf7ff;border-radius:7px;padding:9px}.market-filters input{flex:1}.market-scroll{max-height:360px;overflow:auto}.market-scroll table{min-width:390px}.market-scroll th{position:sticky;top:0;background:#162c45;z-index:1}.pairlink{border:0;background:transparent;color:#a9e9ff;text-align:left;cursor:pointer;text-decoration:underline;font-weight:700}.gloss-gold,.gloss-cyan,.positive,.negative{font-weight:750}.gloss-gold{background:linear-gradient(#fff7c8,#ffd368 45%,#d68c3f);background-clip:text;-webkit-background-clip:text;color:transparent}.gloss-cyan{background:linear-gradient(#fff,#56eaff 40%,#16a5d9);background-clip:text;-webkit-background-clip:text;color:transparent}.positive{color:#57f6bd;text-shadow:0 0 9px #28dd9550}.negative{color:#ff829e;text-shadow:0 0 8px #f8527450}header h1,h2{background:linear-gradient(180deg,#ffffff 12%,#b9e7ff 56%,#78bcef 100%);-webkit-background-clip:text;background-clip:text;color:transparent}.tag{background:linear-gradient(180deg,#ffeac8,#ffbf58 65%,#c18134);-webkit-background-clip:text;background-clip:text;color:transparent}.metric strong.ok{color:#5bffd1;text-shadow:0 0 8px #3beacb55}@media(max-width:1080px){.market-grid{grid-template-columns:1fr}}
+</style></head><body><div class="wrap"><header><div><h1>LUXALGO PRO · TRADING TERMINAL</h1><p>Gate.io USDT Perpetual · LuxAlgo 5m / 15m · Hello, Subhasish</p></div><div class="tag">● LIVE TRADING OFF</div></header>
 <div class="grid"><div class="metric"><small>WEBHOOK</small><strong class="{{ 'ok' if configured else 'off' }}">{{ 'Configured' if configured else 'Not configured' }}</strong></div><div class="metric"><small>SIGNALS STORED IN DATABASE</small><strong>{{ count }}</strong></div><div class="metric"><small>GATE.IO API</small><strong>Read-only</strong></div><div class="metric"><small>REALIZED PROFIT / LOSS</small><strong>Not available</strong></div></div>
 <section class="panel"><h2>RECENT LUXALGO SIGNALS</h2><div class="tablewrap"><table><thead><tr><th>Received (UTC)</th><th>Token</th><th>Signal</th><th>Timeframe</th><th>Status</th><th>Entry / SL / TP Plan</th></tr></thead><tbody>{% for r in records %}<tr><td>{{r.time[:19]|e}}</td><td>{{r.symbol|e}}</td><td>{{r.side|e}}</td><td>{{r.tf|e}}</td><td>Received · Not executed</td><td><button class="btn plan" data-symbol="{{r.symbol|e}}" data-side="{{r.side|e}}" data-tf="{{r.tf|e}}">Plan + Chart</button></td></tr>{% else %}<tr><td colspan="6">No signals stored in the database yet.</td></tr>{% endfor %}</tbody></table></div><p class="light">Signals are received events, not fills. Signal receipts and dry-run intent IDs are saved in PostgreSQL. Duplicate signals may not create separate dry-run intents.</p></section>
-<section class="panel"><h2>AUTO TRADING SETTINGS — PLANNING ONLY</h2>
-<p class="light">AUTO is the default. You may preview changes graphically, but these settings are not saved and cannot place or modify orders.</p>
-<div class="controls"><label>Mode<select id="mode"><option value="AUTO">AUTO (ATR-based)</option><option value="MANUAL">MANUAL (preview overrides)</option></select></label>
-<label>Leverage <input id="leverage" type="number" value="5" min="1" max="20" step="1"></label>
-<label>Position notional (USDT) <input id="notional" type="number" value="100" min="1" step="1"></label>
-<label>Margin<select id="margin"><option value="CROSS">Cross</option><option value="ISOLATED">Isolated</option></select></label>
-<label>Entry reference <input id="entry" type="number" step="any" placeholder="Select a signal" readonly></label>
-<label>Stop Loss <input id="sl" type="number" step="any" placeholder="1.5 × ATR" readonly></label>
-<label>TP1 — 100% exit <input id="tp1" type="number" step="any" placeholder="2 × ATR" readonly></label></div>
-<div id="planResults">Select Plan + Chart beside a signal to obtain a read-only ATR-based plan. Reference entry is not a fill; SL and TP1 are not placed orders.</div>
-</section>
+<section class="panel"><h2>TRADE PLAN · SL · TP1 <span class="tag">READ ONLY</span></h2>
+<div class="controls"><label>Entry reference <input id="entry" type="number" step="any" placeholder="Choose a signal" readonly></label><label>Stop Loss · 1.5 ATR <input id="sl" type="number" step="any" readonly></label><label>TP1 · 2 ATR · 100% exit <input id="tp1" type="number" step="any" readonly></label></div>
+<div id="planResults">Select Plan + Chart beside a signal to calculate illustrative entry, SL and TP1. No orders are placed.</div></section>
 <section class="panel"><h2>IN-TERMINAL MARKET CHART</h2>
 <p class="light">Select a signal above, or enter a Gate.io USDT perpetual pair. Charts use public market candles only (not position/fill data).</p>
 <div class="controls"><label>Trading pair <input id="chartSymbol" value="BTCUSDT" maxlength="29" autocomplete="off"></label><label>Chart timeframe<select id="chartTf"><option value="15m">15 minutes</option><option value="5m">5 minutes</option></select></label><label>Chart refresh <button class="btn" id="chartRefresh" type="button">Refresh Chart</button></label></div>
 <canvas id="tradeChart" width="1050" height="360" style="display:block;width:100%;height:360px;background:#0b1a2b;border:1px solid #29415e;border-radius:8px" aria-label="Public candlestick price chart"></canvas>
 <p class="light" id="chartStatus" aria-live="polite">Select a token to load its market chart.</p>
 </section>
+<div class="market-grid">
+<section class="panel market-panel"><div class="panel-heading"><h2>GATE.IO FUTURES RADAR <span class="gloss-gold">● MARKET LIVE</span></h2><button class="btn" id="radarRefresh" type="button">↻ Refresh</button></div>
+<p class="light">All available Gate.io USDT perpetual tickers · 24h rankings · public market data.</p>
+<div class="market-tabs" id="radarTabs"><button class="btn selected" data-radar="gainers">TOP GAINERS</button><button class="btn" data-radar="losers">TOP LOSERS</button><button class="btn" data-radar="volume">TOP VOLUME</button><button class="btn" data-radar="all">ALL PAIRS</button></div>
+<div class="market-filters"><input id="radarSearch" placeholder="Search pair (e.g. SOL)" maxlength="30"><select id="radarLimit"><option value="24">Top 24</option><option value="50">Top 50</option><option value="all">Show all</option></select></div>
+<p class="light" id="radarStatus">Loading Gate.io perpetual market data…</p>
+<div class="tablewrap market-scroll"><table><thead><tr><th>PAIR · CHART ↗</th><th>PRICE</th><th>24H %</th><th>24H VOL (USDT)</th></tr></thead><tbody id="radarBody"><tr><td colspan="4">Loading…</td></tr></tbody></table></div>
+</section>
+<section class="panel market-panel"><div class="panel-heading"><h2>AI FUTURES OPPORTUNITY SCANNER <span class="gloss-cyan">● TECHNICAL</span></h2><button class="btn" id="scannerRefresh" type="button">↻ Scan</button></div>
+<p class="light">Rule-based opportunity watchlist · all accessible USDT perpetual pairs scanned progressively; not predictive AI.</p>
+<div class="market-tabs" id="scannerTabs"><button class="btn selected" data-scan="bullish">BULLISH BREAKOUT</button><button class="btn" data-scan="mixed">EARLY / MIXED</button><button class="btn" data-scan="bearish">BEARISH BREAKDOWN</button><button class="btn" data-scan="all">ALL RESULTS</button></div>
+<div class="market-filters"><select id="scannerTf"><option value="15m">15m</option><option value="5m">5m</option></select><input id="scannerSearch" placeholder="Search pair" maxlength="30"></div>
+<p class="light" id="scannerStatus">Loading scanner…</p>
+<div class="tablewrap market-scroll"><table><thead><tr><th>PAIR · CHART ↗</th><th>BIAS</th><th>SCORE</th><th>RSI</th><th>VOL RATIO</th></tr></thead><tbody id="scannerBody"><tr><td colspan="5">Scanning…</td></tr></tbody></table></div>
+<p class="light">Technical labels reflect EMA trend, RSI, recent price-range break and candle volume. They are not LuxAlgo orders.</p>
+</section></div>
 <section class="panel"><h2>OPEN POSITIONS & MANUAL CLOSE</h2>
 <p class="light">No verified Gate.io positions are currently synchronized. Manual closing is unavailable until position IDs, sizes and actual exchange fills are verified. The control below cannot submit an order.</p>
 <button class="btn" disabled title="No verified exchange position / trade execution engine">Close selected position — NOT AVAILABLE</button>
@@ -131,12 +140,11 @@ PAGE = '''<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name=
 <section class="panel"><h2>POSITION & PROFIT SUMMARY</h2><div class="tablewrap"><table><thead><tr><th>Pair</th><th>Entry fill</th><th>SL order</th><th>TP1 order</th><th>Realized P&amp;L</th><th>State</th></tr></thead><tbody><tr><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>No execution engine; no verified fills</td></tr></tbody></table></div><p class="light">Profit and win rate will appear only after a secure Gate.io fills/order synchronization and persistent record system are implemented. Nothing is simulated as realized profit.</p></section>
 <div class="foot">Read-only terminal · No orders are submitted · Never share API keys · Safeguards and exchange-side SL/TP are not yet implemented.</div></div>
 <script>
-const mode=document.getElementById('mode'), entry=document.getElementById('entry'), sl=document.getElementById('sl'), tp1=document.getElementById('tp1');
-mode.addEventListener('change',()=>{const manual=mode.value==='MANUAL';for(const el of [entry,sl,tp1])el.readOnly=!manual;});
+const entry=document.getElementById('entry'), sl=document.getElementById('sl'), tp1=document.getElementById('tp1');
 document.querySelectorAll('.plan').forEach(b=>b.addEventListener('click',async()=>{
  const out=document.querySelector('#planResults');b.disabled=true;out.textContent='Calculating read-only ATR plan…';
  try{const r=await fetch('/terminal/plan',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({symbol:b.dataset.symbol,side:b.dataset.side,tf:b.dataset.tf})});const d=await r.json();if(!r.ok)throw Error(d.error||'Plan unavailable');const p=d.plan;
- entry.value=p.reference_entry;sl.value=p.stop_loss_1_5_atr;tp1.value=p.take_profit_1_2_atr;
+ entry.value=p.reference_entry;sl.value=p.stop_loss_1_5_atr;tp1.value=p.take_profit_1_2_atr;document.getElementById('chartSymbol').value=b.dataset.symbol;document.getElementById('chartTf').value=b.dataset.tf;window.loadChart();
  out.textContent=['Contract: '+p.contract,'Signal: '+p.side,'Timeframe: '+p.timeframe,'Reference: latest completed candle close (not a fill)','AUTO Stop Loss: 1.5 × ATR','AUTO TP1: 2 × ATR (100% close intended)','Order count: 0','Manual changes are previews only. No exchange orders or protection exist.'].join('\n');
  }catch(e){out.textContent=e.message}finally{b.disabled=false}
 }));
@@ -162,6 +170,25 @@ async function loadChart(){
  }catch(e){ctx.clearRect(0,0,canvas.width,canvas.height);status.textContent='Chart unavailable: '+e.message}finally{refresh.disabled=false}
 }
 refresh.addEventListener('click',loadChart);tf.addEventListener('change',loadChart);symbol.addEventListener('change',loadChart);window.loadChart=loadChart;loadChart();setInterval(()=>{if(!document.hidden)loadChart()},30000);
+})();
+
+(function(){
+'use strict';
+const radarBody=document.getElementById('radarBody'), radarStatus=document.getElementById('radarStatus');
+const scanBody=document.getElementById('scannerBody'), scanStatus=document.getElementById('scannerStatus');
+let tickerData=[],radarMode='gainers',scanMode='bullish',scanData=[],scanTf='15m';
+const fmtPrice=n=>Number(n).toLocaleString(undefined,{maximumSignificantDigits:7});
+const fmtVol=n=>n>=1e9?(n/1e9).toFixed(2)+'B':n>=1e6?(n/1e6).toFixed(2)+'M':n>=1e3?(n/1e3).toFixed(1)+'K':n.toFixed(0);
+function addCell(tr,value,className){const td=document.createElement('td');td.textContent=value;if(className)td.className=className;tr.appendChild(td);return td;}
+function addPair(tr,sym,tf){const td=tr.insertCell(),btn=document.createElement('button');btn.className='pairlink';btn.textContent=sym.replace('_','/');btn.addEventListener('click',()=>{document.getElementById('chartSymbol').value=sym.replace('_','');document.getElementById('chartTf').value=tf;window.loadChart();document.getElementById('tradeChart').scrollIntoView({behavior:'smooth',block:'center'});});td.appendChild(btn);}
+function renderRadar(){let list=tickerData.slice();const q=document.getElementById('radarSearch').value.trim().toUpperCase();if(q)list=list.filter(x=>x.contract.includes(q));list.sort((a,b)=>radarMode==='gainers'?b.change-a.change:radarMode==='losers'?a.change-b.change:radarMode==='volume'?b.volume-a.volume:a.contract.localeCompare(b.contract));const lim=document.getElementById('radarLimit').value;if(lim!=='all')list=list.slice(0,Number(lim));radarBody.replaceChildren();for(const x of list){const tr=document.createElement('tr');addPair(tr,x.contract,document.getElementById('chartTf').value);addCell(tr,fmtPrice(x.last));addCell(tr,(x.change>0?'+':'')+x.change.toFixed(2)+'%',x.change>=0?'positive':'negative');addCell(tr,fmtVol(x.volume));radarBody.appendChild(tr);}if(!list.length){const tr=radarBody.insertRow();addCell(tr,'No pairs match').colSpan=4;}}
+async function loadRadar(){const b=document.getElementById('radarRefresh');b.disabled=true;radarStatus.textContent='Updating public Gate.io tickers…';try{const r=await fetch('/terminal/radar',{cache:'no-store'}),d=await r.json();if(!r.ok)throw Error(d.error||'Radar error');tickerData=d.results;radarStatus.textContent=d.total+' USDT perpetual pairs · updated '+new Date(d.generated_at*1000).toLocaleTimeString()+' · refresh every 60s';renderRadar();}catch(e){radarStatus.textContent='Radar unavailable: '+e.message;}finally{b.disabled=false}}
+function renderScanner(){let list=scanData.filter(x=>scanMode==='all'||x.bias===scanMode);const q=document.getElementById('scannerSearch').value.trim().toUpperCase();if(q)list=list.filter(x=>x.contract.includes(q));list.sort((a,b)=>Math.abs(b.score)-Math.abs(a.score)||a.contract.localeCompare(b.contract));scanBody.replaceChildren();for(const x of list.slice(0,150)){const tr=document.createElement('tr');addPair(tr,x.contract,scanTf);addCell(tr,x.bias.toUpperCase(),x.bias==='bullish'?'positive':x.bias==='bearish'?'negative':'');addCell(tr,String(x.score));addCell(tr,x.rsi.toFixed(1));addCell(tr,x.volume_ratio.toFixed(2)+'x');scanBody.appendChild(tr);}if(!list.length){const tr=scanBody.insertRow();addCell(tr,'No matching scans yet').colSpan=5;}}
+async function loadScanner(force=false){const b=document.getElementById('scannerRefresh');b.disabled=true;try{const r=await fetch('/terminal/scanner?tf='+scanTf+(force?'&refresh=1':''),{cache:'no-store'}),d=await r.json();if(!r.ok)throw Error(d.error||'Scanner error');scanData=d.results||[];scanStatus.textContent=(d.running?'Scanning… ':'Scan complete · ')+d.scanned+'/'+d.total+' pairs · '+d.failed+' unavailable · '+(d.generated_at?new Date(d.generated_at*1000).toLocaleTimeString():'pending')+' · technical watchlist';renderScanner();}catch(e){scanStatus.textContent='Scanner unavailable: '+e.message;}finally{b.disabled=false}}
+for(const b of document.querySelectorAll('#radarTabs button'))b.addEventListener('click',()=>{radarMode=b.dataset.radar;document.querySelectorAll('#radarTabs button').forEach(x=>x.classList.toggle('selected',x===b));renderRadar();});
+for(const b of document.querySelectorAll('#scannerTabs button'))b.addEventListener('click',()=>{scanMode=b.dataset.scan;document.querySelectorAll('#scannerTabs button').forEach(x=>x.classList.toggle('selected',x===b));renderScanner();});
+document.getElementById('radarRefresh').addEventListener('click',loadRadar);document.getElementById('radarSearch').addEventListener('input',renderRadar);document.getElementById('radarLimit').addEventListener('change',renderRadar);document.getElementById('scannerSearch').addEventListener('input',renderScanner);document.getElementById('scannerRefresh').addEventListener('click',()=>loadScanner(true));document.getElementById('scannerTf').addEventListener('change',e=>{scanTf=e.target.value;scanData=[];loadScanner();});
+loadRadar();loadScanner();setInterval(()=>{if(!document.hidden)loadRadar()},60000);setInterval(()=>{if(!document.hidden)loadScanner()},15000);
 })();
 </script></body></html>'''
 
@@ -312,7 +339,7 @@ def webhook():
     tf = str(data.get('tf', '')).strip().lower()
     allowed = {'BUY': 'LONG', 'LONG': 'LONG', 'BULLISH CONFIRMATION': 'LONG', 'SELL': 'SHORT', 'SHORT': 'SHORT', 'BEARISH CONFIRMATION': 'SHORT'}
     if not re.fullmatch(r'[A-Z0-9]{3,25}USDT', symbol) or side not in allowed or tf not in ('5', '5m', '5min', '5 minutes', '15', '15m', '15min', '15 minutes'):
-        return jsonify(error='Invalid symbol, side, or 15-minute timeframe'), 422
+        return jsonify(error='Invalid symbol, side, or timeframe'), 422
     received_at = datetime.now(timezone.utc)
     tf = '5m' if tf.startswith('5') else '15m'
     record = {'dt':received_at,'symbol':symbol,'side':allowed[side],'tf':tf}
@@ -443,7 +470,7 @@ def _gate_atr_plan(symbol, direction, tf="15m"):
     complete = list({c[0]: c for c in complete}.values())
     complete.sort(key=lambda x:x[0])
     if len(complete) < 16 or any(b[0]-a[0] != seconds for a,b in zip(complete[-16:-1],complete[-15:])):
-        raise ValueError('Insufficient consecutive completed 15m candles')
+        raise ValueError('Insufficient consecutive completed candles')
     # Wilder ATR(14) computed over all available completed candles.
     true_ranges = [max(c[1]-c[2], abs(c[1]-prev[3]), abs(c[2]-prev[3]))
                    for prev,c in zip(complete, complete[1:])]
@@ -459,7 +486,7 @@ def _gate_atr_plan(symbol, direction, tf="15m"):
         raise ValueError('Plan would produce nonpositive prices')
     return {
         'contract':contract, 'side':direction, 'timeframe':tf,
-        'reference':'most_recent_completed_15m_close_NOT_order_fill',
+        'reference':'most_recent_completed_'+tf+'_close_NOT_order_fill',
         'last_candle_start_utc':datetime.fromtimestamp(complete[-1][0], timezone.utc).isoformat(),
         'reference_entry':entry, 'atr_14_wilder':atr,
         'stop_loss_1_5_atr':sl, 'take_profit_1_2_atr':tp1,
@@ -619,6 +646,137 @@ def public_futures_scanner():
         except (HTTPError,URLError,TimeoutError,ValueError,KeyError,TypeError,OSError):
             return jsonify(error='Gate.io public market scan temporarily unavailable',orders_enabled=False),502
 
+
+
+# Market intelligence endpoints, public market data protected behind terminal login.
+# No Gate.io account data is returned and no trade orders are implemented.
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from threading import Thread
+
+_radar_cache = {'at': 0.0, 'data': None}
+_radar_lock = Lock()
+_scan_state = {tf: {'at':0., 'running':False, 'results':{}, 'total':0, 'scanned':0, 'failed':0}
+               for tf in ('5m','15m')}
+_scan_state_lock = Lock()
+
+
+def _radar_data():
+    now = time.time()
+    with _radar_lock:
+        if _radar_cache['data'] is not None and now - _radar_cache['at'] < 45:
+            return _radar_cache['data']
+        items = _scan_http_json('/api/v4/futures/usdt/tickers')
+        if not isinstance(items, list):
+            raise ValueError('Invalid tickers')
+        results = []
+        for x in items:
+            try:
+                sym = x['contract']
+                if not re.fullmatch(r'[A-Z0-9]{2,28}_USDT',sym):
+                    continue
+                last = float(x.get('last') or 0)
+                change = float(x.get('change_percentage') or 0)
+                vol = float(x.get('volume_24h_quote') or 0)
+                if not all(math.isfinite(v) for v in (last,change,vol)) or last <= 0 or vol < 0:
+                    continue
+                results.append({'contract':sym,'last':last,'change':change,'volume':vol})
+            except (KeyError,TypeError,ValueError):
+                continue
+        payload = {'results':results,'total':len(results),'generated_at':int(now),'orders_enabled':False}
+        _radar_cache.update(at=now,data=payload)
+        return payload
+
+
+@app.get('/terminal/radar')
+def terminal_radar():
+    if not _terminal_permitted():
+        return _terminal_guard()
+    try:
+        response = jsonify(_radar_data())
+        response.headers['Cache-Control'] = 'private, max-age=10'
+        return response
+    except (HTTPError,URLError,OSError,TimeoutError,ValueError,TypeError):
+        return jsonify(error='Gate.io ticker data unavailable'),502
+
+
+def _scan_one_pair(symbol,tf,change):
+    # Completed candles only; technical heuristic, not AI prediction.
+    secs = 300 if tf == '5m' else 900
+    bars = _scan_http_json('/api/v4/futures/usdt/candlesticks?' + urlencode(
+        {'contract':symbol,'interval':tf,'limit':58}))
+    now = int(time.time())
+    usable = []
+    for b in bars:
+        try:
+            t = int(b['t']); c = float(b['c']); h = float(b['h']); l = float(b['l']); v = float(b.get('v') or 0)
+            if t + secs <= now and all(math.isfinite(z) for z in (c,h,l,v)) and c>0 and h>=c>=l and v>=0:
+                usable.append((t,c,h,l,v))
+        except (KeyError,ValueError,TypeError):
+            continue
+    usable = sorted({x[0]:x for x in usable}.values())
+    if len(usable)<26 or any(b[0]-a[0]!=secs for a,b in zip(usable[-26:-1],usable[-25:])):
+        raise ValueError('Insufficient consecutive candles')
+    closes = [b[1] for b in usable]; current = closes[-1]
+    ema9 = _ema(closes,9); ema21 = _ema(closes,21); rsi = _rsi(closes)
+    h20 = max(b[2] for b in usable[-21:-1]); l20 = min(b[3] for b in usable[-21:-1])
+    vols = [b[4] for b in usable]; avg = sum(vols[-21:-1])/20
+    vr = vols[-1]/avg if avg>0 else 0
+    bull_break = current>h20 and ema9>ema21 and rsi>=55 and vr>=1.15
+    bear_break = current<l20 and ema9<ema21 and rsi<=45 and vr>=1.15
+    score = int((25 if ema9>ema21 else -25) + (20 if current>ema9 else -20)
+                + (15 if rsi>55 else -15 if rsi<45 else 0)
+                + (20 if current>h20 else -20 if current<l20 else 0)
+                + (10 if change>1 else -10 if change< -1 else 0))
+    return {'contract':symbol,'bias':'bullish' if bull_break else 'bearish' if bear_break else 'mixed',
+            'score':score,'rsi':round(rsi,2),'volume_ratio':round(vr,2),'timeframe':tf}
+
+
+def _run_scan(tf):
+    try:
+        tickers = _radar_data()['results']
+        with _scan_state_lock:
+            _scan_state[tf]['total'] = len(tickers)
+        # Bounded concurrency avoids excessive simultaneous exchange requests.
+        with ThreadPoolExecutor(max_workers=3) as pool:
+            futures = [pool.submit(_scan_one_pair,t['contract'],tf,t['change']) for t in tickers]
+            for f in as_completed(futures):
+                try:
+                    result = f.result()
+                    with _scan_state_lock:
+                        _scan_state[tf]['results'][result['contract']] = result
+                        _scan_state[tf]['scanned'] += 1
+                except (HTTPError,URLError,TimeoutError,OSError,KeyError,ValueError,TypeError,ZeroDivisionError):
+                    with _scan_state_lock:
+                        _scan_state[tf]['failed'] += 1
+    except (HTTPError,URLError,TimeoutError,OSError,KeyError,ValueError,TypeError):
+        app.logger.warning('Technical scanner could not access market data')
+    finally:
+        with _scan_state_lock:
+            _scan_state[tf]['running'] = False
+            _scan_state[tf]['at'] = time.time()
+
+
+@app.get('/terminal/scanner')
+def terminal_scanner():
+    if not _terminal_permitted():
+        return _terminal_guard()
+    tf = request.args.get('tf','15m')
+    if tf not in ('5m','15m'):
+        return jsonify(error='Unsupported timeframe'),422
+    with _scan_state_lock:
+        state = _scan_state[tf]
+        due = state['at'] == 0 or time.time()-state['at'] > 600
+        if request.args.get('refresh') == '1':
+            due = True
+        if due and not state['running']:
+            state.update(running=True,results={},scanned=0,failed=0,total=0,at=time.time())
+            Thread(target=_run_scan,args=(tf,),daemon=True).start()
+        payload = {'results':list(state['results'].values()),'running':state['running'],
+                   'total':state['total'],'scanned':state['scanned'],'failed':state['failed'],
+                   'generated_at':int(state['at']),'timeframe':tf,'orders_enabled':False}
+    response=jsonify(payload)
+    response.headers['Cache-Control']='no-store'
+    return response
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=int(os.getenv('PORT', '8080')))
