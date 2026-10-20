@@ -198,6 +198,18 @@ const container=document.getElementById('tradeChart'),shell=document.getElementB
 const symbol=document.getElementById('chartSymbol'),tf=document.getElementById('chartTf'),status=document.getElementById('chartStatus'),refresh=document.getElementById('chartRefresh');
 let chart=null, series=null, bars=[],loading=false,olderLoading=false,loadedPair='',loadedTf='',pending=0;
 const validPair=()=>symbol.value.trim().toUpperCase().replaceAll(' ','');
+// Choose display precision from market price magnitude, not the default 2 decimals.
+// This controls axis/crosshair labels only; it does NOT assert the exchange tick size.
+function chartPriceFormat(candles){
+ const prices=candles.flatMap(b=>[b.open,b.high,b.low,b.close]).filter(p=>Number.isFinite(p)&&p>0);
+ if(!prices.length)return {type:'price',precision:2,minMove:0.01};
+ const minPrice=Math.min(...prices);
+ let precision=minPrice>=1?2:minPrice>=0.01?4:minPrice>=0.0001?6:minPrice>=0.000001?8:minPrice>=0.00000001?10:minPrice>=0.0000000001?12:14;
+ return {type:'price',precision,minMove:Math.pow(10,-precision)};
+}
+function applyChartPriceFormat(candles){
+ if(series&&candles.length)series.applyOptions({priceFormat:chartPriceFormat(candles)});
+}
 function initialize(){
  if(chart)return true;
  if(typeof LightweightCharts==='undefined'){
@@ -223,10 +235,11 @@ async function loadChart(){
  try{
   const batch=await readCandles();if(!batch.length)throw Error('No completed candles');
   if(ticket!==pending)return;
-  if(!same){bars=batch;loadedPair=pair;loadedTf=tf.value;series.setData(bars);chart.timeScale().fitContent();}
+  if(!same){bars=batch;loadedPair=pair;loadedTf=tf.value;applyChartPriceFormat(bars);series.setData(bars);chart.timeScale().fitContent();}
   else{
    const range=chart.timeScale().getVisibleLogicalRange();
    bars=Array.from(new Map([...bars,...batch].map(b=>[b.time,b])).values()).sort((a,b)=>a.time-b.time);
+   applyChartPriceFormat(bars);
    series.setData(bars);
    if(range)chart.timeScale().setVisibleLogicalRange(range);
   }
@@ -242,6 +255,7 @@ async function loadOlder(){
   if(pair!==loadedPair||tf.value!==loadedTf)return;
   const earlier=batch.filter(b=>b.time<oldest);if(!earlier.length){status.textContent='No older candles were returned for this contract.';return;}
   bars=Array.from(new Map([...earlier,...bars].map(b=>[b.time,b])).values()).sort((a,b)=>a.time-b.time);
+  applyChartPriceFormat(bars);
   series.setData(bars);
   if(range)chart.timeScale().setVisibleLogicalRange({from:range.from+earlier.length,to:range.to+earlier.length});
   status.textContent='Loaded '+earlier.length+' older candles · '+bars.length+' total · drag to browse history.';
