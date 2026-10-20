@@ -1,7 +1,7 @@
 """LuxAlgo PRO: authenticated signal intake + READ-ONLY Gate.io and Binance API connectivity.
 
 NO order submission, funds transfer, or withdrawal functions exist.
-Authenticated /bot/status reports in-memory DRY RUN intent records only.
+Authenticated /bot/status reports PostgreSQL-backed DRY RUN intent records only.
 The /gate/plan endpoint only calculates indicative ATR levels; no orders are placed.
 Exchange credentials must be supplied via Railway service variables only.
 """
@@ -21,17 +21,92 @@ from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 from flask import Flask, jsonify, render_template_string, request, Response
 
+# PostgreSQL dependency: psycopg[binary] (see requirements addition).
+import psycopg
+from psycopg.rows import dict_row
+
 app = Flask(__name__)
-_records = deque(maxlen=50)
 _lock = Lock()
-# Volatile, non-executing intent monitor. Cleared at deployment/restart.
-_intents = deque(maxlen=50)
-_seen_events = {}
+
+# Durable signal-only audit store. All trade execution remains disabled.
+# Do not fall back to RAM on DB failures: that would lose duplicate protection.
+DB_SCHEMA = '''
+CREATE TABLE IF NOT EXISTS luxalgo_signal_receipts (
+ id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+ received_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+ event_id TEXT NOT NULL,
+ symbol TEXT NOT NULL,
+ side TEXT NOT NULL,
+ timeframe TEXT NOT NULL DEFAULT '15m'
+);
+CREATE INDEX IF NOT EXISTS idx_luxalgo_receipts_recent
+ ON luxalgo_signal_receipts (id DESC);
+CREATE TABLE IF NOT EXISTS luxalgo_dry_run_intents (
+ event_id TEXT PRIMARY KEY,
+ received_at TIMESTAMPTZ NOT NULL,
+ symbol TEXT NOT NULL,
+ side TEXT NOT NULL,
+ timeframe TEXT NOT NULL DEFAULT '15m',
+ status TEXT NOT NULL DEFAULT 'DRY_RUN_ONLY'
+);
+'''
+
+def _db_connect():
+    url = os.getenv('DATABASE_URL', '').strip()
+    if not url:
+        raise RuntimeError('DATABASE_URL is missing')
+    return psycopg.connect(url, connect_timeout=5, row_factory=dict_row)
+
+def _ensure_schema(connection):
+    # Repeated CREATE IF NOT EXISTS is safe across Railway restarts.
+    connection.execute(DB_SCHEMA)
+
+def _db_recent():
+    with _db_connect() as con:
+        _ensure_schema(con)
+        with con.cursor() as cur:
+            cur.execute('SELECT COUNT(*) AS total FROM luxalgo_signal_receipts')
+            count = cur.fetchone()['total']
+            cur.execute('''SELECT received_at, symbol, side FROM luxalgo_signal_receipts
+                           ORDER BY id DESC LIMIT 20''')
+            rows = [dict(time=r['received_at'].isoformat(),symbol=r['symbol'],side=r['side'])
+                    for r in cur.fetchall()]
+    return count, rows
+
+def _db_status():
+    with _db_connect() as con:
+        _ensure_schema(con)
+        with con.cursor() as cur:
+            cur.execute('SELECT COUNT(*) AS total FROM luxalgo_signal_receipts')
+            count = cur.fetchone()['total']
+            cur.execute('''SELECT event_id, received_at, symbol, side, timeframe, status
+                           FROM luxalgo_dry_run_intents ORDER BY received_at DESC LIMIT 15''')
+            intents = [dict(event_id=r['event_id'], time=r['received_at'].isoformat(),
+                            symbol=r['symbol'],side=r['side'],tf=r['timeframe'],
+                            status=r['status'],orders_placed=0) for r in cur.fetchall()]
+    return count, intents
+
+def _db_record(record,event_id):
+    # A single transaction both logs delivery and deduplicates a DRY RUN intent.
+    with _db_connect() as con:
+        _ensure_schema(con)
+        with con.cursor() as cur:
+            cur.execute('''INSERT INTO luxalgo_signal_receipts
+                           (received_at, event_id, symbol, side, timeframe)
+                           VALUES (%s, %s, %s, %s, %s)''',
+                        (record['dt'],event_id,record['symbol'],record['side'],'15m'))
+            cur.execute('''INSERT INTO luxalgo_dry_run_intents
+                           (event_id,received_at,symbol,side,timeframe,status)
+                           VALUES (%s,%s,%s,%s,%s,'DRY_RUN_ONLY')
+                           ON CONFLICT (event_id) DO NOTHING RETURNING event_id''',
+                        (event_id,record['dt'],record['symbol'],record['side'],'15m'))
+            duplicate = cur.fetchone() is None
+    return duplicate
 
 PAGE = '''<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>LUXALGO PRO · Trading Terminal</title>
 <style>:root{color-scheme:dark}*{box-sizing:border-box}body{margin:0;background:#08111f;color:#edf5ff;font:14px/1.5 system-ui,Segoe UI,Arial}.wrap{max-width:1180px;margin:auto;padding:24px}header,.panel,.metric{background:#122238;border:1px solid #29415e;border-radius:12px;padding:19px}header{display:flex;justify-content:space-between;gap:12px;align-items:center}h1{font-size:23px;margin:0}h2{font-size:15px;margin:0 0 15px}p{margin:5px 0;color:#a8bed6}.tag{color:#ffc47c;font-weight:700}.grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin:15px 0}.metric small{color:#9fb5cf}.metric strong{display:block;margin-top:8px;font-size:18px}.panel{margin-top:14px}.tablewrap{overflow:auto}table{border-collapse:collapse;width:100%;min-width:650px}th,td{padding:11px 9px;border-bottom:1px solid #2b435e;text-align:left}th{color:#a7c0dc;font-size:12px}td{font-size:13px}.light{color:#a8bed6}.ok{color:#47dfae}.off{color:#ffc47c}.btn{background:#203b5c;color:#eef6ff;border:1px solid #46749d;border-radius:7px;padding:8px 12px;cursor:pointer}.btn:disabled{opacity:.5}#planResults{white-space:pre-wrap;font:13px/1.7 ui-monospace,Consolas,monospace;background:#0b1a2b;border:1px solid #2b435e;border-radius:8px;padding:14px}.controls{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:12px;margin:14px 0}.controls label{display:flex;flex-direction:column;color:#a8bed6;font-size:12px;gap:5px}.controls input,.controls select{background:#0b1a2b;color:#edf5ff;border:1px solid #46749d;border-radius:7px;padding:9px;font:inherit}.controls input:read-only{opacity:.7}.foot{padding:18px 2px;font-size:12px;color:#a8bed6}@media(max-width:800px){.grid{grid-template-columns:repeat(2,minmax(0,1fr))}header{display:block}.wrap{padding:12px}}</style></head><body><div class="wrap"><header><div><h1>LUXALGO PRO · TRADING TERMINAL</h1><p>Gate.io USDT Perpetual · LuxAlgo 15m · Hello, Subhasish</p></div><div class="tag">● LIVE TRADING OFF</div></header>
-<div class="grid"><div class="metric"><small>WEBHOOK</small><strong class="{{ 'ok' if configured else 'off' }}">{{ 'Configured' if configured else 'Not configured' }}</strong></div><div class="metric"><small>SIGNALS SINCE RESTART</small><strong>{{ count }}</strong></div><div class="metric"><small>GATE.IO API</small><strong>Read-only</strong></div><div class="metric"><small>REALIZED PROFIT / LOSS</small><strong>Not available</strong></div></div>
-<section class="panel"><h2>RECENT LUXALGO SIGNALS</h2><div class="tablewrap"><table><thead><tr><th>Received (UTC)</th><th>Token</th><th>Signal</th><th>Timeframe</th><th>Status</th><th>Entry / SL / TP Plan</th></tr></thead><tbody>{% for r in records %}<tr><td>{{r.time[:19]|e}}</td><td>{{r.symbol|e}}</td><td>{{r.side|e}}</td><td>15m</td><td>Received · Not executed</td><td><button class="btn plan" data-symbol="{{r.symbol|e}}" data-side="{{r.side|e}}">Calculate</button></td></tr>{% else %}<tr><td colspan="6">No signals received since this server restarted.</td></tr>{% endfor %}</tbody></table></div><p class="light">Signals are received events, not fills. Records are memory-only and can be lost on redeploy. Duplicate signals may not create separate dry-run intents.</p></section>
+<div class="grid"><div class="metric"><small>WEBHOOK</small><strong class="{{ 'ok' if configured else 'off' }}">{{ 'Configured' if configured else 'Not configured' }}</strong></div><div class="metric"><small>SIGNALS STORED IN DATABASE</small><strong>{{ count }}</strong></div><div class="metric"><small>GATE.IO API</small><strong>Read-only</strong></div><div class="metric"><small>REALIZED PROFIT / LOSS</small><strong>Not available</strong></div></div>
+<section class="panel"><h2>RECENT LUXALGO SIGNALS</h2><div class="tablewrap"><table><thead><tr><th>Received (UTC)</th><th>Token</th><th>Signal</th><th>Timeframe</th><th>Status</th><th>Entry / SL / TP Plan</th></tr></thead><tbody>{% for r in records %}<tr><td>{{r.time[:19]|e}}</td><td>{{r.symbol|e}}</td><td>{{r.side|e}}</td><td>15m</td><td>Received · Not executed</td><td><button class="btn plan" data-symbol="{{r.symbol|e}}" data-side="{{r.side|e}}">Calculate</button></td></tr>{% else %}<tr><td colspan="6">No signals stored in the database yet.</td></tr>{% endfor %}</tbody></table></div><p class="light">Signals are received events, not fills. Signal receipts and dry-run intent IDs are saved in PostgreSQL. Duplicate signals may not create separate dry-run intents.</p></section>
 <section class="panel"><h2>AUTO TRADING SETTINGS — PLANNING ONLY</h2>
 <p class="light">AUTO is the default. You may preview changes graphically, but these settings are not saved and cannot place or modify orders.</p>
 <div class="controls"><label>Mode<select id="mode"><option value="AUTO">AUTO (ATR-based)</option><option value="MANUAL">MANUAL (preview overrides)</option></select></label>
@@ -91,9 +166,11 @@ def _terminal_guard():
 def home():
     if not _terminal_permitted():
         return _terminal_guard()
-    with _lock:
-        count = len(_records)
-        records = list(_records)[-20:][::-1]
+    try:
+        count, records = _db_recent()
+    except (psycopg.Error, RuntimeError, OSError):
+        app.logger.exception('Persistent signal storage unavailable')
+        return Response('Persistent signal database temporarily unavailable. No trading is active.', status=503)
     response = Response(render_template_string(PAGE, configured=len(expected_webhook_token()) >= 24,
                                                count=count, records=records), mimetype='text/html')
     response.headers['Cache-Control'] = 'no-store'
@@ -135,14 +212,16 @@ def bot_status():
     data = request.get_json(silent=True) if request.is_json else None
     if not isinstance(data, dict) or not authorized(data):
         return jsonify(error='Unauthorized'), 401
-    with _lock:
-        recent = list(_intents)[-15:][::-1]
-        signal_count = len(_records)
+    try:
+        signal_count, recent = _db_status()
+    except (psycopg.Error, RuntimeError, OSError):
+        app.logger.exception('Persistent signal database unavailable')
+        return jsonify(error='Persistent signal database unavailable', orders_enabled=False),503
     return jsonify(mode='DRY_RUN_ONLY', live_trading=False,
                    orders_enabled=False, exchange='Gate.io',
                    signals_since_restart=signal_count,
                    dry_run_intents=recent,
-                   persistent_history=False,
+                   persistent_history=True,
                    warning='No positions, order submissions, fills, SL or TP orders exist.')
 
 
@@ -163,26 +242,18 @@ def webhook():
     allowed = {'BUY': 'LONG', 'LONG': 'LONG', 'BULLISH CONFIRMATION': 'LONG', 'SELL': 'SHORT', 'SHORT': 'SHORT', 'BEARISH CONFIRMATION': 'SHORT'}
     if not re.fullmatch(r'[A-Z0-9]{3,25}USDT', symbol) or side not in allowed or tf not in ('15', '15m', '15min', '15 minutes'):
         return jsonify(error='Invalid symbol, side, or 15-minute timeframe'), 422
-    with _lock:
-        received_at = datetime.now(timezone.utc)
-        record = {'time': received_at.isoformat(), 'symbol': symbol,
-                  'side': allowed[side], 'tf': '15m'}
-        _records.append(record)
-        # Incoming webhook is signal-only; do not treat it as an order.
-        # Repeated alerts for same pair/direction in the 15-minute UTC bucket
-        # are logged but only create one non-executable DRY RUN intent.
-        bucket = int(received_at.timestamp()) // 900
-        event_id = sha256(f'{symbol}|{allowed[side]}|15m|{bucket}'.encode()).hexdigest()[:20]
-        duplicate = event_id in _seen_events
-        if not duplicate:
-            _seen_events[event_id] = received_at.timestamp()
-            _intents.append({'event_id': event_id, **record,
-                             'status': 'DRY_RUN_ONLY', 'orders_placed': 0})
-            if len(_seen_events) > 1000:
-                cutoff = received_at.timestamp() - 86400
-                for key, stamp in list(_seen_events.items()):
-                    if stamp < cutoff:
-                        _seen_events.pop(key, None)
+    received_at = datetime.now(timezone.utc)
+    record = {'dt':received_at,'symbol':symbol,'side':allowed[side]}
+    # This event key is based on RECEIVE time, not a verified candle ID.
+    # For live orders, require a TradingView event/bar identifier and
+    # exchange reconciliation before accepting any automated trades.
+    bucket = int(received_at.timestamp()) // 900
+    event_id = sha256(f'{symbol}|{allowed[side]}|15m|{bucket}'.encode()).hexdigest()[:20]
+    try:
+        duplicate = _db_record(record,event_id)
+    except (psycopg.Error,RuntimeError,OSError):
+        app.logger.exception('Cannot durably record incoming LuxAlgo signal')
+        return jsonify(error='Signal not stored; retry later',orders_placed=0),503
     return jsonify(status='signal_received', mode='SIGNAL_ONLY', symbol=symbol,
                    side=allowed[side], duplicate_in_candle=duplicate,
                    dry_run_intent_id=event_id, orders_placed=0), 200
