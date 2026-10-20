@@ -67,9 +67,9 @@ def _db_recent():
         with con.cursor() as cur:
             cur.execute('SELECT COUNT(*) AS total FROM luxalgo_signal_receipts')
             count = cur.fetchone()['total']
-            cur.execute('''SELECT received_at, symbol, side FROM luxalgo_signal_receipts
+            cur.execute('''SELECT received_at, symbol, side, timeframe FROM luxalgo_signal_receipts
                            ORDER BY id DESC LIMIT 20''')
-            rows = [dict(time=r['received_at'].isoformat(),symbol=r['symbol'],side=r['side'])
+            rows = [dict(time=r['received_at'].isoformat(),symbol=r['symbol'],side=r['side'],tf=r['timeframe'])
                     for r in cur.fetchall()]
     return count, rows
 
@@ -94,19 +94,19 @@ def _db_record(record,event_id):
             cur.execute('''INSERT INTO luxalgo_signal_receipts
                            (received_at, event_id, symbol, side, timeframe)
                            VALUES (%s, %s, %s, %s, %s)''',
-                        (record['dt'],event_id,record['symbol'],record['side'],'15m'))
+                        (record['dt'],event_id,record['symbol'],record['side'],record['tf']))
             cur.execute('''INSERT INTO luxalgo_dry_run_intents
                            (event_id,received_at,symbol,side,timeframe,status)
                            VALUES (%s,%s,%s,%s,%s,'DRY_RUN_ONLY')
                            ON CONFLICT (event_id) DO NOTHING RETURNING event_id''',
-                        (event_id,record['dt'],record['symbol'],record['side'],'15m'))
+                        (event_id,record['dt'],record['symbol'],record['side'],record['tf']))
             duplicate = cur.fetchone() is None
     return duplicate
 
 PAGE = '''<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>LUXALGO PRO · Trading Terminal</title>
-<style>:root{color-scheme:dark}*{box-sizing:border-box}body{margin:0;background:#08111f;color:#edf5ff;font:14px/1.5 system-ui,Segoe UI,Arial}.wrap{max-width:1180px;margin:auto;padding:24px}header,.panel,.metric{background:#122238;border:1px solid #29415e;border-radius:12px;padding:19px}header{display:flex;justify-content:space-between;gap:12px;align-items:center}h1{font-size:23px;margin:0}h2{font-size:15px;margin:0 0 15px}p{margin:5px 0;color:#a8bed6}.tag{color:#ffc47c;font-weight:700}.grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin:15px 0}.metric small{color:#9fb5cf}.metric strong{display:block;margin-top:8px;font-size:18px}.panel{margin-top:14px}.tablewrap{overflow:auto}table{border-collapse:collapse;width:100%;min-width:650px}th,td{padding:11px 9px;border-bottom:1px solid #2b435e;text-align:left}th{color:#a7c0dc;font-size:12px}td{font-size:13px}.light{color:#a8bed6}.ok{color:#47dfae}.off{color:#ffc47c}.btn{background:#203b5c;color:#eef6ff;border:1px solid #46749d;border-radius:7px;padding:8px 12px;cursor:pointer}.btn:disabled{opacity:.5}#planResults{white-space:pre-wrap;font:13px/1.7 ui-monospace,Consolas,monospace;background:#0b1a2b;border:1px solid #2b435e;border-radius:8px;padding:14px}.controls{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:12px;margin:14px 0}.controls label{display:flex;flex-direction:column;color:#a8bed6;font-size:12px;gap:5px}.controls input,.controls select{background:#0b1a2b;color:#edf5ff;border:1px solid #46749d;border-radius:7px;padding:9px;font:inherit}.controls input:read-only{opacity:.7}.foot{padding:18px 2px;font-size:12px;color:#a8bed6}@media(max-width:800px){.grid{grid-template-columns:repeat(2,minmax(0,1fr))}header{display:block}.wrap{padding:12px}}</style></head><body><div class="wrap"><header><div><h1>LUXALGO PRO · TRADING TERMINAL</h1><p>Gate.io USDT Perpetual · LuxAlgo 15m · Hello, Subhasish</p></div><div class="tag">● LIVE TRADING OFF</div></header>
+<style>:root{color-scheme:dark}*{box-sizing:border-box}body{margin:0;background:#08111f;color:#edf5ff;font:14px/1.5 system-ui,Segoe UI,Arial}.wrap{max-width:1180px;margin:auto;padding:24px}header,.panel,.metric{background:#122238;border:1px solid #29415e;border-radius:12px;padding:19px}header{display:flex;justify-content:space-between;gap:12px;align-items:center}h1{font-size:23px;margin:0}h2{font-size:15px;margin:0 0 15px}p{margin:5px 0;color:#a8bed6}.tag{color:#ffc47c;font-weight:700}.grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin:15px 0}.metric small{color:#9fb5cf}.metric strong{display:block;margin-top:8px;font-size:18px}.panel{margin-top:14px}.tablewrap{overflow:auto}table{border-collapse:collapse;width:100%;min-width:650px}th,td{padding:11px 9px;border-bottom:1px solid #2b435e;text-align:left}th{color:#a7c0dc;font-size:12px}td{font-size:13px}.light{color:#a8bed6}.ok{color:#47dfae}.off{color:#ffc47c}.btn{background:#203b5c;color:#eef6ff;border:1px solid #46749d;border-radius:7px;padding:8px 12px;cursor:pointer}.btn:disabled{opacity:.5}#planResults{white-space:pre-wrap;font:13px/1.7 ui-monospace,Consolas,monospace;background:#0b1a2b;border:1px solid #2b435e;border-radius:8px;padding:14px}.controls{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:12px;margin:14px 0}.controls label{display:flex;flex-direction:column;color:#a8bed6;font-size:12px;gap:5px}.controls input,.controls select{background:#0b1a2b;color:#edf5ff;border:1px solid #46749d;border-radius:7px;padding:9px;font:inherit}.controls input:read-only{opacity:.7}.foot{padding:18px 2px;font-size:12px;color:#a8bed6}@media(max-width:800px){.grid{grid-template-columns:repeat(2,minmax(0,1fr))}header{display:block}.wrap{padding:12px}}</style></head><body><div class="wrap"><header><div><h1>LUXALGO PRO · TRADING TERMINAL</h1><p>Gate.io USDT Perpetual · LuxAlgo 5m / 15m · Hello, Subhasish</p></div><div class="tag">● LIVE TRADING OFF</div></header>
 <div class="grid"><div class="metric"><small>WEBHOOK</small><strong class="{{ 'ok' if configured else 'off' }}">{{ 'Configured' if configured else 'Not configured' }}</strong></div><div class="metric"><small>SIGNALS STORED IN DATABASE</small><strong>{{ count }}</strong></div><div class="metric"><small>GATE.IO API</small><strong>Read-only</strong></div><div class="metric"><small>REALIZED PROFIT / LOSS</small><strong>Not available</strong></div></div>
-<section class="panel"><h2>RECENT LUXALGO SIGNALS</h2><div class="tablewrap"><table><thead><tr><th>Received (UTC)</th><th>Token</th><th>Signal</th><th>Timeframe</th><th>Status</th><th>Entry / SL / TP Plan</th></tr></thead><tbody>{% for r in records %}<tr><td>{{r.time[:19]|e}}</td><td>{{r.symbol|e}}</td><td>{{r.side|e}}</td><td>15m</td><td>Received · Not executed</td><td><button class="btn plan" data-symbol="{{r.symbol|e}}" data-side="{{r.side|e}}">Calculate</button></td></tr>{% else %}<tr><td colspan="6">No signals stored in the database yet.</td></tr>{% endfor %}</tbody></table></div><p class="light">Signals are received events, not fills. Signal receipts and dry-run intent IDs are saved in PostgreSQL. Duplicate signals may not create separate dry-run intents.</p></section>
+<section class="panel"><h2>RECENT LUXALGO SIGNALS</h2><div class="tablewrap"><table><thead><tr><th>Received (UTC)</th><th>Token</th><th>Signal</th><th>Timeframe</th><th>Status</th><th>Entry / SL / TP Plan</th></tr></thead><tbody>{% for r in records %}<tr><td>{{r.time[:19]|e}}</td><td>{{r.symbol|e}}</td><td>{{r.side|e}}</td><td>{{r.tf|e}}</td><td>Received · Not executed</td><td><button class="btn plan" data-symbol="{{r.symbol|e}}" data-side="{{r.side|e}}" data-tf="{{r.tf|e}}">Plan + Chart</button></td></tr>{% else %}<tr><td colspan="6">No signals stored in the database yet.</td></tr>{% endfor %}</tbody></table></div><p class="light">Signals are received events, not fills. Signal receipts and dry-run intent IDs are saved in PostgreSQL. Duplicate signals may not create separate dry-run intents.</p></section>
 <section class="panel"><h2>AUTO TRADING SETTINGS — PLANNING ONLY</h2>
 <p class="light">AUTO is the default. You may preview changes graphically, but these settings are not saved and cannot place or modify orders.</p>
 <div class="controls"><label>Mode<select id="mode"><option value="AUTO">AUTO (ATR-based)</option><option value="MANUAL">MANUAL (preview overrides)</option></select></label>
@@ -116,7 +116,17 @@ PAGE = '''<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name=
 <label>Entry reference <input id="entry" type="number" step="any" placeholder="Select a signal" readonly></label>
 <label>Stop Loss <input id="sl" type="number" step="any" placeholder="1.5 × ATR" readonly></label>
 <label>TP1 — 100% exit <input id="tp1" type="number" step="any" placeholder="2 × ATR" readonly></label></div>
-<div id="planResults">Select Calculate beside a signal to obtain a read-only 15m ATR-based plan. Reference entry is not a fill; SL and TP1 are not placed orders.</div>
+<div id="planResults">Select Plan + Chart beside a signal to obtain a read-only ATR-based plan. Reference entry is not a fill; SL and TP1 are not placed orders.</div>
+</section>
+<section class="panel"><h2>IN-TERMINAL MARKET CHART</h2>
+<p class="light">Select a signal above, or enter a Gate.io USDT perpetual pair. Charts use public market candles only (not position/fill data).</p>
+<div class="controls"><label>Trading pair <input id="chartSymbol" value="BTCUSDT" maxlength="29" autocomplete="off"></label><label>Chart timeframe<select id="chartTf"><option value="15m">15 minutes</option><option value="5m">5 minutes</option></select></label><label>Chart refresh <button class="btn" id="chartRefresh" type="button">Refresh Chart</button></label></div>
+<canvas id="tradeChart" width="1050" height="360" style="display:block;width:100%;height:360px;background:#0b1a2b;border:1px solid #29415e;border-radius:8px" aria-label="Public candlestick price chart"></canvas>
+<p class="light" id="chartStatus" aria-live="polite">Select a token to load its market chart.</p>
+</section>
+<section class="panel"><h2>OPEN POSITIONS & MANUAL CLOSE</h2>
+<p class="light">No verified Gate.io positions are currently synchronized. Manual closing is unavailable until position IDs, sizes and actual exchange fills are verified. The control below cannot submit an order.</p>
+<button class="btn" disabled title="No verified exchange position / trade execution engine">Close selected position — NOT AVAILABLE</button>
 </section>
 <section class="panel"><h2>POSITION & PROFIT SUMMARY</h2><div class="tablewrap"><table><thead><tr><th>Pair</th><th>Entry fill</th><th>SL order</th><th>TP1 order</th><th>Realized P&amp;L</th><th>State</th></tr></thead><tbody><tr><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>No execution engine; no verified fills</td></tr></tbody></table></div><p class="light">Profit and win rate will appear only after a secure Gate.io fills/order synchronization and persistent record system are implemented. Nothing is simulated as realized profit.</p></section>
 <div class="foot">Read-only terminal · No orders are submitted · Never share API keys · Safeguards and exchange-side SL/TP are not yet implemented.</div></div>
@@ -125,11 +135,34 @@ const mode=document.getElementById('mode'), entry=document.getElementById('entry
 mode.addEventListener('change',()=>{const manual=mode.value==='MANUAL';for(const el of [entry,sl,tp1])el.readOnly=!manual;});
 document.querySelectorAll('.plan').forEach(b=>b.addEventListener('click',async()=>{
  const out=document.querySelector('#planResults');b.disabled=true;out.textContent='Calculating read-only ATR plan…';
- try{const r=await fetch('/terminal/plan',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({symbol:b.dataset.symbol,side:b.dataset.side})});const d=await r.json();if(!r.ok)throw Error(d.error||'Plan unavailable');const p=d.plan;
+ try{const r=await fetch('/terminal/plan',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({symbol:b.dataset.symbol,side:b.dataset.side,tf:b.dataset.tf})});const d=await r.json();if(!r.ok)throw Error(d.error||'Plan unavailable');const p=d.plan;
  entry.value=p.reference_entry;sl.value=p.stop_loss_1_5_atr;tp1.value=p.take_profit_1_2_atr;
- out.textContent=['Contract: '+p.contract,'Signal: '+p.side,'Reference: latest completed 15m close (not a fill)','AUTO Stop Loss: 1.5 × ATR','AUTO TP1: 2 × ATR (100% close intended)','Order count: 0','Manual changes are previews only. No exchange orders or protection exist.'].join('\n');
+ out.textContent=['Contract: '+p.contract,'Signal: '+p.side,'Timeframe: '+p.timeframe,'Reference: latest completed candle close (not a fill)','AUTO Stop Loss: 1.5 × ATR','AUTO TP1: 2 × ATR (100% close intended)','Order count: 0','Manual changes are previews only. No exchange orders or protection exist.'].join('\n');
  }catch(e){out.textContent=e.message}finally{b.disabled=false}
 }));
+
+(function(){
+const canvas=document.getElementById('tradeChart'), ctx=canvas.getContext('2d'),symbol=document.getElementById('chartSymbol'),tf=document.getElementById('chartTf'),status=document.getElementById('chartStatus'),refresh=document.getElementById('chartRefresh');
+async function loadChart(){
+ const pair=symbol.value.trim().toUpperCase().replaceAll(' ','');
+ if(!/^[A-Z0-9]{3,25}USDT$/.test(pair)){status.textContent='Enter a valid USDT perpetual symbol, e.g. BTCUSDT';return;}
+ refresh.disabled=true;status.textContent='Loading '+pair+' '+tf.value+' public candles…';
+ try{
+  const q=new URLSearchParams({symbol:pair,tf:tf.value});const r=await fetch('/terminal/chart?'+q,{cache:'no-store'});const data=await r.json();if(!r.ok)throw Error(data.error||'Market data unavailable');
+  const bars=data.candles;if(!bars.length)throw Error('No completed candles');
+  const W=canvas.width,H=canvas.height,L=14,R=88,T=18,B=28,pW=W-L-R,pH=H-T-B;
+  const lo=Math.min(...bars.map(b=>b.l)),hi=Math.max(...bars.map(b=>b.h)),pad=Math.max((hi-lo)*0.06,hi*0.00001),min=lo-pad,max=hi+pad;
+  const y=v=>T+(max-v)/(max-min)*pH;
+  ctx.fillStyle='#0b1a2b';ctx.fillRect(0,0,W,H);ctx.lineWidth=1;ctx.font='13px system-ui';
+  for(let k=0;k<=5;k++){const val=max-(max-min)*k/5,py=T+pH*k/5;ctx.strokeStyle='#263d57';ctx.beginPath();ctx.moveTo(L,py);ctx.lineTo(W-R,py);ctx.stroke();ctx.fillStyle='#a8bed6';ctx.fillText(val.toPrecision(6),W-R+9,py+4)}
+  const step=pW/bars.length,bw=Math.max(3,Math.min(12,step*.65));
+  bars.forEach((b,i)=>{const x=L+step*(i+.5),green=b.c>=b.o;ctx.strokeStyle=ctx.fillStyle=green?'#47dfae':'#ef6983';ctx.beginPath();ctx.moveTo(x,y(b.h));ctx.lineTo(x,y(b.l));ctx.stroke();const upper=y(Math.max(b.c,b.o)),lower=y(Math.min(b.c,b.o));ctx.fillRect(x-bw/2,upper,bw,Math.max(1,lower-upper));});
+  ctx.fillStyle='#a8bed6';for(const i of [0,Math.floor((bars.length-1)/2),bars.length-1]){const date=new Date(bars[i].t*1000);ctx.fillText(date.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'}),L+step*i,H-7)}
+  status.textContent=pair+' · '+tf.value+' · '+bars.length+' completed public candles · refreshed '+new Date().toLocaleTimeString()+' · Informational, not an execution chart';
+ }catch(e){ctx.clearRect(0,0,canvas.width,canvas.height);status.textContent='Chart unavailable: '+e.message}finally{refresh.disabled=false}
+}
+refresh.addEventListener('click',loadChart);tf.addEventListener('change',loadChart);symbol.addEventListener('change',loadChart);window.loadChart=loadChart;loadChart();setInterval(()=>{if(!document.hidden)loadChart()},30000);
+})();
 </script></body></html>'''
 
 def expected_webhook_token():
@@ -190,15 +223,53 @@ def terminal_plan():
         return jsonify(error='Invalid request'),400
     symbol = str(data.get('symbol', '')).upper()
     side = str(data.get('side', '')).upper()
+    tf = str(data.get('tf', '15m')).strip().lower()
+    if tf not in ('5m','15m'):
+        return jsonify(error='Unsupported timeframe'),422
     if not re.fullmatch(r'[A-Z0-9]{3,25}USDT',symbol) or side not in ('LONG','SHORT'):
         return jsonify(error='Unsupported pair or direction'),422
     try:
-        plan = _gate_atr_plan(symbol,side)
+        plan = _gate_atr_plan(symbol,side,tf)
         response = jsonify(plan=plan, orders_enabled=False, live_trading=False)
         response.headers['Cache-Control']='no-store'
         return response
     except (HTTPError,URLError,TimeoutError,ValueError,KeyError,TypeError,OSError):
         return jsonify(error='ATR plan temporarily unavailable'),502
+
+
+@app.get('/terminal/chart')
+def terminal_chart():
+    # Private page chart based on public Gate.io candles. No exchange trading API used.
+    if not _terminal_permitted():
+        return _terminal_guard()
+    symbol = request.args.get('symbol','BTCUSDT').strip().upper()
+    tf = request.args.get('tf','15m')
+    if not re.fullmatch(r'[A-Z0-9]{3,25}USDT',symbol) or tf not in ('5m','15m'):
+        return jsonify(error='Unsupported symbol or timeframe'),422
+    contract = symbol[:-4] + '_USDT'
+    seconds = 300 if tf == '5m' else 900
+    url = 'https://api.gateio.ws/api/v4/futures/usdt/candlesticks?' + urlencode(
+        {'contract':contract,'interval':tf,'limit':70})
+    try:
+        req = Request(url, headers={'Accept':'application/json','User-Agent':'LuxAlgo-PRO-Terminal/1.0'},method='GET')
+        with urlopen(req,timeout=8) as res:
+            raw=json.loads(res.read(150000))
+        now=int(time.time())
+        candles=[]
+        if not isinstance(raw,list): raise ValueError('Invalid candle payload')
+        for bar in raw:
+            t=int(bar['t'])
+            if t+seconds>now:continue
+            o,h,l,c=(float(bar[k]) for k in ('o','h','l','c'))
+            if not all(math.isfinite(v) and v>0 for v in (o,h,l,c)) or h<max(o,c,l) or l>min(o,c):
+                raise ValueError('Invalid candle OHLC')
+            candles.append(dict(t=t,o=o,h=h,l=l,c=c))
+        candles=sorted({b['t']:b for b in candles}.values(), key=lambda x:x['t'])[-65:]
+        response=jsonify(symbol=symbol,timeframe=tf,candles=candles,orders_enabled=False)
+        response.headers['Cache-Control']='private, max-age=10'
+        return response
+    except (HTTPError,URLError,TimeoutError,ValueError,KeyError,TypeError,OSError):
+        return jsonify(error='Public candle data temporarily unavailable'),502
 
 
 @app.get('/health')
@@ -240,22 +311,23 @@ def webhook():
     side = str(data.get('side', data.get('alert', ''))).strip().upper()
     tf = str(data.get('tf', '')).strip().lower()
     allowed = {'BUY': 'LONG', 'LONG': 'LONG', 'BULLISH CONFIRMATION': 'LONG', 'SELL': 'SHORT', 'SHORT': 'SHORT', 'BEARISH CONFIRMATION': 'SHORT'}
-    if not re.fullmatch(r'[A-Z0-9]{3,25}USDT', symbol) or side not in allowed or tf not in ('15', '15m', '15min', '15 minutes'):
+    if not re.fullmatch(r'[A-Z0-9]{3,25}USDT', symbol) or side not in allowed or tf not in ('5', '5m', '5min', '5 minutes', '15', '15m', '15min', '15 minutes'):
         return jsonify(error='Invalid symbol, side, or 15-minute timeframe'), 422
     received_at = datetime.now(timezone.utc)
-    record = {'dt':received_at,'symbol':symbol,'side':allowed[side]}
+    tf = '5m' if tf.startswith('5') else '15m'
+    record = {'dt':received_at,'symbol':symbol,'side':allowed[side],'tf':tf}
     # This event key is based on RECEIVE time, not a verified candle ID.
     # For live orders, require a TradingView event/bar identifier and
     # exchange reconciliation before accepting any automated trades.
-    bucket = int(received_at.timestamp()) // 900
-    event_id = sha256(f'{symbol}|{allowed[side]}|15m|{bucket}'.encode()).hexdigest()[:20]
+    bucket = int(received_at.timestamp()) // (300 if tf == '5m' else 900)
+    event_id = sha256(f'{symbol}|{allowed[side]}|{tf}|{bucket}'.encode()).hexdigest()[:20]
     try:
         duplicate = _db_record(record,event_id)
     except (psycopg.Error,RuntimeError,OSError):
         app.logger.exception('Cannot durably record incoming LuxAlgo signal')
         return jsonify(error='Signal not stored; retry later',orders_placed=0),503
     return jsonify(status='signal_received', mode='SIGNAL_ONLY', symbol=symbol,
-                   side=allowed[side], duplicate_in_candle=duplicate,
+                   side=allowed[side], timeframe=tf, duplicate_in_candle=duplicate,
                    dry_run_intent_id=event_id, orders_placed=0), 200
 
 
@@ -343,7 +415,7 @@ def gate_check():
 
 
 
-def _gate_atr_plan(symbol, direction):
+def _gate_atr_plan(symbol, direction, tf="15m"):
     """Read ONLY public, completed 15m candles. Return an illustrative plan.
 
     Not order sizing: 0.5% risk requires verified available funds, instrument
@@ -361,7 +433,7 @@ def _gate_atr_plan(symbol, direction):
     complete = []
     for c in candles:
         start = int(c['t'])
-        if start + 900 > now:  # Exclude unfinished interval
+        if start + seconds > now:  # Exclude unfinished interval
             continue
         high, low, close = float(c['h']), float(c['l']), float(c['c'])
         if not all(math.isfinite(v) and v > 0 for v in (high,low,close)) or high < low:
@@ -370,7 +442,7 @@ def _gate_atr_plan(symbol, direction):
     complete.sort(key=lambda x:x[0])
     complete = list({c[0]: c for c in complete}.values())
     complete.sort(key=lambda x:x[0])
-    if len(complete) < 16 or any(b[0]-a[0] != 900 for a,b in zip(complete[-16:-1],complete[-15:])):
+    if len(complete) < 16 or any(b[0]-a[0] != seconds for a,b in zip(complete[-16:-1],complete[-15:])):
         raise ValueError('Insufficient consecutive completed 15m candles')
     # Wilder ATR(14) computed over all available completed candles.
     true_ranges = [max(c[1]-c[2], abs(c[1]-prev[3]), abs(c[2]-prev[3]))
@@ -386,7 +458,7 @@ def _gate_atr_plan(symbol, direction):
     if min(entry,sl,tp1,atr) <= 0:
         raise ValueError('Plan would produce nonpositive prices')
     return {
-        'contract':contract, 'side':direction, 'timeframe':'15m',
+        'contract':contract, 'side':direction, 'timeframe':tf,
         'reference':'most_recent_completed_15m_close_NOT_order_fill',
         'last_candle_start_utc':datetime.fromtimestamp(complete[-1][0], timezone.utc).isoformat(),
         'reference_entry':entry, 'atr_14_wilder':atr,
