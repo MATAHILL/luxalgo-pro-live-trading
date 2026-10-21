@@ -182,7 +182,7 @@ h2{font-size:15px;font-weight:850;letter-spacing:.3px}
 <section class="panel performance-panel"><div class="panel-heading"><h2>PERFORMANCE ANALYTICS</h2><span class="label-muted">VERIFIED FILLS ONLY</span></div><div class="perf-grid"><div><span>Total Closed Trades</span><strong>—</strong></div><div><span>Winning Trades</span><strong>—</strong></div><div><span>Losing Trades</span><strong>—</strong></div><div><span>Win Rate</span><strong>—</strong></div><div><span>Total Realized P&amp;L</span><strong>—</strong></div><div><span>Unrealized P&amp;L</span><strong>—</strong></div></div><p class="light">Waiting for authenticated position and fill synchronization. No synthetic P&amp;L or win statistics.</p></section></div><section class="panel"><h2>TRADE PLAN · SL · TP1 <span class="tag">READ ONLY</span></h2>
 <div class="controls"><label>Entry reference <input id="entry" type="number" step="any" placeholder="Choose a signal" readonly></label><label>Stop Loss · 1.5 ATR <input id="sl" type="number" step="any" readonly></label><label>TP1 · 2 ATR · 100% exit <input id="tp1" type="number" step="any" readonly></label></div>
 <div id="planResults">Select Plan + Chart beside a signal to calculate illustrative entry, SL and TP1. No orders are placed.</div></section>
-<section class="panel"><div class="panel-heading"><h2>COMPLETED TRADES · EXIT RECORD</h2><span class="label-muted">PENDING ACCOUNT HISTORY INTEGRATION</span></div><div class="tablewrap"><table><thead><tr><th>TIME (UTC)</th><th>PAIR</th><th>DIRECTION</th><th>ENTRY FILL</th><th>EXIT FILL</th><th>NET REALIZED P&amp;L</th><th>RESULT</th></tr></thead><tbody><tr><td colspan="7" class="empty-state">No verified exchange fills have been synchronized. Signal receipts are not executed trades.</td></tr></tbody></table></div></section><div class="foot">LUXALGO PRO · Private terminal · Market data is public Gate.io data. Scanners are technical watchlists, not LuxAlgo entry signals. No account positions, fills, profit or loss are available until authenticated exchange sync is implemented. LIVE TRADING OFF; no orders are placed.</div></div><script>
+<section class="panel"><div class="panel-heading"><h2>COMPLETED TRADES · EXIT RECORD</h2><span class="label-muted">PENDING ACCOUNT HISTORY INTEGRATION</span></div><div class="tablewrap"><table><thead><tr><th>TIME (UTC)</th><th>PAIR</th><th>DIRECTION</th><th>ENTRY FILL</th><th>EXIT FILL</th><th>NET REALIZED P&amp;L</th><th>RESULT</th></tr></thead><tbody><tr><td colspan="7" class="empty-state">No verified exchange fills have been synchronized. Signal receipts are not executed trades.</td></tr></tbody></table></div></section><section class="panel"><div class="panel-heading"><h2>EXECUTION SAFETY PREVIEW <span class="tag">DRY RUN ONLY</span></h2><span class="label-muted">NO EXCHANGE ORDERS</span></div><p class="light">Preview illustrative risk and contract-size checks using a hypothetical USDT equity. This does not validate your actual available margin, fee-adjusted fills, current hedge settings, or protective order placement.</p><div class="controls"><label>Trading pair<input id="previewSymbol" value="BTCUSDT" maxlength="29" autocomplete="off"></label><label>Direction<select id="previewSide"><option value="LONG">LONG / BUY</option><option value="SHORT">SHORT / SELL</option></select></label><label>Timeframe<select id="previewTf"><option value="15m">15 minutes</option><option value="5m">5 minutes</option></select></label><label>Hypothetical equity (USDT)<input id="previewEquity" type="number" value="100" min="1" max="10000000" step="any"></label></div><button class="btn" id="previewButton" type="button">Generate Read-Only Risk Preview</button><div id="previewResult" role="status" aria-live="polite" style="white-space:pre-wrap;margin-top:12px;background:#0b1a2b;border:1px solid #2b435e;border-radius:8px;padding:14px;font:12px/1.8 ui-monospace,Consolas,monospace">Ready for a simulated preview. Nothing can place or close orders.</div></section><div class="foot">LUXALGO PRO · Private terminal · Market data is public Gate.io data. Scanners are technical watchlists, not LuxAlgo entry signals. No account positions, fills, profit or loss are available until authenticated exchange sync is implemented. LIVE TRADING OFF; no orders are placed.</div></div><script>
 const entry=document.getElementById('entry'), sl=document.getElementById('sl'), tp1=document.getElementById('tp1');
 document.querySelectorAll('.plan').forEach(b=>b.addEventListener('click',async()=>{
  const out=document.querySelector('#planResults');b.disabled=true;out.textContent='Calculating read-only ATR plan…';
@@ -280,6 +280,39 @@ start();
 setInterval(()=>{if(!document.hidden)loadChart();},30000);
 })();
 
+
+
+// Independent dry-run calculator: illustrative sizing, never submits orders.
+(function(){
+ 'use strict';
+ const btn=document.getElementById('previewButton'),out=document.getElementById('previewResult');
+ btn.addEventListener('click',async()=>{
+  btn.disabled=true;out.textContent='Checking public contract rules and calculating preview…';
+  try{
+   const payload={symbol:document.getElementById('previewSymbol').value.trim().toUpperCase(),side:document.getElementById('previewSide').value,tf:document.getElementById('previewTf').value,hypothetical_equity_usdt:Number(document.getElementById('previewEquity').value)};
+   const res=await fetch('/terminal/execution-preview',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload),cache:'no-store'});
+   const d=await res.json();if(!res.ok)throw Error(d.error||'Preview unavailable');
+   const v=d.preview;
+   const fmt=x=>x===null||x===undefined?'Unavailable':String(x);
+   out.textContent=['MODE: SIMULATION ONLY — NO ORDER SUBMISSION',
+      'Pair / direction / timeframe: '+v.contract+' / '+v.side+' / '+v.timeframe,
+      'Hypothetical equity: '+v.hypothetical_equity_usdt+' USDT',
+      'Budgeted risk (0.5%): '+v.risk_budget_usdt+' USDT',
+      'Reference entry (completed candle): '+v.reference_entry,
+      'Stop loss (1.5 ATR): '+v.stop_loss,
+      'TP1 (2 ATR; 100% planned exit): '+v.take_profit,
+      'Contract multiplier: '+v.quanto_multiplier,
+      'Conservative integer size: '+fmt(v.size_contracts)+' contracts',
+      'Estimated price-only loss at SL: '+fmt(v.estimated_sl_loss_usdt)+' USDT (excludes fees/slippage)',
+      'Estimated notional / 5x margin: '+fmt(v.notional_usdt)+' / '+fmt(v.estimated_margin_usdt)+' USDT',
+      'Gate minimum / maximum contracts: '+v.order_size_min+' / '+v.order_size_max,
+      'Result: '+v.result,
+      ...v.blockers.map(x=>'BLOCKER: '+x),
+      'Trading permissions: READ ONLY. Orders submitted: 0.',
+      'Actual equity, available margin, leverage/hedge setting, protective orders, fees, execution and reconciliation are NOT verified.'].join('\n');
+  }catch(e){out.textContent='Preview unavailable: '+e.message+' · No orders submitted.'}finally{btn.disabled=false;}
+ });
+})();
 
 // Private read-only Gate.io position monitor. No write endpoints or trading actions.
 (function(){
@@ -722,6 +755,99 @@ def _gate_atr_plan(symbol, direction, tf="15m"):
         'position_size':'NOT_CALCULATED', 'exchange_orders_sent':0,
         'warning':'Planning only; prices are not executable quotes. No SL/TP orders exist.'
     }
+
+
+def _execution_dry_run_preview(symbol, side, tf, hypothetical_equity):
+    """Planning ONLY: use public Gate.io contract details, no order signing/writes."""
+    from decimal import Decimal, ROUND_FLOOR, InvalidOperation
+    if not re.fullmatch(r'[A-Z0-9]{3,25}USDT', symbol) or side not in ('LONG','SHORT') or tf not in ('5m','15m'):
+        raise ValueError('Invalid symbol, side or timeframe')
+    try:
+        equity = Decimal(str(hypothetical_equity))
+    except (InvalidOperation, ValueError):
+        raise ValueError('Invalid hypothetical equity')
+    if not equity.is_finite() or not Decimal('1') <= equity <= Decimal('10000000'):
+        raise ValueError('Hypothetical equity must be 1 to 10,000,000 USDT')
+    plan = _gate_atr_plan(symbol, side, tf)
+    contract = plan['contract']
+    path = '/api/v4/futures/usdt/contracts/' + contract
+    req = Request('https://api.gateio.ws'+path,
+                  headers={'Accept':'application/json','User-Agent':'LuxAlgo-PRO-DryRun/1.0'},method='GET')
+    with urlopen(req,timeout=10) as resp:
+        spec=json.loads(resp.read(65536))
+    if not isinstance(spec,dict) or spec.get('name') != contract or spec.get('type') != 'direct':
+        raise ValueError('Unverified or unsupported contract specification')
+    def positive_decimal(name):
+        try: x=Decimal(str(spec[name]))
+        except (KeyError,InvalidOperation,ValueError): raise ValueError('Invalid '+name)
+        if not x.is_finite() or x<=0: raise ValueError('Invalid '+name)
+        return x
+    multiplier=positive_decimal('quanto_multiplier')
+    min_size=positive_decimal('order_size_min')
+    max_size=positive_decimal('order_size_max')
+    leverage_max=positive_decimal('leverage_max')
+    if min_size>max_size: raise ValueError('Inconsistent Gate size limits')
+    entry=Decimal(str(plan['reference_entry']))
+    stop=Decimal(str(plan['stop_loss_1_5_atr']))
+    take=Decimal(str(plan['take_profit_1_2_atr']))
+    distance=abs(entry-stop)
+    if distance<=0 or (side=='LONG' and not stop<entry<take) or (side=='SHORT' and not take<entry<stop):
+        raise ValueError('Invalid SL/TP geometry')
+    budget=equity*Decimal('0.005')
+    loss_per_contract=distance*multiplier
+    raw_size=budget/loss_per_contract
+    # Conservative integer rounding. Some contracts allow decimals but require
+    # verified lot increment; don't fabricate a decimal-lot increment.
+    size=int(raw_size.to_integral_value(rounding=ROUND_FLOOR))
+    blockers=['Actual account equity/available margin and trade permissions not verified',
+              'No exchange-side stop loss or take-profit orders are implemented',
+              'No idempotent live order engine, fill reconciliation, or emergency close exists',
+              '5x Cross and Hedge Mode have not been verified against Gate.io',
+              'Fees, funding, slippage and current spread excluded']
+    if spec.get('in_delisting'):
+        blockers.append('Contract marked for delisting')
+    if leverage_max<5: blockers.append('Contract maximum leverage below configured 5x')
+    if spec.get('enable_decimal'):
+        blockers.append('Fractional contract lot increments not verified; integer size used only')
+    if Decimal(size)<min_size:
+        blockers.append('Risk budget cannot meet Gate.io minimum contract size')
+    if Decimal(size)>max_size:
+        blockers.append('Computed size exceeds Gate.io maximum per-order size')
+    # Never propose a size outside contract boundaries.
+    eligible = size>0 and Decimal(size)>=min_size and Decimal(size)<=max_size and leverage_max>=5 and not spec.get('in_delisting')
+    size_out = size if eligible else None
+    notional=(Decimal(size)*entry*multiplier) if eligible else None
+    return dict(contract=contract,side=side,timeframe=tf,
+      hypothetical_equity_usdt=str(equity),risk_budget_usdt=str(round(budget,8)),
+      reference_entry=str(entry),stop_loss=str(stop),take_profit=str(take),
+      quanto_multiplier=str(multiplier),order_size_min=str(min_size),order_size_max=str(max_size),
+      size_contracts=size_out,estimated_sl_loss_usdt=str(round(Decimal(size)*loss_per_contract,8)) if eligible else None,
+      notional_usdt=str(round(notional,8)) if eligible else None,
+      estimated_margin_usdt=str(round(notional/Decimal(5),8)) if eligible else None,
+      blockers=blockers,result='NOT APPROVED FOR LIVE TRADING — PREVIEW ONLY', orders_placed=0)
+
+
+@app.post('/terminal/execution-preview')
+def terminal_execution_preview():
+    if not _terminal_permitted():
+        return _terminal_guard()
+    data=request.get_json(silent=True) if request.is_json else None
+    if not isinstance(data,dict): return jsonify(error='JSON object required'),400
+    symbol=data.get('symbol'); side=data.get('side'); tf=data.get('tf')
+    if not all(isinstance(x,str) for x in (symbol,side,tf)):
+        return jsonify(error='Symbol, side and timeframe must be strings'),422
+    if not re.fullmatch(r'[A-Z0-9]{3,25}USDT',symbol) or side not in ('LONG','SHORT') or tf not in ('5m','15m'):
+        return jsonify(error='Invalid symbol, side or timeframe'),422
+    try:
+        preview=_execution_dry_run_preview(symbol,side,tf,data.get('hypothetical_equity_usdt'))
+        response=jsonify(preview=preview, mode='DRY_RUN_ONLY',live_trading=False,orders_enabled=False)
+        response.headers['Cache-Control']='no-store'
+        return response
+    except ValueError as exc:
+        return jsonify(error=str(exc),orders_enabled=False),422
+    except (HTTPError,URLError,TimeoutError,KeyError,TypeError,OSError,OverflowError):
+        app.logger.warning('Public data unavailable for execution preview')
+        return jsonify(error='Gate contract or ATR market data temporarily unavailable',orders_enabled=False),502
 
 
 @app.post('/gate/plan')
