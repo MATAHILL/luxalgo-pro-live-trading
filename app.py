@@ -3,7 +3,7 @@
 NO order submission, funds transfer, or withdrawal functions exist.
 Authenticated /bot/status reports PostgreSQL-backed DRY RUN intent records only.
 The /gate/plan endpoint only calculates indicative ATR levels; no orders are placed.
-Exchange credentials must be supplied via Railway service variables only.
+Exchange credentials must be supplied via hosting environment variables only.
 """
 import hmac
 import hashlib
@@ -41,6 +41,16 @@ CREATE TABLE IF NOT EXISTS luxalgo_signal_receipts (
 );
 CREATE INDEX IF NOT EXISTS idx_luxalgo_receipts_recent
  ON luxalgo_signal_receipts (id DESC);
+CREATE TABLE IF NOT EXISTS luxalgo_execution_prechecks (
+ event_id TEXT PRIMARY KEY,
+ checked_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+ symbol TEXT NOT NULL,
+ side TEXT NOT NULL,
+ timeframe TEXT NOT NULL,
+ status TEXT NOT NULL CHECK(status IN ('BLOCKED','SIMULATED')),
+ risk_percent NUMERIC NOT NULL,
+ details JSONB NOT NULL
+);
 CREATE TABLE IF NOT EXISTS luxalgo_dry_run_intents (
  event_id TEXT PRIMARY KEY,
  received_at TIMESTAMPTZ NOT NULL,
@@ -69,7 +79,7 @@ def _db_recent():
             count = cur.fetchone()['total']
             cur.execute('''SELECT received_at, symbol, side, timeframe FROM luxalgo_signal_receipts
                            ORDER BY id DESC LIMIT 20''')
-            rows = [dict(time=r['received_at'].isoformat(),symbol=r['symbol'],side=r['side'],tf=r['timeframe'])
+            rows = [dict(time=r['received_at'].isoformat(),symbol=r['symbol'],side=r['side'],tf=r['timeframe'],event_id=r['event_id'])
                     for r in cur.fetchall()]
     return count, rows
 
@@ -178,7 +188,7 @@ h2{font-size:15px;font-weight:850;letter-spacing:.3px}
 <div class="tablewrap market-scroll"><table><thead><tr><th>PAIR · CHART ↗</th><th>BIAS</th><th>SCORE</th><th>RSI</th><th>VOL RATIO</th></tr></thead><tbody id="scannerBody"><tr><td colspan="5">Scanning…</td></tr></tbody></table></div>
 <p class="light">Technical labels reflect EMA trend, RSI, recent price-range break and candle volume. They are not LuxAlgo orders.</p>
 </section></div>
-<div class="bottom-grid"><section class="panel"><h2>RECENT LUXALGO SIGNALS · 5m / 15m</h2><div class="tablewrap"><table><thead><tr><th>Received (UTC)</th><th>Token</th><th>Signal</th><th>Timeframe</th><th>Status</th><th>Entry / SL / TP Plan</th></tr></thead><tbody>{% for r in records %}<tr><td>{{r.time[:19]|e}}</td><td>{{r.symbol|e}}</td><td>{{r.side|e}}</td><td>{{r.tf|e}}</td><td>Received · Not executed</td><td><button class="btn plan" data-symbol="{{r.symbol|e}}" data-side="{{r.side|e}}" data-tf="{{r.tf|e}}">Plan + Chart</button> <button class="btn signal-risk" type="button" data-received="{{r.time|e}}" data-symbol="{{r.symbol|e}}" data-side="{{r.side|e}}" data-tf="{{r.tf|e}}">Signal Risk Check</button></td></tr>{% else %}<tr><td colspan="6">No signals stored in the database yet.</td></tr>{% endfor %}</tbody></table></div><p class="light">Signals are received events, not fills. Signal receipts and dry-run intent IDs are saved in PostgreSQL. Duplicate signals may not create separate dry-run intents.</p></section>
+<div class="bottom-grid"><section class="panel"><h2>RECENT LUXALGO SIGNALS · 5m / 15m</h2><div class="tablewrap"><table><thead><tr><th>Received (UTC)</th><th>Token</th><th>Signal</th><th>Timeframe</th><th>Status</th><th>Entry / SL / TP Plan</th></tr></thead><tbody>{% for r in records %}<tr><td>{{r.time[:19]|e}}</td><td>{{r.symbol|e}}</td><td>{{r.side|e}}</td><td>{{r.tf|e}}</td><td>Received · Not executed</td><td><button class="btn plan" data-symbol="{{r.symbol|e}}" data-side="{{r.side|e}}" data-tf="{{r.tf|e}}">Plan + Chart</button> <button class="btn signal-risk" type="button" data-received="{{r.time|e}}" data-symbol="{{r.symbol|e}}" data-side="{{r.side|e}}" data-tf="{{r.tf|e}}">Signal Risk Check</button> <button class="btn execution-check" type="button" data-event-id="{{r.event_id|e}}">Execution Precheck</button></td></tr>{% else %}<tr><td colspan="6">No signals stored in the database yet.</td></tr>{% endfor %}</tbody></table></div><p id="executionCheckStatus" class="light" role="status" aria-live="polite">Execution engine foundation: protected prechecks only; exchange orders disabled.</p><p class="light">Signals are received events, not fills. Signal receipts and dry-run intent IDs are saved in PostgreSQL. Duplicate signals may not create separate dry-run intents.</p></section>
 <section class="panel performance-panel"><div class="panel-heading"><h2>PERFORMANCE ANALYTICS</h2><span class="label-muted">VERIFIED FILLS ONLY</span></div><div class="perf-grid"><div><span>Total Closed Trades</span><strong>—</strong></div><div><span>Winning Trades</span><strong>—</strong></div><div><span>Losing Trades</span><strong>—</strong></div><div><span>Win Rate</span><strong>—</strong></div><div><span>Total Realized P&amp;L</span><strong>—</strong></div><div><span>Unrealized P&amp;L</span><strong>—</strong></div></div><p class="light">Waiting for authenticated position and fill synchronization. No synthetic P&amp;L or win statistics.</p></section></div><section class="panel"><h2>TRADE PLAN · SL · TP1 <span class="tag">READ ONLY</span></h2>
 <div class="controls"><label>Entry reference <input id="entry" type="number" step="any" placeholder="Choose a signal" readonly></label><label>Stop Loss · 1.5 ATR <input id="sl" type="number" step="any" readonly></label><label>TP1 · 2 ATR · 100% exit <input id="tp1" type="number" step="any" readonly></label></div>
 <div id="planResults">Select Plan + Chart beside a signal to calculate illustrative entry, SL and TP1. No orders are placed.</div></section>
@@ -198,6 +208,20 @@ document.querySelectorAll('.signal-risk').forEach(b=>b.addEventListener('click',
  document.getElementById('signalPreviewContext').textContent='LuxAlgo '+symbol+' '+side+' '+tf+' · '+freshness+' Preview uses NEW completed market candles, not the historical signal entry. No orders.';
  document.getElementById('previewButton').click();
  document.getElementById('previewResult').scrollIntoView({behavior:'smooth',block:'center'});
+}));
+
+
+// Stage 1: record an immutable, fail-closed readiness check for stored alerts.
+// No exchange order routes, signing of writes, or position changes exist.
+document.querySelectorAll('.execution-check').forEach(b=>b.addEventListener('click',async()=>{
+ const out=document.getElementById('executionCheckStatus');
+ b.disabled=true;out.textContent='Recording a read-only execution safety precheck…';
+ try{
+  const r=await fetch('/terminal/execution-precheck',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({event_id:b.dataset.eventId}),cache:'no-store'});
+  const d=await r.json();if(!r.ok)throw Error(d.error||'Precheck unavailable');
+  const p=d.precheck;out.textContent=p.symbol+' '+p.side+' '+p.timeframe+' | '+p.status+' | Risk default: '+p.risk_percent+'% | '+(d.duplicate?'Existing persisted check. ':'Saved to PostgreSQL. ')+'No orders placed. Blockers: '+p.blockers.join('; ');
+ }catch(e){out.textContent='Execution precheck blocked: '+e.message+'; no orders placed.'}
+ finally{b.disabled=false}
 }));
 
 document.querySelectorAll('.plan').forEach(b=>b.addEventListener('click',async()=>{
@@ -410,7 +434,7 @@ def _terminal_permitted():
 
 def _terminal_guard():
     if not os.getenv('TERMINAL_PASSWORD'):
-        return Response('Private terminal unavailable. Configure TERMINAL_PASSWORD in Railway variables.', status=503)
+        return Response('Private terminal unavailable. Configure TERMINAL_PASSWORD in Render environment variables.', status=503)
     return Response('Authentication required', status=401,
                     headers={'WWW-Authenticate': 'Basic realm="LuxAlgo Private Terminal"',
                              'Cache-Control': 'no-store'})
@@ -888,6 +912,83 @@ def terminal_execution_preview():
         app.logger.warning('Public data unavailable for execution preview')
         return jsonify(error='Gate contract or ATR market data temporarily unavailable',orders_enabled=False),502
 
+
+
+
+@app.post('/terminal/execution-precheck')
+def terminal_execution_precheck():
+    """Read-only execution readiness for a stored LuxAlgo signal. No order APIs."""
+    if not _terminal_permitted():
+        return _terminal_guard()
+    data = request.get_json(silent=True) if request.is_json else None
+    if not isinstance(data, dict):
+        return jsonify(error='JSON object required', orders_placed=0), 400
+    event_id = data.get('event_id')
+    if not isinstance(event_id, str) or not re.fullmatch(r'[a-f0-9]{20}', event_id):
+        return jsonify(error='Invalid stored event ID', orders_placed=0), 422
+    from decimal import Decimal, InvalidOperation
+    try:
+        risk_percent = Decimal(os.getenv('DEFAULT_RISK_PERCENT', '1'))
+        if not risk_percent.is_finite() or risk_percent < Decimal('0.5') or risk_percent > Decimal('5'):
+            raise InvalidOperation()
+    except (InvalidOperation, TypeError, ValueError):
+        return jsonify(error='Invalid DEFAULT_RISK_PERCENT (expected 0.5 to 5)', orders_placed=0), 503
+    try:
+        with _db_connect() as con:
+            _ensure_schema(con)
+            with con.cursor() as cur:
+                # Durable identity and freshness: never trust a browser-supplied symbol or side.
+                cur.execute("""SELECT event_id, received_at, symbol, side, timeframe
+                               FROM luxalgo_dry_run_intents WHERE event_id=%s""", (event_id,))
+                signal = cur.fetchone()
+                if signal is None:
+                    return jsonify(error='Signal not found in database', orders_placed=0), 404
+                # Repeated requests return the same stored result; no duplicate intents.
+                cur.execute('SELECT status, details FROM luxalgo_execution_prechecks WHERE event_id=%s', (event_id,))
+                prior = cur.fetchone()
+                if prior is not None:
+                    return jsonify(mode='DRY_RUN_ONLY', order_execution_enabled=False, orders_placed=0,
+                                   precheck=prior['details'], duplicate=True)
+                now = datetime.now(timezone.utc)
+                age_seconds = max(0, int((now-signal['received_at']).total_seconds()))
+                blockers = ['No signed live order submission implementation',
+                            'No exchange-side protective stop and take-profit implementation',
+                            'No exchange fill/order reconciliation or emergency-close handling',
+                            'Gate.io API remains READ ONLY; LIVE_TRADING_ENABLED must remain false',
+                            'Account balance, margin, slippage and fees are not execution-verified']
+                if age_seconds > 120:
+                    blockers.append('Signal is stale (>120 seconds): cannot use as a fresh entry')
+                if os.getenv('LIVE_TRADING_ENABLED', 'false').lower() != 'false':
+                    blockers.append('CONFIGURATION WARNING: live toggle is not false; no orders supported')
+                if os.getenv('DEFAULT_LEVERAGE', '5') != '5':
+                    blockers.append('DEFAULT_LEVERAGE is not 5')
+                if os.getenv('DEFAULT_MARGIN_MODE', 'cross').lower() != 'cross':
+                    blockers.append('DEFAULT_MARGIN_MODE is not cross')
+                if os.getenv('GATE_SETTLE', 'usdt').lower() != 'usdt':
+                    blockers.append('GATE_SETTLE is not usdt')
+                # Deliberately do not calculate an actionable size from hypothetical equity.
+                # The existing manual preview remains available for indicative numbers.
+                details = dict(event_id=event_id, symbol=signal['symbol'], side=signal['side'],
+                    timeframe=signal['timeframe'], received_at=signal['received_at'].isoformat(),
+                    age_at_check_seconds=age_seconds, risk_percent=str(risk_percent),
+                    planned_leverage=5, margin_mode='cross', position_mode='hedge',
+                    sl_atr_multiplier=1.5, tp_atr_multiplier=2,
+                    risk_equity_source='NOT_VERIFIED', estimated_contracts=None,
+                    status='BLOCKED', blockers=blockers, orders_placed=0,
+                    explanation='Foundation readiness record only. The manual risk calculator is separate. No exchange write requests exist.')
+                cur.execute("""INSERT INTO luxalgo_execution_prechecks
+                    (event_id,symbol,side,timeframe,status,risk_percent,details)
+                    VALUES (%s,%s,%s,%s,%s,%s,%s::jsonb) ON CONFLICT(event_id) DO NOTHING""",
+                    (event_id,signal['symbol'],signal['side'],signal['timeframe'],'BLOCKED',risk_percent,json.dumps(details)))
+                if cur.rowcount == 0:
+                    cur.execute('SELECT details FROM luxalgo_execution_prechecks WHERE event_id=%s', (event_id,))
+                    details=cur.fetchone()['details']
+                response=jsonify(mode='DRY_RUN_ONLY',order_execution_enabled=False,orders_placed=0,precheck=details)
+                response.headers['Cache-Control']='no-store'
+                return response
+    except (psycopg.Error, RuntimeError, OSError):
+        app.logger.exception('Execution precheck database unavailable; fail closed')
+        return jsonify(error='Database unavailable; execution precheck blocked', orders_placed=0), 503
 
 @app.post('/gate/plan')
 def gate_plan():
