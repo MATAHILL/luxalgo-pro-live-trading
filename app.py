@@ -77,7 +77,7 @@ def _db_recent():
         with con.cursor() as cur:
             cur.execute('SELECT COUNT(*) AS total FROM luxalgo_signal_receipts')
             count = cur.fetchone()['total']
-            cur.execute('''SELECT received_at, symbol, side, timeframe FROM luxalgo_signal_receipts
+            cur.execute('''SELECT received_at, event_id, symbol, side, timeframe FROM luxalgo_signal_receipts
                            ORDER BY id DESC LIMIT 20''')
             rows = [dict(time=r['received_at'].isoformat(),symbol=r['symbol'],side=r['side'],tf=r['timeframe'],event_id=r['event_id'])
                     for r in cur.fetchall()]
