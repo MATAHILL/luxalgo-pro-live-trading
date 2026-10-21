@@ -799,7 +799,20 @@ def _execution_dry_run_preview(symbol, side, tf, hypothetical_equity):
         if not x.is_finite() or x<=0: raise ValueError('Invalid '+name)
         return x
     multiplier=positive_decimal('quanto_multiplier')
-    min_size=positive_decimal('order_size_min')
+    # Gate contract metadata can report an order_size_min of zero. This is not
+    # a verified permission to place zero-sized or sub-one-contract orders.
+    # Continue the READ-ONLY illustration with integer sizing, but flag the
+    # exchange minimum as unverified rather than rejecting the entire pair.
+    try:
+        reported_min_size=Decimal(str(spec['order_size_min']))
+    except (KeyError, InvalidOperation, ValueError, TypeError):
+        raise ValueError('Invalid order_size_min')
+    if not reported_min_size.is_finite() or reported_min_size<0:
+        raise ValueError('Invalid order_size_min')
+    minimum_unverified=(reported_min_size==0)
+    # Integer-size previews always use at least one contract; this is an
+    # illustrative floor, NOT an assertion of Gate.io's actual minimum.
+    min_size=reported_min_size if not minimum_unverified else Decimal(1)
     max_size=positive_decimal('order_size_max')
     leverage_max=positive_decimal('leverage_max')
     if min_size>max_size: raise ValueError('Inconsistent Gate size limits')
@@ -820,6 +833,8 @@ def _execution_dry_run_preview(symbol, side, tf, hypothetical_equity):
               'No idempotent live order engine, fill reconciliation, or emergency close exists',
               '5x Cross and Hedge Mode have not been verified against Gate.io',
               'Fees, funding, slippage and current spread excluded']
+    if minimum_unverified:
+        blockers.append('Gate.io returned order_size_min=0; actual exchange minimum is unverified. Displayed sizing is illustrative ONLY')
     if spec.get('in_delisting'):
         blockers.append('Contract marked for delisting')
     if leverage_max<5: blockers.append('Contract maximum leverage below configured 5x')
@@ -836,7 +851,9 @@ def _execution_dry_run_preview(symbol, side, tf, hypothetical_equity):
     return dict(contract=contract,side=side,timeframe=tf,
       hypothetical_equity_usdt=str(equity),risk_budget_usdt=str(round(budget,8)),
       reference_entry=str(entry),stop_loss=str(stop),take_profit=str(take),
-      quanto_multiplier=str(multiplier),order_size_min=str(min_size),order_size_max=str(max_size),
+      quanto_multiplier=str(multiplier),
+      order_size_min=('0 (UNVERIFIED; illustration uses >=1)' if minimum_unverified else str(reported_min_size)),
+      order_size_max=str(max_size),
       size_contracts=size_out,estimated_sl_loss_usdt=str(round(Decimal(size)*loss_per_contract,8)) if eligible else None,
       notional_usdt=str(round(notional,8)) if eligible else None,
       estimated_margin_usdt=str(round(notional/Decimal(5),8)) if eligible else None,
