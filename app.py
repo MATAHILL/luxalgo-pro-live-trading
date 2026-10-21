@@ -182,7 +182,7 @@ h2{font-size:15px;font-weight:850;letter-spacing:.3px}
 <section class="panel performance-panel"><div class="panel-heading"><h2>PERFORMANCE ANALYTICS</h2><span class="label-muted">VERIFIED FILLS ONLY</span></div><div class="perf-grid"><div><span>Total Closed Trades</span><strong>—</strong></div><div><span>Winning Trades</span><strong>—</strong></div><div><span>Losing Trades</span><strong>—</strong></div><div><span>Win Rate</span><strong>—</strong></div><div><span>Total Realized P&amp;L</span><strong>—</strong></div><div><span>Unrealized P&amp;L</span><strong>—</strong></div></div><p class="light">Waiting for authenticated position and fill synchronization. No synthetic P&amp;L or win statistics.</p></section></div><section class="panel"><h2>TRADE PLAN · SL · TP1 <span class="tag">READ ONLY</span></h2>
 <div class="controls"><label>Entry reference <input id="entry" type="number" step="any" placeholder="Choose a signal" readonly></label><label>Stop Loss · 1.5 ATR <input id="sl" type="number" step="any" readonly></label><label>TP1 · 2 ATR · 100% exit <input id="tp1" type="number" step="any" readonly></label></div>
 <div id="planResults">Select Plan + Chart beside a signal to calculate illustrative entry, SL and TP1. No orders are placed.</div></section>
-<section class="panel"><div class="panel-heading"><h2>COMPLETED TRADES · EXIT RECORD</h2><span class="label-muted">PENDING ACCOUNT HISTORY INTEGRATION</span></div><div class="tablewrap"><table><thead><tr><th>TIME (UTC)</th><th>PAIR</th><th>DIRECTION</th><th>ENTRY FILL</th><th>EXIT FILL</th><th>NET REALIZED P&amp;L</th><th>RESULT</th></tr></thead><tbody><tr><td colspan="7" class="empty-state">No verified exchange fills have been synchronized. Signal receipts are not executed trades.</td></tr></tbody></table></div></section><section class="panel"><div class="panel-heading"><h2>EXECUTION SAFETY PREVIEW <span class="tag">DRY RUN ONLY</span></h2><span class="label-muted">NO EXCHANGE ORDERS</span></div><p class="light">Preview illustrative risk and contract-size checks using a hypothetical USDT equity. This does not validate your actual available margin, fee-adjusted fills, current hedge settings, or protective order placement.</p><div class="controls"><label>Trading pair<input id="previewSymbol" value="BTCUSDT" maxlength="29" autocomplete="off"></label><label>Direction<select id="previewSide"><option value="LONG">LONG / BUY</option><option value="SHORT">SHORT / SELL</option></select></label><label>Timeframe<select id="previewTf"><option value="15m">15 minutes</option><option value="5m">5 minutes</option></select></label><label>Hypothetical equity (USDT)<input id="previewEquity" type="number" value="100" min="1" max="10000000" step="any"></label></div><button class="btn" id="previewButton" type="button">Generate Read-Only Risk Preview</button><p id="signalPreviewContext" class="light" aria-live="polite">Manual calculator input; not a trading recommendation.</p><div id="previewResult" role="status" aria-live="polite" style="white-space:pre-wrap;margin-top:12px;background:#0b1a2b;border:1px solid #2b435e;border-radius:8px;padding:14px;font:12px/1.8 ui-monospace,Consolas,monospace">Ready for a simulated preview. Nothing can place or close orders.</div></section><div class="foot">LUXALGO PRO · Private terminal · Market data is public Gate.io data. Scanners are technical watchlists, not LuxAlgo entry signals. No account positions, fills, profit or loss are available until authenticated exchange sync is implemented. LIVE TRADING OFF; no orders are placed.</div></div><script>
+<section class="panel"><div class="panel-heading"><h2>COMPLETED TRADES · EXIT RECORD</h2><span class="label-muted">PENDING ACCOUNT HISTORY INTEGRATION</span></div><div class="tablewrap"><table><thead><tr><th>TIME (UTC)</th><th>PAIR</th><th>DIRECTION</th><th>ENTRY FILL</th><th>EXIT FILL</th><th>NET REALIZED P&amp;L</th><th>RESULT</th></tr></thead><tbody><tr><td colspan="7" class="empty-state">No verified exchange fills have been synchronized. Signal receipts are not executed trades.</td></tr></tbody></table></div></section><section class="panel"><div class="panel-heading"><h2>EXECUTION SAFETY PREVIEW <span class="tag">DRY RUN ONLY</span></h2><span class="label-muted">NO EXCHANGE ORDERS</span></div><p class="light">Preview illustrative risk and contract-size checks using a hypothetical USDT equity. This does not validate your actual available margin, fee-adjusted fills, current hedge settings, or protective order placement.</p><div class="controls"><label>Trading pair<input id="previewSymbol" value="BTCUSDT" maxlength="29" autocomplete="off"></label><label>Direction<select id="previewSide"><option value="LONG">LONG / BUY</option><option value="SHORT">SHORT / SELL</option></select></label><label>Timeframe<select id="previewTf"><option value="15m">15 minutes</option><option value="5m">5 minutes</option></select></label><label>Hypothetical equity (USDT)<input id="previewEquity" type="number" value="100" min="1" max="10000000" step="any"></label><label>Risk per trade (%)<select id="previewRisk"><option value="0.5">0.5%</option><option value="1" selected>1% (default)</option><option value="1.5">1.5%</option><option value="2">2%</option><option value="2.5">2.5%</option><option value="3">3%</option><option value="3.5">3.5%</option><option value="4">4%</option><option value="4.5">4.5%</option><option value="5">5% (maximum)</option></select></label></div><button class="btn" id="previewButton" type="button">Generate Read-Only Risk Preview</button><p id="signalPreviewContext" class="light" aria-live="polite">Manual calculator input; not a trading recommendation.</p><div id="previewResult" role="status" aria-live="polite" style="white-space:pre-wrap;margin-top:12px;background:#0b1a2b;border:1px solid #2b435e;border-radius:8px;padding:14px;font:12px/1.8 ui-monospace,Consolas,monospace">Ready for a simulated preview. Nothing can place or close orders.</div></section><div class="foot">LUXALGO PRO · Private terminal · Market data is public Gate.io data. Scanners are technical watchlists, not LuxAlgo entry signals. No account positions, fills, profit or loss are available until authenticated exchange sync is implemented. LIVE TRADING OFF; no orders are placed.</div></div><script>
 const entry=document.getElementById('entry'), sl=document.getElementById('sl'), tp1=document.getElementById('tp1');
 // Use the genuine stored LuxAlgo direction to populate the existing risk calculator.
 // This is a manual, read-only action: no webhook or trading API is invoked.
@@ -305,7 +305,7 @@ setInterval(()=>{if(!document.hidden)loadChart();},30000);
  btn.addEventListener('click',async()=>{
   btn.disabled=true;out.textContent='Checking public contract rules and calculating preview…';
   try{
-   const payload={symbol:document.getElementById('previewSymbol').value.trim().toUpperCase(),side:document.getElementById('previewSide').value,tf:document.getElementById('previewTf').value,hypothetical_equity_usdt:Number(document.getElementById('previewEquity').value)};
+   const payload={symbol:document.getElementById('previewSymbol').value.trim().toUpperCase(),side:document.getElementById('previewSide').value,tf:document.getElementById('previewTf').value,hypothetical_equity_usdt:Number(document.getElementById('previewEquity').value),risk_percent:Number(document.getElementById('previewRisk').value)};
    const res=await fetch('/terminal/execution-preview',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload),cache:'no-store'});
    const d=await res.json();if(!res.ok)throw Error(d.error||'Preview unavailable');
    const v=d.preview;
@@ -313,7 +313,7 @@ setInterval(()=>{if(!document.hidden)loadChart();},30000);
    out.textContent=['MODE: SIMULATION ONLY — NO ORDER SUBMISSION',
       'Pair / direction / timeframe: '+v.contract+' / '+v.side+' / '+v.timeframe,
       'Hypothetical equity: '+v.hypothetical_equity_usdt+' USDT',
-      'Budgeted risk (0.5%): '+v.risk_budget_usdt+' USDT',
+      'Budgeted risk ('+v.risk_percent+'%): '+v.risk_budget_usdt+' USDT',
       'Reference entry (completed candle): '+v.reference_entry,
       'Stop loss (1.5 ATR): '+v.stop_loss,
       'TP1 (2 ATR; 100% planned exit): '+v.take_profit,
@@ -773,7 +773,7 @@ def _gate_atr_plan(symbol, direction, tf="15m"):
     }
 
 
-def _execution_dry_run_preview(symbol, side, tf, hypothetical_equity):
+def _execution_dry_run_preview(symbol, side, tf, hypothetical_equity, risk_percent):
     """Planning ONLY: use public Gate.io contract details, no order signing/writes."""
     from decimal import Decimal, ROUND_FLOOR, InvalidOperation
     if not re.fullmatch(r'[A-Z0-9]{3,25}USDT', symbol) or side not in ('LONG','SHORT') or tf not in ('5m','15m'):
@@ -784,6 +784,12 @@ def _execution_dry_run_preview(symbol, side, tf, hypothetical_equity):
         raise ValueError('Invalid hypothetical equity')
     if not equity.is_finite() or not Decimal('1') <= equity <= Decimal('10000000'):
         raise ValueError('Hypothetical equity must be 1 to 10,000,000 USDT')
+    try:
+        risk = Decimal(str(risk_percent))
+    except (InvalidOperation, ValueError, TypeError):
+        raise ValueError('Invalid risk percentage')
+    if not risk.is_finite() or risk < Decimal('0.5') or risk > Decimal('5') or (risk * 2) != (risk * 2).to_integral_value():
+        raise ValueError('Risk percentage must be 0.5 to 5 in 0.5% steps')
     plan = _gate_atr_plan(symbol, side, tf)
     contract = plan['contract']
     path = '/api/v4/futures/usdt/contracts/' + contract
@@ -822,7 +828,7 @@ def _execution_dry_run_preview(symbol, side, tf, hypothetical_equity):
     distance=abs(entry-stop)
     if distance<=0 or (side=='LONG' and not stop<entry<take) or (side=='SHORT' and not take<entry<stop):
         raise ValueError('Invalid SL/TP geometry')
-    budget=equity*Decimal('0.005')
+    budget=equity*risk/Decimal('100')
     loss_per_contract=distance*multiplier
     raw_size=budget/loss_per_contract
     # Conservative integer rounding. Some contracts allow decimals but require
@@ -849,7 +855,7 @@ def _execution_dry_run_preview(symbol, side, tf, hypothetical_equity):
     size_out = size if eligible else None
     notional=(Decimal(size)*entry*multiplier) if eligible else None
     return dict(contract=contract,side=side,timeframe=tf,
-      hypothetical_equity_usdt=str(equity),risk_budget_usdt=str(round(budget,8)),
+      hypothetical_equity_usdt=str(equity),risk_percent=str(risk),risk_budget_usdt=str(round(budget,8)),
       reference_entry=str(entry),stop_loss=str(stop),take_profit=str(take),
       quanto_multiplier=str(multiplier),
       order_size_min=('0 (UNVERIFIED; illustration uses >=1)' if minimum_unverified else str(reported_min_size)),
@@ -872,7 +878,7 @@ def terminal_execution_preview():
     if not re.fullmatch(r'[A-Z0-9]{3,25}USDT',symbol) or side not in ('LONG','SHORT') or tf not in ('5m','15m'):
         return jsonify(error='Invalid symbol, side or timeframe'),422
     try:
-        preview=_execution_dry_run_preview(symbol,side,tf,data.get('hypothetical_equity_usdt'))
+        preview=_execution_dry_run_preview(symbol,side,tf,data.get('hypothetical_equity_usdt'),data.get('risk_percent',1))
         response=jsonify(preview=preview, mode='DRY_RUN_ONLY',live_trading=False,orders_enabled=False)
         response.headers['Cache-Control']='no-store'
         return response
