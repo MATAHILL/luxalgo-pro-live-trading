@@ -309,7 +309,7 @@ setInterval(()=>{if(!document.hidden)loadChart();},30000);
       'Result: '+v.result,
       ...v.blockers.map(x=>'BLOCKER: '+x),
       'Trading permissions: READ ONLY. Orders submitted: 0.',
-      'Actual equity, available margin, leverage/hedge setting, protective orders, fees, execution and reconciliation are NOT verified.'].join('\n');
+      'Actual equity, available margin, leverage/hedge setting, protective orders, fees, execution and reconciliation are NOT verified.'].join('\\n');
   }catch(e){out.textContent='Preview unavailable: '+e.message+' · No orders submitted.'}finally{btn.disabled=false;}
  });
 })();
