@@ -146,7 +146,7 @@ h2{font-size:15px;font-weight:850;letter-spacing:.3px}
 @media(max-width:1300px){.metric-grid{grid-template-columns:repeat(3,minmax(0,1fr))}.bottom-grid{grid-template-columns:1fr}}
 @media(max-width:900px){.market-grid{grid-template-columns:1fr}.wrap{padding:12px}.metric-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:540px){.metric-grid{grid-template-columns:1fr 1fr}.metric strong{font-size:17px}header h1{font-size:20px}.panel{padding:13px}.btn-danger{font-size:11px}}
-</style></head><body><div class="wrap"><header><div><h1>LUXALGO PRO · TRADING TERMINAL</h1><p>Gate.io USDT Perpetual · LuxAlgo 5m / 15m · Hello, Subhasish</p></div><div class="tag">● LIVE TRADING OFF</div></header>
+</style></head><body><div class="wrap"><header><div><h1>LUXALGO PRO · TRADING TERMINAL</h1><p>Gate.io USDT Perpetual · LuxAlgo 5m / 15m · Coded by · SUBHASISH</p></div><div class="tag">● LIVE TRADING OFF</div></header>
 <div class="grid metric-grid">
 <div class="metric"><small>GATE.IO CONNECTION</small><strong class="gloss-cyan">READ-ONLY</strong><span id="gatePositionStatus">Checking position feed…</span></div>
 <div class="metric"><small>OPEN POSITIONS</small><strong id="openPositionCount">—</strong><span>Verified Gate.io positions only</span></div>
