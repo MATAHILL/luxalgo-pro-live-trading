@@ -148,14 +148,14 @@ h2{font-size:15px;font-weight:850;letter-spacing:.3px}
 @media(max-width:540px){.metric-grid{grid-template-columns:1fr 1fr}.metric strong{font-size:17px}header h1{font-size:20px}.panel{padding:13px}.btn-danger{font-size:11px}}
 </style></head><body><div class="wrap"><header><div><h1>LUXALGO PRO · TRADING TERMINAL</h1><p>Gate.io USDT Perpetual · LuxAlgo 5m / 15m · Hello, Subhasish</p></div><div class="tag">● LIVE TRADING OFF</div></header>
 <div class="grid metric-grid">
-<div class="metric"><small>GATE.IO CONNECTION</small><strong class="gloss-cyan">READ-ONLY</strong><span>Trading orders disabled</span></div>
-<div class="metric"><small>OPEN POSITIONS</small><strong>—</strong><span>Exchange sync not implemented</span></div>
-<div class="metric"><small>UNREALIZED P&amp;L</small><strong>—</strong><span>Waiting for actual Gate.io positions</span></div>
+<div class="metric"><small>GATE.IO CONNECTION</small><strong class="gloss-cyan">READ-ONLY</strong><span id="gatePositionStatus">Checking position feed…</span></div>
+<div class="metric"><small>OPEN POSITIONS</small><strong id="openPositionCount">—</strong><span>Verified Gate.io positions only</span></div>
+<div class="metric"><small>UNREALIZED P&amp;L (USDT)</small><strong id="unrealizedPositionPnl">—</strong><span>Read-only, refreshed every 30s</span></div>
 <div class="metric"><small>TOTAL REALIZED P&amp;L</small><strong>—</strong><span>Verified fills not available</span></div>
 <div class="metric"><small>WIN RATE</small><strong>—</strong><span>Requires completed trades</span></div>
 <div class="metric"><small>DATABASE SIGNALS</small><strong>{{ count }}</strong><span>Webhook: {{ 'configured' if configured else 'not configured' }}</span></div>
-</div><section class="panel position-panel"><div class="panel-heading"><h2>OPEN POSITIONS <span class="gloss-cyan">· GATE.IO FUTURES</span></h2><button class="btn btn-danger" disabled title="Verified exchange positions and safe close-order execution are not connected">MANUALLY CLOSE SELECTED POSITION · DISABLED</button></div>
-<div class="tablewrap"><table><thead><tr><th>PAIR</th><th>SIDE</th><th>ENTRY</th><th>MARK PRICE</th><th>UNREALIZED P&amp;L</th><th>LEVERAGE</th><th>SL</th><th>TP1</th><th>STATE</th></tr></thead><tbody><tr><td colspan="9" class="empty-state">Open positions are not synchronized with Gate.io. No actual trades are displayed. Manual closing will be enabled only after verified positions and safe exchange-side closing orders are implemented.</td></tr></tbody></table></div></section><section class="panel"><h2>IN-TERMINAL MARKET CHART</h2>
+</div><section class="panel position-panel"><div class="panel-heading"><h2>OPEN POSITIONS <span class="gloss-cyan">· GATE.IO FUTURES</span></h2><button class="btn btn-danger" disabled title="Verified exchange positions and safe close-order execution are not connected">MANUALLY CLOSE SELECTED POSITION · DISABLED</button><button class="btn" id="positionRefresh" type="button">↻ Refresh Positions</button></div>
+<div class="tablewrap"><table><thead><tr><th>PAIR</th><th>SIDE / SIZE</th><th>ENTRY</th><th>MARK PRICE</th><th>UNREALIZED P&amp;L</th><th>LEVERAGE</th><th>SL</th><th>TP1</th><th>STATE</th></tr></thead><tbody id="gatePositionsBody"><tr><td colspan="9" class="empty-state">Checking read-only Gate.io open positions…</td></tr></tbody></table></div><p id="gatePositionsUpdated" class="light">Read-only Gate.io account data; manual close disabled. SL/TP order status is not synchronized.</p></section><section class="panel"><h2>IN-TERMINAL MARKET CHART</h2>
 <p class="light">Select a signal above, or enter a Gate.io USDT perpetual pair. Charts use public market candles only (not position/fill data).</p>
 <div class="controls"><label>Trading pair <input id="chartSymbol" value="BTCUSDT" maxlength="29" autocomplete="off"></label><label>Chart timeframe<select id="chartTf"><option value="15m">15 minutes</option><option value="5m">5 minutes</option></select></label><label>Chart refresh <button class="btn" id="chartRefresh" type="button">Refresh Chart</button></label></div>
 <div class="chart-toolbar" style="display:flex;flex-wrap:wrap;gap:8px;margin:10px 0;align-items:center"><button class="btn" id="zoomIn" type="button">＋ Zoom In</button><button class="btn" id="zoomOut" type="button">－ Zoom Out</button><button class="btn" id="resetChart" type="button">Reset View</button><button class="btn" id="olderChart" type="button">Load Older Candles</button><button class="btn" id="fullChart" type="button">⛶ Fullscreen</button><button class="btn" id="openTradingView" type="button">Open in TradingView ↗</button><span class="light" style="font-size:12px">Wheel: zoom · drag: pan · scroll back for history</span></div>
@@ -278,6 +278,43 @@ window.loadChart=loadChart;
 function start(){if(typeof LightweightCharts==='undefined'){status.textContent='Loading interactive chart library…';setTimeout(start,400);return;}loadChart();}
 start();
 setInterval(()=>{if(!document.hidden)loadChart();},30000);
+})();
+
+
+// Private read-only Gate.io position monitor. No write endpoints or trading actions.
+(function(){
+'use strict';
+const body=document.getElementById('gatePositionsBody'),updated=document.getElementById('gatePositionsUpdated');
+const count=document.getElementById('openPositionCount'),pnl=document.getElementById('unrealizedPositionPnl');
+const connection=document.getElementById('gatePositionStatus'),button=document.getElementById('positionRefresh');
+let busy=false;
+function cell(tr,value,cl){const td=tr.insertCell();td.textContent=value;if(cl)td.className=cl;return td;}
+function money(value){if(value===null||value===undefined)return '—';const v=Number(value);return Number.isFinite(v)?v.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:4}):'—';}
+function price(value){const v=Number(value);if(!Number.isFinite(v)||v<=0)return '—';return v.toLocaleString(undefined,{maximumSignificantDigits:10});}
+function empty(msg){body.replaceChildren();const tr=body.insertRow();cell(tr,msg).colSpan=9;tr.className='empty-state';}
+async function loadPositions(){
+ if(busy)return;busy=true;button.disabled=true;
+ try{
+  const r=await fetch('/terminal/positions',{cache:'no-store'});
+  const d=await r.json();if(!r.ok)throw Error(d.error||'Gate.io account temporarily unavailable');
+  count.textContent=String(d.count);pnl.textContent=money(d.unrealized_pnl_usdt);
+  pnl.classList.toggle('positive',d.unrealized_pnl_usdt>0);pnl.classList.toggle('negative',d.unrealized_pnl_usdt<0);
+  connection.textContent='Position feed connected · READ ONLY';body.replaceChildren();
+  if(!d.positions.length)empty('Gate.io reports no open USDT perpetual positions. No trades are being placed by LUXALGO PRO.');
+  for(const p of d.positions){
+   const tr=body.insertRow();cell(tr,p.contract);cell(tr,p.side+' · '+p.size_contracts+' contracts');
+   cell(tr,price(p.entry_price));cell(tr,price(p.mark_price));
+   cell(tr,money(p.unrealized_pnl),p.unrealized_pnl>=0?'positive':'negative');
+   cell(tr,p.leverage_label);cell(tr,'Not verified');cell(tr,'Not verified');cell(tr,p.position_mode);
+  }
+  updated.textContent='Gate.io position snapshot · '+new Date(d.fetched_at*1000).toLocaleTimeString()+' · read-only · SL/TP order status not verified · manual close disabled.';
+ }catch(e){
+  count.textContent='—';pnl.textContent='—';pnl.classList.remove('positive','negative');
+  connection.textContent='Position feed unavailable';empty('Unable to verify open positions. No zero balance or empty positions assumed.');
+  updated.textContent='Position data unavailable: '+e.message;
+ }finally{busy=false;button.disabled=false;}
+}
+button.addEventListener('click',loadPositions);loadPositions();setInterval(()=>{if(!document.hidden)loadPositions();},30000);
 })();
 
 (function(){
@@ -549,6 +586,84 @@ def gate_check():
         return jsonify(status='gate_unreachable_or_invalid_response', orders_enabled=False), 502
 
 
+
+
+def _gate_read_only_positions():
+    """Authenticated read-only GET; return only sanitized open position fields."""
+    key = os.getenv('GATE_API_KEY', '').strip()
+    secret = os.getenv('GATE_API_SECRET', '').strip()
+    if not key or not secret:
+        raise RuntimeError('Gate.io API credentials not configured')
+    path = '/api/v4/futures/usdt/positions'
+    timestamp = str(int(time.time()))
+    payload_hash = hashlib.sha512(b'').hexdigest()
+    message = '\n'.join(('GET', path, '', payload_hash, timestamp))
+    signature = hmac.new(secret.encode(), message.encode(), hashlib.sha512).hexdigest()
+    req = Request('https://api.gateio.ws' + path, method='GET', headers={
+        'KEY': key, 'Timestamp': timestamp, 'SIGN': signature,
+        'Accept': 'application/json', 'User-Agent': 'LuxAlgo-PRO-PositionMonitor/1.0',
+    })
+    with urlopen(req, timeout=10) as res:
+        raw = json.loads(res.read(400000))
+    if not isinstance(raw, list):
+        raise ValueError('Unexpected positions response')
+    def number(value):
+        result = float(value)
+        if not math.isfinite(result):
+            raise ValueError('Non-finite position number')
+        return result
+    positions = []
+    for p in raw:
+        if not isinstance(p, dict):
+            raise ValueError('Unexpected position')
+        size = number(p.get('size', 0))
+        if not size:
+            continue
+        contract = p.get('contract')
+        if not isinstance(contract, str) or not re.fullmatch(r'[A-Z0-9]{2,28}_USDT', contract):
+            raise ValueError('Unexpected contract symbol')
+        mode = p.get('mode', 'single')
+        if mode not in ('single', 'dual_long', 'dual_short'):
+            raise ValueError('Unexpected position mode')
+        side = ('LONG' if mode == 'dual_long' else 'SHORT' if mode == 'dual_short'
+                else 'LONG' if size > 0 else 'SHORT')
+        entry = number(p['entry_price'])
+        mark = number(p['mark_price'])
+        unrealized = number(p['unrealised_pnl'])
+        if entry <= 0 or mark <= 0:
+            raise ValueError('Invalid position prices')
+        margin_mode = str(p.get('pos_margin_mode') or '').lower()
+        leverage = str(p.get('lever') or '').strip()
+        if not leverage or leverage == '0':
+            leverage = str(p.get('cross_leverage_limit') if margin_mode == 'cross' else p.get('leverage') or '0')
+        leverage_label = (leverage + '×' if leverage not in ('0','None','') else '—')
+        if margin_mode in ('cross','isolated'):
+            leverage_label += ' · ' + margin_mode.title()
+        positions.append(dict(contract=contract, side=side, size_contracts=abs(size),
+                              entry_price=entry, mark_price=mark, unrealized_pnl=unrealized,
+                              leverage_label=leverage_label, position_mode=mode))
+    return positions
+
+
+@app.get('/terminal/positions')
+def terminal_positions():
+    if not _terminal_permitted():
+        return _terminal_guard()
+    try:
+        positions = _gate_read_only_positions()
+        response = jsonify(positions=positions, count=len(positions),
+                           unrealized_pnl_usdt=round(sum(p['unrealized_pnl'] for p in positions), 8),
+                           fetched_at=int(time.time()), orders_enabled=False, live_trading=False)
+        response.headers['Cache-Control'] = 'no-store'
+        return response
+    except RuntimeError:
+        return jsonify(error='Gate.io read-only credentials unavailable', orders_enabled=False),503
+    except HTTPError as exc:
+        app.logger.warning('Gate positions HTTP status %s', exc.code)
+        return jsonify(error='Gate.io rejected the read-only position request', orders_enabled=False),502
+    except (URLError, TimeoutError, ValueError, KeyError, TypeError, OSError):
+        app.logger.warning('Gate positions response unavailable or invalid')
+        return jsonify(error='Position data temporarily unavailable or invalid', orders_enabled=False),502
 
 def _gate_atr_plan(symbol, direction, tf="15m"):
     """Read ONLY public, completed timeframe candles. Return an illustrative plan.
