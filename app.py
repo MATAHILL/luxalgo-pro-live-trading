@@ -463,6 +463,9 @@ h2{font-size:15px;font-weight:850;letter-spacing:.3px}
 .bottom-grid>section:first-child td:last-child .btn.delete-recent-signal:focus-visible {
  outline:2px solid #ffe0e8;outline-offset:2px;
 }
+
+/* Advanced scanner is a separate, read-only market intelligence panel. */
+.advanced-panel{border-color:#37779b}.adv-controls{display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin:10px 0}.adv-table{overflow-x:auto;max-height:480px;overflow-y:auto}.adv-table table{min-width:1030px}.adv-table th{position:sticky;top:0;background:#193955}.adv-summary{color:#b1d3e9;font-size:12px}.adv-signal{font-weight:850}.adv-signal.long{color:#60e9b6}.adv-signal.short{color:#ff8ca3}.adv-reason{font-size:11px;color:#f6cb92}.adv-blocked{color:#ffc994}
 </style></head><body><div class="wrap"><header class="terminal-header"><div class="terminal-brand"><h1>LUXALGO PRO · TRADING TERMINAL</h1><p>Gate.io USDT Perpetual · LuxAlgo 5m / 15m · Coded by · SUBHASISH</p>
 <div class="profile-greeting"><div class="profile-avatar" id="avatarDisplay"><span>SD</span></div>
 <div><div class="profile-name">Hello SUBHASISH</div><label class="profile-change" for="profileImageInput" tabindex="0">Change Photo</label><input type="file" id="profileImageInput" accept="image/png,image/jpeg,image/webp" hidden></div></div></div><section class="news-slot" aria-label="Latest crypto news"><div class="news-heading"><span>● CRYPTO NEWS</span><span id="newsFeedStatus">Loading headlines…</span></div><div class="news-viewport" id="newsViewport"><div class="news-stack" id="newsStack"><span class="news-empty">Retrieving publisher headlines…</span></div></div></section><div class="profile-right"><div class="tag trading-status">● LIVE TRADING OFF</div>
@@ -510,11 +513,34 @@ h2{font-size:15px;font-weight:850;letter-spacing:.3px}
 <div class="tablewrap market-scroll"><table><thead><tr><th>PAIR · CHART ↗</th><th>BIAS</th><th>SCORE</th><th>RSI</th><th>VOL RATIO</th></tr></thead><tbody id="scannerBody"><tr><td colspan="5">Scanning…</td></tr></tbody></table></div>
 <p class="light">Technical labels reflect EMA trend, RSI, recent price-range break and candle volume. They are not LuxAlgo orders.</p>
 </section></div>
+<section class="panel advanced-panel" id="advancedScannerPanel"><div class="panel-heading"><h2>LUXALGO PRO · ADVANCED FUTURES OPPORTUNITY SCANNER <span class="gloss-cyan">● MARKET INTELLIGENCE</span></h2><button class="btn gloss-action" id="advancedRefresh" type="button">↻ Scan All Pairs</button></div>
+<p class="light">Gate.io USDT perpetuals · 5m + 15m completed candles · volume / trend / structure screening · up to five watchlist candidates. Only genuine stored LuxAlgo alerts can confirm SL1 and TP1. NEVER PLACES ORDERS.</p>
+<div class="adv-controls"><strong id="advancedScanStatus" class="adv-summary">Ready to inspect markets…</strong><span id="advancedEquityInfo" class="light">Equity risk sizing: verifying read-only account</span></div>
+<div class="adv-table"><table><thead><tr><th>PAIR</th><th>DIRECTION</th><th>TIMEFRAME</th><th>LUXALGO</th><th>ENTRY REF.</th><th>SL1</th><th>TP1</th><th>R:R</th><th>3% RISK / SIZE</th><th>STATUS / REASON</th></tr></thead><tbody id="advancedScanBody"><tr><td colspan="10" class="light">Waiting for scan results.</td></tr></tbody></table></div>
+<p class="light">Technical watchlist is NOT a LuxAlgo signal or recommendation. No fresh verified SL1/TP1 = NO TRADE. Capital figures are account-read-only; sizes are indicative BASE-asset quantities, not validated Gate.io contract quantities. Live execution remains BLOCKED.</p>
+</section>
 <div class="bottom-grid"><section class="panel"><h2>RECENT LUXALGO SIGNALS · 5m / 15m</h2><div class="tablewrap"><table><thead><tr><th>Received (IST)</th><th>Token</th><th>Signal</th><th>Timeframe</th><th>Status</th><th>Entry / SL / TP Plan</th></tr></thead><tbody>{% for r in records %}<tr><td>{{r.time_ist|e}}</td><td>{{r.symbol|e}}</td><td>{{r.side|e}}</td><td>{{r.tf|e}}</td><td>Received · Not executed</td><td><button class="btn plan" data-symbol="{{r.symbol|e}}" data-side="{{r.side|e}}" data-tf="{{r.tf|e}}">Plan + Chart</button> <button class="btn signal-risk" type="button" data-received="{{r.time|e}}" data-symbol="{{r.symbol|e}}" data-side="{{r.side|e}}" data-tf="{{r.tf|e}}">Signal Risk Check</button> <button class="btn execution-check" type="button" data-event-id="{{r.event_id|e}}">Execution Precheck</button> <button class="btn simulate-order" type="button" data-event-id="{{r.event_id|e}}">Simulate Order</button> <button class="btn delete-recent-signal" type="button" data-event-id="{{r.event_id|e}}">Delete</button></td></tr>{% else %}<tr><td colspan="6">No signals stored in the database yet.</td></tr>{% endfor %}</tbody></table></div><p id="executionCheckStatus" class="light" role="status" aria-live="polite">Execution engine foundation: protected prechecks only; exchange orders disabled.</p><p id="simulatedOrderStatus" class="light" role="status" aria-live="polite">Stage 2: explicit simulated order requests only; no actual exchange positions or protective orders.</p><p class="light">Signals are received events, not fills. Signal receipts and dry-run intent IDs are saved in PostgreSQL. Duplicate signals may not create separate dry-run intents.</p></section>
 <section class="panel performance-panel"><div class="panel-heading"><h2>PERFORMANCE ANALYTICS</h2><span class="label-muted">VERIFIED FILLS ONLY</span></div><div class="perf-grid"><div><span>Total Closed Trades</span><strong>—</strong></div><div><span>Winning Trades</span><strong>—</strong></div><div><span>Losing Trades</span><strong>—</strong></div><div><span>Win Rate</span><strong>—</strong></div><div><span>Total Realized P&amp;L</span><strong>—</strong></div><div><span>Unrealized P&amp;L</span><strong>—</strong></div></div><p class="light">Waiting for authenticated position and fill synchronization. No synthetic P&amp;L or win statistics.</p></section></div><section class="panel"><h2>TRADE PLAN · SL · TP1 <span class="tag">READ ONLY</span></h2>
 <div class="controls"><label>Entry reference <input id="entry" type="number" step="any" placeholder="Choose a signal" readonly></label><label>Stop Loss · 1.5 ATR <input id="sl" type="number" step="any" readonly></label><label>TP1 · 2 ATR · 100% exit <input id="tp1" type="number" step="any" readonly></label></div>
 <div id="planResults">Select Plan + Chart beside a signal to calculate illustrative entry, SL and TP1. No orders are placed.</div></section>
 <section class="panel"><div class="panel-heading"><h2>COMPLETED TRADES · EXIT RECORD</h2><span class="label-muted">PENDING ACCOUNT HISTORY INTEGRATION</span></div><div class="tablewrap"><table><thead><tr><th>TIME (UTC)</th><th>PAIR</th><th>DIRECTION</th><th>ENTRY FILL</th><th>EXIT FILL</th><th>NET REALIZED P&amp;L</th><th>RESULT</th></tr></thead><tbody><tr><td colspan="7" class="empty-state">No verified exchange fills have been synchronized. Signal receipts are not executed trades.</td></tr></tbody></table></div></section><section class="panel"><div class="panel-heading"><h2>PAPER TRADE MONITOR <span class="tag">SIMULATION ONLY</span></h2><button class="btn gloss-action" id="paperRefresh" type="button">↻ Check Paper Trades</button></div><p class="light" id="paperStatus" role="status" aria-live="polite">Checks queued simulated orders when the dashboard is open; historical outcomes remain estimates, not fills.</p><div class="tablewrap"><table><thead><tr><th>CREATED (UTC)</th><th>PAIR</th><th>SIDE</th><th>SIM ENTRY</th><th>SIM SL</th><th>SIM TP</th><th>STATE</th><th>EST. P&amp;L (USDT)</th></tr></thead><tbody id="paperBody"><tr><td colspan="8">No simulated positions loaded.</td></tr></tbody></table></div><p class="light">Simulation outcomes assume the reference entry was achievable and exclude fees, slippage and funding. If both SL and TP are touched in one candle, SL is assumed first. Historical-data gaps are not guessed. Simulated P&amp;L is never included in verified real-trade analytics.</p></section><section class="panel"><div class="panel-heading"><h2>EXECUTION SAFETY PREVIEW <span class="tag">DRY RUN ONLY</span></h2><span class="label-muted">NO EXCHANGE ORDERS</span></div><p class="light">Preview illustrative risk and contract-size checks using a hypothetical USDT equity. This does not validate your actual available margin, fee-adjusted fills, current hedge settings, or protective order placement.</p><div class="controls"><label>Trading pair<input id="previewSymbol" value="BTCUSDT" maxlength="29" autocomplete="off"></label><label>Direction<select id="previewSide"><option value="LONG">LONG / BUY</option><option value="SHORT">SHORT / SELL</option></select></label><label>Timeframe<select id="previewTf"><option value="15m">15 minutes</option><option value="5m">5 minutes</option></select></label><label>Hypothetical equity (USDT)<input id="previewEquity" type="number" value="100" min="1" max="10000000" step="any"></label><label>Risk per trade (%)<select id="previewRisk"><option value="0.5">0.5%</option><option value="1">1%</option><option value="1.5">1.5%</option><option value="2">2%</option><option value="2.5">2.5%</option><option value="3" selected>3% (default)</option><option value="3.5">3.5%</option><option value="4">4%</option><option value="4.5">4.5%</option><option value="5">5% (maximum)</option></select></label></div><button class="btn gloss-action" id="previewButton" type="button">Generate Read-Only Risk Preview</button><p id="signalPreviewContext" class="light" aria-live="polite">Manual calculator input; not a trading recommendation.</p><div id="previewResult" role="status" aria-live="polite" style="white-space:pre-wrap;margin-top:12px;background:#0b1a2b;border:1px solid #2b435e;border-radius:8px;padding:14px;font:12px/1.8 ui-monospace,Consolas,monospace">Ready for a simulated preview. Nothing can place or close orders.</div></section><div class="foot">LUXALGO PRO · Private terminal · Market data is public Gate.io data. Scanners are technical watchlists, not LuxAlgo entry signals. No account positions, fills, profit or loss are available until authenticated exchange sync is implemented. LIVE TRADING OFF; no orders are placed.</div></div><script>
+
+// Read-only advanced watchlist: uses completed 5m/15m public candles and validated LuxAlgo receipt records.
+(function(){
+ const body=document.getElementById('advancedScanBody'),status=document.getElementById('advancedScanStatus'),risk=document.getElementById('advancedEquityInfo'),btn=document.getElementById('advancedRefresh');
+ let busy=false;
+ function cell(tr,val,css){const t=tr.insertCell();t.textContent=String(val??'—');if(css)t.className=css;return t;}
+ async function refresh(force=false){if(busy)return;busy=true;btn.disabled=true;
+ try{const url='/terminal/advanced-scanner'+(force?'?refresh=1':'');const r=await fetch(url,{cache:'no-store'});const data=await r.json();if(!r.ok)throw Error(data.error||'Scanner unavailable');
+  let x=data.scan||{};status.textContent='5m '+(x['5m']?.scanned||0)+'/'+(x['5m']?.total||0)+' · 15m '+(x['15m']?.scanned||0)+'/'+(x['15m']?.total||0)+(x.running?' · scanning progressively':' · current snapshot')+' · '+(data.updated_at?new Date(data.updated_at*1000).toLocaleTimeString():'pending');
+  risk.textContent=data.equity_usdt==null?'Risk sizing unavailable (equity not verified)':'Verified equity: '+data.equity_usdt.toFixed(2)+' USDT · 3% budget '+data.risk_budget_usdt.toFixed(2)+' USDT';
+  body.replaceChildren();if(!data.candidates?.length){const tr=body.insertRow();cell(tr,'NO TRADE · '+(x.running?'Scans are still running':'No verified opportunities meeting screening conditions'), 'adv-blocked').colSpan=10;}
+  for(const p of (data.candidates||[])){const tr=body.insertRow();cell(tr,p.symbol);cell(tr,p.side,p.side==='LONG'?'adv-signal long':'adv-signal short');cell(tr,p.timeframe);cell(tr,p.confirmation);cell(tr,p.entry);cell(tr,p.sl1);cell(tr,p.tp1);cell(tr,p.rr);cell(tr,p.size_hint);cell(tr,p.status+' · '+p.reason,'adv-reason');}
+ }catch(e){status.textContent='Advanced scan unavailable: '+e.message;body.replaceChildren();const tr=body.insertRow();cell(tr,'NO TRADE · market confirmation unavailable').colSpan=10;}
+ finally{busy=false;btn.disabled=false;}}
+ btn.addEventListener('click',()=>refresh(true));refresh();setInterval(()=>{if(!document.hidden)refresh();},20000);
+})();
+
 // Optional editable profile image. Uploaded securely to PostgreSQL; never touches Gate.io.
 (function(){
  const input=document.getElementById('profileImageInput'),display=document.getElementById('avatarDisplay');
@@ -2541,7 +2567,8 @@ def _scan_one_pair(symbol,tf,change):
                 + (20 if current>h20 else -20 if current<l20 else 0)
                 + (10 if change>1 else -10 if change< -1 else 0))
     return {'contract':symbol,'bias':'bullish' if bull_break else 'bearish' if bear_break else 'mixed',
-            'score':score,'rsi':round(rsi,2),'volume_ratio':round(vr,2),'timeframe':tf}
+            'score':score,'rsi':round(rsi,2),'volume_ratio':round(vr,2),'timeframe':tf,
+            'reference_price':current,'support':l20,'resistance':h20,'candle_at':usable[-1][0]}
 
 
 def _run_scan(tf):
@@ -2590,6 +2617,93 @@ def terminal_scanner():
     response=jsonify(payload)
     response.headers['Cache-Control']='no-store'
     return response
+
+
+@app.get('/terminal/advanced-scanner')
+def terminal_advanced_scanner():
+    """Read-only progressive multi-timeframe market screen; no execution paths."""
+    if not _terminal_permitted():
+        return _terminal_guard()
+    now=time.time()
+    # Reuse both bounded public market scans. Never run an unbounded second scan engine.
+    with _scan_state_lock:
+        active_any=any(q['running'] for q in _scan_state.values())
+        for tf in ('15m','5m'):
+            st=_scan_state[tf]
+            due=(not st['at'] or now-st['at']>600 or (request.args.get('refresh')=='1' and now-st['at']>45))
+            if due and not st['running'] and not active_any:
+                st.update(running=True,results={},scanned=0,failed=0,total=0,at=now)
+                Thread(target=_run_scan,args=(tf,),daemon=True).start()
+                active_any=True
+        snapshots={tf: {'running':st['running'],'total':st['total'],'scanned':st['scanned'],
+                        'failed':st['failed'],'at':int(st['at']),'results':dict(st['results'])}
+                   for tf,st in _scan_state.items()}
+    # Fail closed on market-data unavailability. Public tickers are from the existing radar.
+    try:
+        tickers={t['contract']:t for t in _radar_data()['results']}
+    except (HTTPError,URLError,TimeoutError,OSError,KeyError,ValueError,TypeError):
+        return jsonify(error='Market liquidity feed unavailable; NO TRADE',orders_enabled=False),503
+    equity=None;available=None;open_count=None
+    try:
+        acct=_gate_futures_account_summary();equity=float(acct['equity_usdt']);available=float(acct['available_usdt'])
+        open_count=len(_gate_read_only_positions())
+    except (HTTPError,URLError,TimeoutError,OSError,KeyError,ValueError,TypeError,RuntimeError):
+        pass
+    # Both contract + timeframe must match, and genuine level records must be recent.
+    fresh=[]
+    try:
+        with _db_connect() as con:
+            _ensure_schema(con)
+            with con.cursor() as cur:
+                cur.execute("""SELECT r.symbol,r.side,r.timeframe,r.received_at,l.entry_price,l.stop_loss,l.take_profit
+                               FROM luxalgo_signal_receipts r JOIN luxalgo_signal_levels l ON r.event_id=l.event_id
+                               WHERE l.status='VALID' AND r.received_at>NOW()-INTERVAL '3 minutes'
+                               ORDER BY r.received_at DESC LIMIT 80""")
+                fresh=[dict(z) for z in cur.fetchall()]
+    except (psycopg.Error,RuntimeError,OSError):
+        pass
+    s5=snapshots['5m']['results'];s15=snapshots['15m']['results']
+    candidates=[]
+    for sym, p15 in s15.items():
+        p5=s5.get(sym);ticker=tickers.get(sym)
+        if not p5 or not ticker or ticker['volume']<1000000:continue
+        # Agreeing completed-candle trends, expanded 5m volume and active directional move.
+        islong=p15['score']>=35 and p5['score']>=30 and p5['volume_ratio']>=1.15
+        isshort=p15['score']<=-35 and p5['score']<=-30 and p5['volume_ratio']>=1.15
+        if not (islong or isshort):continue
+        side='LONG' if islong else 'SHORT'
+        score=abs(p15['score'])+abs(p5['score'])+min(30,p5['volume_ratio']*10)
+        signal=next((a for a in fresh if a['symbol'].replace('_','')==sym.replace('_','') and a['side']==side
+                     and a['timeframe'] in ('5m','15m')),None)
+        entry=sl=tp=rr=None;size_hint='—';reason='LuxAlgo SL1/TP1 not confirmed';confirmation='PENDING';state='WATCHLIST ONLY'
+        if signal:
+            try:
+                entry=float(signal['entry_price']);sl=float(signal['stop_loss']);tp=float(signal['take_profit'])
+                good=all(map(math.isfinite,(entry,sl,tp))) and ((sl<entry<tp) if islong else (tp<entry<sl))
+                if good:
+                    rr=round(abs(tp-entry)/abs(entry-sl),2)
+                    confirmation='VALIDATED ALERT';reason='Exchange protection and execution engine not ready'
+                    if rr<1.5:reason='R:R below 1.5 preference'
+                    if equity is None or available is None or open_count is None:reason='Account verification unavailable'
+                    elif open_count>=1:reason='One-position limit reached'
+                    elif rr>=1.5:
+                        # Indicative base-asset size only, NOT Gate.io contract size.
+                        base_qty=min(equity*.03/abs(entry-sl), max(0,available)*5/entry)
+                        size_hint=f'{base_qty:.8g} base units (indicative)'
+                else:reason='LuxAlgo prices failed directional validation';confirmation='INVALID ALERT'
+            except (ValueError,TypeError,ZeroDivisionError,OverflowError):
+                reason='LuxAlgo prices failed validation';confirmation='INVALID ALERT'
+        candidates.append({'symbol':sym.replace('_',''),'side':side,'timeframe':'5m + 15m',
+                           'confirmation':confirmation,'entry':entry,'sl1':sl,'tp1':tp,'rr':rr,
+                           'size_hint':size_hint,'status':state,'reason':reason,'score':round(score,1),'volume':ticker['volume']})
+    # Score combines 5m and 15m momentum; never label as executable.
+    candidates.sort(key=lambda p:(-p['score'],-p['volume'],p['symbol']))
+    candidates=candidates[:5]
+    payload={'candidates':candidates,'scan':{tf:{k:v for k,v in st.items() if k!='results'} for tf,st in snapshots.items()},
+             'running':any(st['running'] for st in snapshots.values()),'updated_at':int(now),
+             'equity_usdt':equity,'risk_budget_usdt':round(equity*.03,8) if equity is not None else None,
+             'open_positions':open_count,'orders_enabled':False,'live_trading':False,'execution_status':'BLOCKED'}
+    res=jsonify(payload);res.headers['Cache-Control']='no-store';return res
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=int(os.getenv('PORT', '8080')))
