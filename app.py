@@ -388,6 +388,18 @@ h2{font-size:15px;font-weight:850;letter-spacing:.3px}
 /* Live read-only balance indicators. Figures never use a manually-entered balance. */
 .equity-metric{border-color:#3e8fb0;box-shadow:inset 0 1px 0 #a8eeff44,0 0 14px #29a8df20}
 .equity-metric strong{font-size:25px}
+
+/* Only the three Gate.io Futures balance cards are collapsible. */
+.futures-liquidity{margin:13px 0 0;background:linear-gradient(130deg,#112b43,#102039);border:1px solid #376886;border-radius:12px;overflow:hidden}
+.futures-liquidity>summary{cursor:pointer;display:flex;align-items:center;justify-content:space-between;gap:12px;list-style:none;padding:13px 17px;font-weight:850;letter-spacing:.25px;color:#a6f0ff;background:linear-gradient(180deg,#1c4463,#112a43);user-select:none}
+.futures-liquidity>summary::-webkit-details-marker{display:none}
+.futures-liquidity>summary:hover{filter:brightness(1.15)}
+.futures-liquidity>summary:focus-visible{outline:3px solid #93ebff;outline-offset:-3px}
+.futures-liquidity .liquidity-arrow{font-size:19px;line-height:1;transition:transform .2s ease;color:#8bebff}
+.futures-liquidity[open] .liquidity-arrow{transform:rotate(180deg)}
+.futures-liquidity .liquidity-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:11px;padding:13px}
+.futures-liquidity .liquidity-grid .metric{min-width:0}
+@media(max-width:670px){.futures-liquidity .liquidity-grid{grid-template-columns:1fr;gap:9px;padding:10px}}
 </style></head><body><div class="wrap"><header class="terminal-header"><div class="terminal-brand"><h1>LUXALGO PRO · TRADING TERMINAL</h1><p>Gate.io USDT Perpetual · LuxAlgo 5m / 15m · Coded by · SUBHASISH</p>
 <div class="profile-greeting"><div class="profile-avatar" id="avatarDisplay"><span>SD</span></div>
 <div><div class="profile-name">Hello SUBHASISH</div><label class="profile-change" for="profileImageInput" tabindex="0">Change Photo</label><input type="file" id="profileImageInput" accept="image/png,image/jpeg,image/webp" hidden></div></div></div><section class="news-slot" aria-label="Latest crypto news"><div class="news-heading"><span>● CRYPTO NEWS</span><span id="newsFeedStatus">Loading headlines…</span></div><div class="news-viewport" id="newsViewport"><div class="news-stack" id="newsStack"><span class="news-empty">Retrieving publisher headlines…</span></div></div></section><div class="profile-right"><div class="tag trading-status">● LIVE TRADING OFF</div>
@@ -396,10 +408,14 @@ h2{font-size:15px;font-weight:850;letter-spacing:.3px}
  <div><strong id="botControlLabel">BOT OFF · PAPER SIMULATION PAUSED</strong><p id="botControlDetail">New LuxAlgo signals remain logged. No live orders are possible.</p></div>
  <div class="bot-control-actions"><button class="btn" id="botTurnOn" type="button">▶ BOT ON</button><button class="btn" id="botTurnOff" type="button">■ BOT OFF</button></div>
 </section>
-<div class="grid metric-grid">
+<details class="futures-liquidity" id="futuresLiquidityDetails">
+<summary><span>◈ FUTURES LIQUIDITY DETAILS · USDT</span><span class="liquidity-arrow" aria-hidden="true">⌄</span></summary>
+<div class="liquidity-grid">
 <div class="metric equity-metric"><small>LIVE FUTURES EQUITY · USDT</small><strong class="gloss-cyan" id="futuresEquity">—</strong><span id="futuresEquityUpdated">Verifying Gate.io account…</span></div>
 <div class="metric"><small>AVAILABLE FUTURES · USDT</small><strong id="futuresAvailable">—</strong><span>Exchange-reported trading availability</span></div>
 <div class="metric"><small>FUTURES BALANCE · USDT</small><strong id="futuresBalance">—</strong><span>Account balance before unrealized P&amp;L</span></div>
+</div></details>
+<div class="grid metric-grid">
 <div class="metric"><small>GATE.IO CONNECTION</small><strong class="gloss-cyan">READ-ONLY</strong><span id="gatePositionStatus">Checking position feed…</span></div>
 <div class="metric"><small>OPEN POSITIONS</small><strong id="openPositionCount">—</strong><span>Verified Gate.io positions only</span></div>
 <div class="metric"><small>UNREALIZED P&amp;L (USDT)</small><strong id="unrealizedPositionPnl">—</strong><span>Read-only, refreshed every 30s</span></div>
