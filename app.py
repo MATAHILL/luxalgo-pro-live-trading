@@ -248,7 +248,7 @@ header p{font-size:13px;margin-top:5px}
 h2{font-size:15px;font-weight:850;letter-spacing:.3px}
 .panel,.metric{background:linear-gradient(162deg,#102943 0%,#102039 62%,#102138 100%);border:1px solid #2a5178;box-shadow:inset 0 1px 0 #8dc7ed1f,0 8px 16px #0002;border-radius:12px}
 .panel{padding:18px 19px}
-.metric-grid{grid-template-columns:repeat(6,minmax(0,1fr));gap:11px;margin:13px 0}
+.metric-grid{grid-template-columns:repeat(3,minmax(0,1fr));gap:11px;margin:13px 0}
 .metric{padding:17px 14px;min-height:108px}
 .metric small{display:block;font-size:11px;letter-spacing:.25px;color:#a4c2dd}
 .metric strong{display:block;font-size:21px;margin:11px 0 4px;background:linear-gradient(#ffffff,#a6d8fb);background-clip:text;-webkit-background-clip:text;color:transparent}
@@ -384,6 +384,10 @@ h2{font-size:15px;font-weight:850;letter-spacing:.3px}
 .bot-control-actions .btn.next-action:not(:disabled){filter:brightness(1.12);box-shadow:inset 0 1px 0 #ffffffb5,0 0 0 1px #ffffff52,0 4px 18px currentColor}
 @media(max-width:650px){.btn.gloss-action,.btn.gloss-safe-disabled,.bot-control-actions .btn{padding:9px 11px;font-size:12px}}
 @media(prefers-reduced-motion:reduce){.btn.gloss-action,.bot-control-actions .btn{transition:none}}
+
+/* Live read-only balance indicators. Figures never use a manually-entered balance. */
+.equity-metric{border-color:#3e8fb0;box-shadow:inset 0 1px 0 #a8eeff44,0 0 14px #29a8df20}
+.equity-metric strong{font-size:25px}
 </style></head><body><div class="wrap"><header class="terminal-header"><div class="terminal-brand"><h1>LUXALGO PRO · TRADING TERMINAL</h1><p>Gate.io USDT Perpetual · LuxAlgo 5m / 15m · Coded by · SUBHASISH</p>
 <div class="profile-greeting"><div class="profile-avatar" id="avatarDisplay"><span>SD</span></div>
 <div><div class="profile-name">Hello SUBHASISH</div><label class="profile-change" for="profileImageInput" tabindex="0">Change Photo</label><input type="file" id="profileImageInput" accept="image/png,image/jpeg,image/webp" hidden></div></div></div><section class="news-slot" aria-label="Latest crypto news"><div class="news-heading"><span>● CRYPTO NEWS</span><span id="newsFeedStatus">Loading headlines…</span></div><div class="news-viewport" id="newsViewport"><div class="news-stack" id="newsStack"><span class="news-empty">Retrieving publisher headlines…</span></div></div></section><div class="profile-right"><div class="tag trading-status">● LIVE TRADING OFF</div>
@@ -393,6 +397,9 @@ h2{font-size:15px;font-weight:850;letter-spacing:.3px}
  <div class="bot-control-actions"><button class="btn" id="botTurnOn" type="button">▶ BOT ON</button><button class="btn" id="botTurnOff" type="button">■ BOT OFF</button></div>
 </section>
 <div class="grid metric-grid">
+<div class="metric equity-metric"><small>LIVE FUTURES EQUITY · USDT</small><strong class="gloss-cyan" id="futuresEquity">—</strong><span id="futuresEquityUpdated">Verifying Gate.io account…</span></div>
+<div class="metric"><small>AVAILABLE FUTURES · USDT</small><strong id="futuresAvailable">—</strong><span>Exchange-reported trading availability</span></div>
+<div class="metric"><small>FUTURES BALANCE · USDT</small><strong id="futuresBalance">—</strong><span>Account balance before unrealized P&amp;L</span></div>
 <div class="metric"><small>GATE.IO CONNECTION</small><strong class="gloss-cyan">READ-ONLY</strong><span id="gatePositionStatus">Checking position feed…</span></div>
 <div class="metric"><small>OPEN POSITIONS</small><strong id="openPositionCount">—</strong><span>Verified Gate.io positions only</span></div>
 <div class="metric"><small>UNREALIZED P&amp;L (USDT)</small><strong id="unrealizedPositionPnl">—</strong><span>Read-only, refreshed every 30s</span></div>
@@ -640,6 +647,27 @@ function cell(tr,value,cl){const td=tr.insertCell();td.textContent=value;if(cl)t
 function money(value){if(value===null||value===undefined)return '—';const v=Number(value);return Number.isFinite(v)?v.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:4}):'—';}
 function price(value){const v=Number(value);if(!Number.isFinite(v)||v<=0)return '—';return v.toLocaleString(undefined,{maximumSignificantDigits:10});}
 function empty(msg){body.replaceChildren();const tr=body.insertRow();cell(tr,msg).colSpan=9;tr.className='empty-state';}
+function clearEquity(message){
+ document.getElementById('futuresEquity').textContent='—';
+ document.getElementById('futuresAvailable').textContent='—';
+ document.getElementById('futuresBalance').textContent='—';
+ document.getElementById('futuresEquityUpdated').textContent=message||'Account figures unavailable';
+}
+let equityBusy=false;
+async function loadFuturesEquity(){
+ if(equityBusy)return;
+ equityBusy=true;
+ try{
+  const r=await fetch('/terminal/futures-equity',{cache:'no-store'});
+  const d=await r.json();
+  if(!r.ok)throw Error(d.error||'Futures balance not available');
+  document.getElementById('futuresEquity').textContent=money(d.equity_usdt);
+  document.getElementById('futuresAvailable').textContent=money(d.available_usdt);
+  document.getElementById('futuresBalance').textContent=money(d.balance_usdt);
+  document.getElementById('futuresEquityUpdated').textContent='Gate.io verified · '+new Date(d.fetched_at*1000).toLocaleTimeString();
+ }catch(e){clearEquity('Cannot verify: '+e.message);}
+ finally{equityBusy=false;}
+}
 async function loadPositions(){
  if(busy)return;busy=true;button.disabled=true;
  try{
@@ -662,7 +690,7 @@ async function loadPositions(){
   updated.textContent='Position data unavailable: '+e.message;
  }finally{busy=false;button.disabled=false;}
 }
-button.addEventListener('click',loadPositions);loadPositions();setInterval(()=>{if(!document.hidden)loadPositions();},30000);
+button.addEventListener('click',()=>{loadPositions();loadFuturesEquity();});loadPositions();loadFuturesEquity();setInterval(()=>{if(!document.hidden){loadPositions();loadFuturesEquity();}},30000);
 })();
 
 (function(){
@@ -1226,6 +1254,65 @@ def _gate_read_only_positions():
                               entry_price=entry, mark_price=mark, unrealized_pnl=unrealized,
                               leverage_label=leverage_label, position_mode=mode))
     return positions
+
+
+def _gate_futures_account_summary():
+    """Authenticated GET only; no credentials or private account IDs in response."""
+    key = os.getenv('GATE_API_KEY', '').strip()
+    secret = os.getenv('GATE_API_SECRET', '').strip()
+    if not key or not secret:
+        raise RuntimeError('Gate.io credentials unavailable')
+    path = '/api/v4/futures/usdt/accounts'
+    timestamp = str(int(time.time()))
+    payload_hash = hashlib.sha512(b'').hexdigest()
+    message = '\n'.join(('GET', path, '', payload_hash, timestamp))
+    signature = hmac.new(secret.encode(), message.encode(), hashlib.sha512).hexdigest()
+    req = Request('https://api.gateio.ws' + path, method='GET', headers={
+        'KEY':key, 'Timestamp':timestamp, 'SIGN':signature,
+        'Accept':'application/json', 'User-Agent':'LuxAlgo-PRO-EquityMonitor/1.0'
+    })
+    with urlopen(req, timeout=10) as res:
+        raw = json.loads(res.read(65536))
+    if not isinstance(raw, dict) or raw.get('currency') != 'USDT':
+        raise ValueError('Invalid USDT futures account')
+    # Gate documents /futures/usdt/accounts total as classic account cash balance
+    # (excluding unrealized profit/loss); classic equity = total + unrealised_pnl.
+    # Other account modes require a separate unified account equity integration.
+    if raw.get('margin_mode', 0) not in (0, '0', None):
+        raise ValueError('Unified account mode: equity mapping not yet supported')
+    def amount(key):
+        value = raw.get(key)
+        if value is None or isinstance(value, bool):
+            raise ValueError('Missing futures account field')
+        number = float(value)
+        if not math.isfinite(number):
+            raise ValueError('Invalid futures account field')
+        return round(number, 8)
+    balance = amount('total')
+    upl = amount('unrealised_pnl')
+    available = amount('available')
+    return dict(balance_usdt=balance, available_usdt=available,
+                unrealized_pnl_usdt=upl, equity_usdt=round(balance+upl,8),
+                currency='USDT', source='GATE_IO_FUTURES_CLASSIC_ACCOUNT',
+                fetched_at=int(time.time()), orders_enabled=False,live_trading=False)
+
+
+@app.get('/terminal/futures-equity')
+def terminal_futures_equity():
+    if not _terminal_permitted():
+        return _terminal_guard()
+    try:
+        response = jsonify(_gate_futures_account_summary())
+        response.headers['Cache-Control'] = 'private, no-store'
+        return response
+    except RuntimeError:
+        return jsonify(error='Gate.io read-only credentials unavailable',orders_enabled=False),503
+    except HTTPError as exc:
+        app.logger.warning('Gate equity HTTP status %s', exc.code)
+        return jsonify(error='Gate.io rejected the read-only equity request',orders_enabled=False),502
+    except (URLError,TimeoutError,ValueError,TypeError,KeyError,OSError) as exc:
+        app.logger.warning('Gate equity not available: %s',type(exc).__name__)
+        return jsonify(error='Account equity unavailable for this account type or connection',orders_enabled=False),502
 
 
 @app.get('/terminal/positions')
