@@ -447,7 +447,7 @@ h2{font-size:15px;font-weight:850;letter-spacing:.3px}
 <div class="metric"><small>AVAILABLE FUTURES · USDT</small><strong id="futuresAvailable">—</strong><span>Exchange-reported trading availability</span></div>
 <div class="metric"><small>FUTURES BALANCE · USDT</small><strong id="futuresBalance">—</strong><span>Account balance before unrealized P&amp;L</span></div>
 </div></details>
-<details class="panel" style="margin:12px 0" id="liveReadinessPanel"><summary style="font-weight:850;cursor:pointer;color:#ffcf89">LIVE EXECUTION READINESS · SAFETY CHECK (READ ONLY)</summary><p class="light">This panel checks safeguards only. It cannot start trading or enable Gate.io API writes.</p><button class="btn" type="button" id="readinessRefresh">Check readiness</button><button class="btn gloss-action" type="button" id="guardTestButton" style="margin-left:8px">Test Duplicate Order Guard</button><p class="light" id="guardTestResult">Test only: all candidates are BLOCKED; no exchange orders.</p><div id="readinessOutput" role="status" aria-live="polite" style="margin-top:10px;color:#fdbfbf">Live execution BLOCKED until all critical safeguards are implemented and tested.</div></details>
+<details class="panel" style="margin:12px 0" id="liveReadinessPanel"><summary style="font-weight:850;cursor:pointer;color:#ffcf89">LIVE EXECUTION READINESS · SAFETY CHECK (READ ONLY)</summary><p class="light">This panel checks safeguards only. It cannot start trading or enable Gate.io API writes.</p><button class="btn" type="button" id="readinessRefresh">Check readiness</button><button class="btn gloss-action" type="button" id="guardTestButton" style="margin-left:8px">Test Duplicate Order Guard</button><button class="btn gloss-action" type="button" id="riskCheckButton" style="margin-left:8px">Check Account Risk Limits</button><p class="light" id="riskCheckResult" role="status" aria-live="polite">Read-only risk inspection available. Never authorizes a trade.</p><p class="light" id="guardTestResult">Test only: all candidates are BLOCKED; no exchange orders.</p><div id="readinessOutput" role="status" aria-live="polite" style="margin-top:10px;color:#fdbfbf">Live execution BLOCKED until all critical safeguards are implemented and tested.</div></details>
 <div class="grid metric-grid">
 <div class="metric"><small>GATE.IO CONNECTION</small><strong class="gloss-cyan">READ-ONLY</strong><span id="gatePositionStatus">Checking position feed…</span></div>
 <div class="metric"><small>OPEN POSITIONS</small><strong id="openPositionCount">—</strong><span>Verified Gate.io positions only</span></div>
@@ -532,6 +532,25 @@ h2{font-size:15px;font-weight:850;letter-spacing:.3px}
   finally{b.disabled=false;}
  });
  })();
+
+// Step 415: observe account risk conditions, but never authorize any exchange order.
+(function(){
+ const b=document.getElementById('riskCheckButton'),out=document.getElementById('riskCheckResult');
+ if(!b||!out)return;
+ b.addEventListener('click',async()=>{
+  b.disabled=true;out.textContent='Reading Gate.io account and position exposure…';
+  try{
+   const r=await fetch('/terminal/live-risk-check',{cache:'no-store'});
+   const d=await r.json();if(!r.ok)throw Error(d.error||'Risk inspection unavailable');
+   const snap=d.snapshot||{},fmt=x=>x===null||x===undefined?'UNAVAILABLE':String(x);
+   out.replaceChildren();
+   const intro=document.createElement('p');intro.textContent='LIVE ENTRY BLOCKED · 0 orders · 1 position maximum · 0.5% intended risk · 5× ceiling';intro.style.color='#ffadad';out.appendChild(intro);
+   const amounts=document.createElement('p');amounts.textContent='Verified equity: '+fmt(snap.verified_equity_usdt)+' USDT | Available: '+fmt(snap.verified_available_usdt)+' USDT | Intended risk budget: '+fmt(snap.risk_budget_usdt)+' USDT | Open positions: '+fmt(snap.open_positions);out.appendChild(amounts);
+   for(const c of d.checks||[]){const line=document.createElement('div');line.textContent=(c.passed?'✓ ':'✕ ')+c.name+' — '+c.detail;line.style.margin='5px 0';out.appendChild(line);}
+  }catch(e){out.textContent='Risk inspection unavailable: BLOCKED. No orders possible.';}
+  finally{b.disabled=false;}
+ });
+})();
 
 // Remote control: persisted in PostgreSQL, never enables exchange trading.
 (function(){
@@ -1572,6 +1591,66 @@ def terminal_live_readiness():
     response=jsonify(status='BLOCKED',safe_to_trade=False,orders_enabled=False,
                      live_trading=False,orders_placed=0,equity_verified=equity_verified,
                      checks=checks,notice='Readiness inspection only. Never change API write permissions on this basis.')
+    response.headers['Cache-Control']='private, no-store'
+    return response
+
+
+# Step 415: read-only and fail-closed risk inspection; never authorizes an order.
+@app.get('/terminal/live-risk-check')
+def terminal_live_risk_check():
+    if not _terminal_permitted():
+        return _terminal_guard()
+    checks=[]
+    safe_env = os.getenv('LIVE_TRADING_ENABLED','false').strip().lower()=='false'
+    checks.append(dict(name='Live trading remains disabled', passed=safe_env,
+                       detail='No Gate.io order requests are available in this version'))
+    try:
+        account=_gate_futures_account_summary()
+        equity=account['equity_usdt']
+        available=account['available_usdt']
+        if not all(math.isfinite(float(x)) for x in (equity,available)) or equity<=0 or available<0:
+            raise ValueError('Invalid account data')
+        risk_budget=round(equity * .005, 8)
+        checks.append(dict(name='Verified Gate.io account equity',passed=True,
+                           detail='Read-only equity and available funds verified'))
+    except (RuntimeError,HTTPError,URLError,TimeoutError,ValueError,KeyError,TypeError,OSError):
+        equity=None; available=None; risk_budget=None
+        checks.append(dict(name='Verified Gate.io account equity',passed=False,
+                           detail='Unavailable or invalid; fail closed'))
+    try:
+        positions=_gate_read_only_positions()
+        position_count=len(positions)
+        checks.append(dict(name='Maximum one existing open position',passed=position_count==0,
+                           detail=f'{position_count} exchange positions found; new entry blocked if any already open'))
+        # Gate.io returned leverage labels are presentation data and may not fully
+        # describe hedge-mode exposure. Never approve leverage from these strings.
+    except (RuntimeError,HTTPError,URLError,TimeoutError,ValueError,KeyError,TypeError,OSError):
+        position_count=None
+        checks.append(dict(name='Maximum one existing open position',passed=False,
+                           detail='Exchange position inventory unavailable; fail closed'))
+    try:
+        with _db_connect() as con:
+            _ensure_schema(con)
+            with con.cursor() as cur:
+                cur.execute('SELECT COUNT(*) AS c FROM luxalgo_live_order_guard_audit')
+                audited=int(cur.fetchone()['c'])
+        checks.append(dict(name='PostgreSQL guard audit available',passed=True,
+                           detail=f'{audited} blocked audit records; not a live order ledger'))
+    except (psycopg.Error,RuntimeError,OSError):
+        checks.append(dict(name='PostgreSQL guard audit available',passed=False,
+                           detail='Database unavailable; fail closed'))
+    checks.append(dict(name='Leverage maximum 5x',passed=False,
+                       detail='5x is the planned ceiling; a live order/contract leverage validation does not exist'))
+    checks.append(dict(name='Atomic account-wide risk and exposure lock',passed=False,
+                       detail='0.5% is a budget, not enforced for simultaneous orders or pending exchange requests'))
+    checks.append(dict(name='Exchange protective stops and take profit',passed=False,
+                       detail='No verified exchange-side SL/TP placement or recovery'))
+    response=jsonify(status='BLOCKED',safe_to_trade=False,orders_placed=0,live_trading=False,
+                     limits=dict(max_new_positions=1,max_leverage=5,risk_percent=.5),
+                     snapshot=dict(verified_equity_usdt=equity,verified_available_usdt=available,
+                                   risk_budget_usdt=risk_budget,open_positions=position_count),
+                     checks=checks,
+                     notice='Read-only observation, not atomic authorization. No live trading is available.')
     response.headers['Cache-Control']='private, no-store'
     return response
 
