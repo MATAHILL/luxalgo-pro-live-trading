@@ -190,6 +190,27 @@ h2{font-size:15px;font-weight:850;letter-spacing:.3px}
 @media(max-width:1200px){.terminal-header{grid-template-columns:1fr auto}.news-slot{grid-column:1/-1;grid-row:2}}
 @media(max-width:680px){.terminal-header{grid-template-columns:minmax(0,1fr)}.trading-status{grid-row:2;text-align:left}.news-slot{grid-column:1;grid-row:3}}
 @media(prefers-reduced-motion:reduce){.news-stack.news-animated{animation:none}.news-stack .news-item:not(:first-child){display:none}}
+
+/* Compact LuxAlgo signal controls: four actions across one desktop row. */
+@media(min-width:1101px){
+ .bottom-grid{grid-template-columns:minmax(0,4.3fr) minmax(225px,1fr);gap:10px}
+}
+.bottom-grid>section:first-child{min-width:0}
+.bottom-grid>section:first-child .tablewrap{overflow-x:auto}
+.bottom-grid>section:first-child table{min-width:790px;table-layout:auto}
+.bottom-grid>section:first-child th:last-child,.bottom-grid>section:first-child td:last-child{min-width:352px;width:44%;white-space:nowrap}
+.bottom-grid>section:first-child td:last-child .btn{display:inline-block;vertical-align:middle;white-space:nowrap;padding:5px 6px;margin:0 2px 0 0;font-size:10px;line-height:1.4;border-radius:5px;letter-spacing:0}
+.performance-panel{min-width:0}
+.performance-panel .panel-heading{flex-wrap:wrap}
+.performance-panel .perf-grid{gap:6px}
+.performance-panel .perf-grid>div{padding:9px 7px}
+.performance-panel .perf-grid strong{font-size:16px}
+@media(min-width:1101px) and (max-width:1250px){
+ .bottom-grid>section:first-child td:last-child .btn{font-size:9.5px;padding:4px 5px;margin-right:1px}
+}
+@media(max-width:1100px){
+ .bottom-grid{grid-template-columns:1fr}
+}
 </style></head><body><div class="wrap"><header class="terminal-header"><div class="terminal-brand"><h1>LUXALGO PRO · TRADING TERMINAL</h1><p>Gate.io USDT Perpetual · LuxAlgo 5m / 15m · Coded by · SUBHASISH</p></div><section class="news-slot" aria-label="Latest crypto news"><div class="news-heading"><span>● CRYPTO NEWS</span><span id="newsFeedStatus">Loading headlines…</span></div><div class="news-viewport" id="newsViewport"><div class="news-stack" id="newsStack"><span class="news-empty">Retrieving publisher headlines…</span></div></div></section><div class="tag trading-status">● LIVE TRADING OFF</div></header>
 <div class="grid metric-grid">
 <div class="metric"><small>GATE.IO CONNECTION</small><strong class="gloss-cyan">READ-ONLY</strong><span id="gatePositionStatus">Checking position feed…</span></div>
