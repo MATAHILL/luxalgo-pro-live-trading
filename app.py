@@ -113,6 +113,20 @@ CREATE TABLE IF NOT EXISTS luxalgo_live_order_guard_audit (
   reason TEXT NOT NULL,
   source TEXT NOT NULL DEFAULT 'DASHBOARD_GUARD_TEST'
 );
+-- Dashboard-only removal: audit and webhook receipts remain immutable.
+CREATE TABLE IF NOT EXISTS luxalgo_hidden_signal_rows (
+ event_id TEXT PRIMARY KEY,
+ hidden_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE TABLE IF NOT EXISTS luxalgo_signal_levels (
+ event_id TEXT PRIMARY KEY,
+ checked_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+ status TEXT NOT NULL CHECK(status IN ('VALID','MISSING','INVALID')),
+ entry_price NUMERIC,
+ stop_loss NUMERIC,
+ take_profit NUMERIC,
+ reason TEXT NOT NULL DEFAULT ''
+);
 CREATE TABLE IF NOT EXISTS luxalgo_dry_run_intents (
  event_id TEXT PRIMARY KEY,
  received_at TIMESTAMPTZ NOT NULL,
@@ -202,8 +216,9 @@ def _db_recent():
         with con.cursor() as cur:
             cur.execute('SELECT COUNT(*) AS total FROM luxalgo_signal_receipts')
             count = cur.fetchone()['total']
-            cur.execute('''SELECT received_at, event_id, symbol, side, timeframe FROM luxalgo_signal_receipts
-                           ORDER BY id DESC LIMIT 20''')
+            cur.execute('''SELECT received_at, event_id, symbol, side, timeframe FROM luxalgo_signal_receipts r
+                           WHERE NOT EXISTS (SELECT 1 FROM luxalgo_hidden_signal_rows h WHERE h.event_id=r.event_id)
+                           ORDER BY r.id DESC LIMIT 20''')
             rows = [dict(time=r['received_at'].isoformat(),time_ist=r['received_at'].astimezone(timezone(timedelta(hours=5, minutes=30))).strftime('%Y-%m-%d %H:%M:%S'),symbol=r['symbol'],side=r['side'],tf=r['timeframe'],event_id=r['event_id'])
                     for r in cur.fetchall()]
     return count, rows
@@ -479,11 +494,11 @@ h2{font-size:15px;font-weight:850;letter-spacing:.3px}
 <div class="tablewrap market-scroll"><table><thead><tr><th>PAIR · CHART ↗</th><th>BIAS</th><th>SCORE</th><th>RSI</th><th>VOL RATIO</th></tr></thead><tbody id="scannerBody"><tr><td colspan="5">Scanning…</td></tr></tbody></table></div>
 <p class="light">Technical labels reflect EMA trend, RSI, recent price-range break and candle volume. They are not LuxAlgo orders.</p>
 </section></div>
-<div class="bottom-grid"><section class="panel"><h2>RECENT LUXALGO SIGNALS · 5m / 15m</h2><div class="tablewrap"><table><thead><tr><th>Received (IST)</th><th>Token</th><th>Signal</th><th>Timeframe</th><th>Status</th><th>Entry / SL / TP Plan</th></tr></thead><tbody>{% for r in records %}<tr><td>{{r.time_ist|e}}</td><td>{{r.symbol|e}}</td><td>{{r.side|e}}</td><td>{{r.tf|e}}</td><td>Received · Not executed</td><td><button class="btn plan" data-symbol="{{r.symbol|e}}" data-side="{{r.side|e}}" data-tf="{{r.tf|e}}">Plan + Chart</button> <button class="btn signal-risk" type="button" data-received="{{r.time|e}}" data-symbol="{{r.symbol|e}}" data-side="{{r.side|e}}" data-tf="{{r.tf|e}}">Signal Risk Check</button> <button class="btn execution-check" type="button" data-event-id="{{r.event_id|e}}">Execution Precheck</button> <button class="btn simulate-order" type="button" data-event-id="{{r.event_id|e}}">Simulate Order</button></td></tr>{% else %}<tr><td colspan="6">No signals stored in the database yet.</td></tr>{% endfor %}</tbody></table></div><p id="executionCheckStatus" class="light" role="status" aria-live="polite">Execution engine foundation: protected prechecks only; exchange orders disabled.</p><p id="simulatedOrderStatus" class="light" role="status" aria-live="polite">Stage 2: explicit simulated order requests only; no actual exchange positions or protective orders.</p><p class="light">Signals are received events, not fills. Signal receipts and dry-run intent IDs are saved in PostgreSQL. Duplicate signals may not create separate dry-run intents.</p></section>
+<div class="bottom-grid"><section class="panel"><h2>RECENT LUXALGO SIGNALS · 5m / 15m</h2><div class="tablewrap"><table><thead><tr><th>Received (IST)</th><th>Token</th><th>Signal</th><th>Timeframe</th><th>Status</th><th>Entry / SL / TP Plan</th></tr></thead><tbody>{% for r in records %}<tr><td>{{r.time_ist|e}}</td><td>{{r.symbol|e}}</td><td>{{r.side|e}}</td><td>{{r.tf|e}}</td><td>Received · Not executed</td><td><button class="btn plan" data-symbol="{{r.symbol|e}}" data-side="{{r.side|e}}" data-tf="{{r.tf|e}}">Plan + Chart</button> <button class="btn signal-risk" type="button" data-received="{{r.time|e}}" data-symbol="{{r.symbol|e}}" data-side="{{r.side|e}}" data-tf="{{r.tf|e}}">Signal Risk Check</button> <button class="btn execution-check" type="button" data-event-id="{{r.event_id|e}}">Execution Precheck</button> <button class="btn simulate-order" type="button" data-event-id="{{r.event_id|e}}">Simulate Order</button> <button class="btn delete-recent-signal" type="button" data-event-id="{{r.event_id|e}}">Delete</button></td></tr>{% else %}<tr><td colspan="6">No signals stored in the database yet.</td></tr>{% endfor %}</tbody></table></div><p id="executionCheckStatus" class="light" role="status" aria-live="polite">Execution engine foundation: protected prechecks only; exchange orders disabled.</p><p id="simulatedOrderStatus" class="light" role="status" aria-live="polite">Stage 2: explicit simulated order requests only; no actual exchange positions or protective orders.</p><p class="light">Signals are received events, not fills. Signal receipts and dry-run intent IDs are saved in PostgreSQL. Duplicate signals may not create separate dry-run intents.</p></section>
 <section class="panel performance-panel"><div class="panel-heading"><h2>PERFORMANCE ANALYTICS</h2><span class="label-muted">VERIFIED FILLS ONLY</span></div><div class="perf-grid"><div><span>Total Closed Trades</span><strong>—</strong></div><div><span>Winning Trades</span><strong>—</strong></div><div><span>Losing Trades</span><strong>—</strong></div><div><span>Win Rate</span><strong>—</strong></div><div><span>Total Realized P&amp;L</span><strong>—</strong></div><div><span>Unrealized P&amp;L</span><strong>—</strong></div></div><p class="light">Waiting for authenticated position and fill synchronization. No synthetic P&amp;L or win statistics.</p></section></div><section class="panel"><h2>TRADE PLAN · SL · TP1 <span class="tag">READ ONLY</span></h2>
 <div class="controls"><label>Entry reference <input id="entry" type="number" step="any" placeholder="Choose a signal" readonly></label><label>Stop Loss · 1.5 ATR <input id="sl" type="number" step="any" readonly></label><label>TP1 · 2 ATR · 100% exit <input id="tp1" type="number" step="any" readonly></label></div>
 <div id="planResults">Select Plan + Chart beside a signal to calculate illustrative entry, SL and TP1. No orders are placed.</div></section>
-<section class="panel"><div class="panel-heading"><h2>COMPLETED TRADES · EXIT RECORD</h2><span class="label-muted">PENDING ACCOUNT HISTORY INTEGRATION</span></div><div class="tablewrap"><table><thead><tr><th>TIME (UTC)</th><th>PAIR</th><th>DIRECTION</th><th>ENTRY FILL</th><th>EXIT FILL</th><th>NET REALIZED P&amp;L</th><th>RESULT</th></tr></thead><tbody><tr><td colspan="7" class="empty-state">No verified exchange fills have been synchronized. Signal receipts are not executed trades.</td></tr></tbody></table></div></section><section class="panel"><div class="panel-heading"><h2>PAPER TRADE MONITOR <span class="tag">SIMULATION ONLY</span></h2><button class="btn gloss-action" id="paperRefresh" type="button">↻ Check Paper Trades</button></div><p class="light" id="paperStatus" role="status" aria-live="polite">Checks queued simulated orders when the dashboard is open; historical outcomes remain estimates, not fills.</p><div class="tablewrap"><table><thead><tr><th>CREATED (UTC)</th><th>PAIR</th><th>SIDE</th><th>SIM ENTRY</th><th>SIM SL</th><th>SIM TP</th><th>STATE</th><th>EST. P&amp;L (USDT)</th></tr></thead><tbody id="paperBody"><tr><td colspan="8">No simulated positions loaded.</td></tr></tbody></table></div><p class="light">Simulation outcomes assume the reference entry was achievable and exclude fees, slippage and funding. If both SL and TP are touched in one candle, SL is assumed first. Historical-data gaps are not guessed. Simulated P&amp;L is never included in verified real-trade analytics.</p></section><section class="panel"><div class="panel-heading"><h2>EXECUTION SAFETY PREVIEW <span class="tag">DRY RUN ONLY</span></h2><span class="label-muted">NO EXCHANGE ORDERS</span></div><p class="light">Preview illustrative risk and contract-size checks using a hypothetical USDT equity. This does not validate your actual available margin, fee-adjusted fills, current hedge settings, or protective order placement.</p><div class="controls"><label>Trading pair<input id="previewSymbol" value="BTCUSDT" maxlength="29" autocomplete="off"></label><label>Direction<select id="previewSide"><option value="LONG">LONG / BUY</option><option value="SHORT">SHORT / SELL</option></select></label><label>Timeframe<select id="previewTf"><option value="15m">15 minutes</option><option value="5m">5 minutes</option></select></label><label>Hypothetical equity (USDT)<input id="previewEquity" type="number" value="100" min="1" max="10000000" step="any"></label><label>Risk per trade (%)<select id="previewRisk"><option value="0.5">0.5%</option><option value="1" selected>1% (default)</option><option value="1.5">1.5%</option><option value="2">2%</option><option value="2.5">2.5%</option><option value="3">3%</option><option value="3.5">3.5%</option><option value="4">4%</option><option value="4.5">4.5%</option><option value="5">5% (maximum)</option></select></label></div><button class="btn gloss-action" id="previewButton" type="button">Generate Read-Only Risk Preview</button><p id="signalPreviewContext" class="light" aria-live="polite">Manual calculator input; not a trading recommendation.</p><div id="previewResult" role="status" aria-live="polite" style="white-space:pre-wrap;margin-top:12px;background:#0b1a2b;border:1px solid #2b435e;border-radius:8px;padding:14px;font:12px/1.8 ui-monospace,Consolas,monospace">Ready for a simulated preview. Nothing can place or close orders.</div></section><div class="foot">LUXALGO PRO · Private terminal · Market data is public Gate.io data. Scanners are technical watchlists, not LuxAlgo entry signals. No account positions, fills, profit or loss are available until authenticated exchange sync is implemented. LIVE TRADING OFF; no orders are placed.</div></div><script>
+<section class="panel"><div class="panel-heading"><h2>COMPLETED TRADES · EXIT RECORD</h2><span class="label-muted">PENDING ACCOUNT HISTORY INTEGRATION</span></div><div class="tablewrap"><table><thead><tr><th>TIME (UTC)</th><th>PAIR</th><th>DIRECTION</th><th>ENTRY FILL</th><th>EXIT FILL</th><th>NET REALIZED P&amp;L</th><th>RESULT</th></tr></thead><tbody><tr><td colspan="7" class="empty-state">No verified exchange fills have been synchronized. Signal receipts are not executed trades.</td></tr></tbody></table></div></section><section class="panel"><div class="panel-heading"><h2>PAPER TRADE MONITOR <span class="tag">SIMULATION ONLY</span></h2><button class="btn gloss-action" id="paperRefresh" type="button">↻ Check Paper Trades</button></div><p class="light" id="paperStatus" role="status" aria-live="polite">Checks queued simulated orders when the dashboard is open; historical outcomes remain estimates, not fills.</p><div class="tablewrap"><table><thead><tr><th>CREATED (UTC)</th><th>PAIR</th><th>SIDE</th><th>SIM ENTRY</th><th>SIM SL</th><th>SIM TP</th><th>STATE</th><th>EST. P&amp;L (USDT)</th></tr></thead><tbody id="paperBody"><tr><td colspan="8">No simulated positions loaded.</td></tr></tbody></table></div><p class="light">Simulation outcomes assume the reference entry was achievable and exclude fees, slippage and funding. If both SL and TP are touched in one candle, SL is assumed first. Historical-data gaps are not guessed. Simulated P&amp;L is never included in verified real-trade analytics.</p></section><section class="panel"><div class="panel-heading"><h2>EXECUTION SAFETY PREVIEW <span class="tag">DRY RUN ONLY</span></h2><span class="label-muted">NO EXCHANGE ORDERS</span></div><p class="light">Preview illustrative risk and contract-size checks using a hypothetical USDT equity. This does not validate your actual available margin, fee-adjusted fills, current hedge settings, or protective order placement.</p><div class="controls"><label>Trading pair<input id="previewSymbol" value="BTCUSDT" maxlength="29" autocomplete="off"></label><label>Direction<select id="previewSide"><option value="LONG">LONG / BUY</option><option value="SHORT">SHORT / SELL</option></select></label><label>Timeframe<select id="previewTf"><option value="15m">15 minutes</option><option value="5m">5 minutes</option></select></label><label>Hypothetical equity (USDT)<input id="previewEquity" type="number" value="100" min="1" max="10000000" step="any"></label><label>Risk per trade (%)<select id="previewRisk"><option value="0.5">0.5%</option><option value="1">1%</option><option value="1.5">1.5%</option><option value="2">2%</option><option value="2.5">2.5%</option><option value="3" selected>3% (default)</option><option value="3.5">3.5%</option><option value="4">4%</option><option value="4.5">4.5%</option><option value="5">5% (maximum)</option></select></label></div><button class="btn gloss-action" id="previewButton" type="button">Generate Read-Only Risk Preview</button><p id="signalPreviewContext" class="light" aria-live="polite">Manual calculator input; not a trading recommendation.</p><div id="previewResult" role="status" aria-live="polite" style="white-space:pre-wrap;margin-top:12px;background:#0b1a2b;border:1px solid #2b435e;border-radius:8px;padding:14px;font:12px/1.8 ui-monospace,Consolas,monospace">Ready for a simulated preview. Nothing can place or close orders.</div></section><div class="foot">LUXALGO PRO · Private terminal · Market data is public Gate.io data. Scanners are technical watchlists, not LuxAlgo entry signals. No account positions, fills, profit or loss are available until authenticated exchange sync is implemented. LIVE TRADING OFF; no orders are placed.</div></div><script>
 // Optional editable profile image. Uploaded securely to PostgreSQL; never touches Gate.io.
 (function(){
  const input=document.getElementById('profileImageInput'),display=document.getElementById('avatarDisplay');
@@ -544,13 +559,24 @@ h2{font-size:15px;font-weight:850;letter-spacing:.3px}
    const d=await r.json();if(!r.ok)throw Error(d.error||'Risk inspection unavailable');
    const snap=d.snapshot||{},fmt=x=>x===null||x===undefined?'UNAVAILABLE':String(x);
    out.replaceChildren();
-   const intro=document.createElement('p');intro.textContent='LIVE ENTRY BLOCKED · 0 orders · 1 position maximum · 0.5% intended risk · 5× ceiling';intro.style.color='#ffadad';out.appendChild(intro);
+   const intro=document.createElement('p');intro.textContent='LIVE ENTRY BLOCKED · 0 orders · 1 position maximum · 3% intended risk · 5× ceiling';intro.style.color='#ffadad';out.appendChild(intro);
    const amounts=document.createElement('p');amounts.textContent='Verified equity: '+fmt(snap.verified_equity_usdt)+' USDT | Available: '+fmt(snap.verified_available_usdt)+' USDT | Intended risk budget: '+fmt(snap.risk_budget_usdt)+' USDT | Open positions: '+fmt(snap.open_positions);out.appendChild(amounts);
    for(const c of d.checks||[]){const line=document.createElement('div');line.textContent=(c.passed?'✓ ':'✕ ')+c.name+' — '+c.detail;line.style.margin='5px 0';out.appendChild(line);}
   }catch(e){out.textContent='Risk inspection unavailable: BLOCKED. No orders possible.';}
   finally{b.disabled=false;}
  });
 })();
+
+ // Hide a recent signal from dashboard only; immutable audit history remains.
+ document.querySelectorAll('.delete-recent-signal').forEach(button=>button.addEventListener('click',async()=>{
+   if(!confirm('Hide this signal from Recent LuxAlgo Signals? Its audit records and paper history will remain.'))return;
+   button.disabled=true;
+   try{
+     const r=await fetch('/terminal/hide-recent-signal',{method:'POST',headers:{'Content-Type':'application/json','X-Terminal-CSRF':{{ csrf_token|tojson }}},body:JSON.stringify({event_id:button.dataset.eventId}),cache:'no-store'});
+     const d=await r.json();if(!r.ok)throw Error(d.error||'Unable to hide signal');
+     window.location.reload();
+   }catch(e){button.disabled=false;alert('Delete could not be completed: '+e.message);}
+ }));
 
 // Remote control: persisted in PostgreSQL, never enables exchange trading.
 (function(){
@@ -1264,6 +1290,27 @@ def bot_status():
                    warning='No positions, order submissions, fills, SL or TP orders exist.')
 
 
+@app.post('/terminal/hide-recent-signal')
+def terminal_hide_recent_signal():
+    if not _terminal_permitted(): return _terminal_guard()
+    if not _csrf_valid(): return jsonify(error='Invalid session verification'),403
+    data=request.get_json(silent=True) if request.is_json else None
+    event_id=data.get('event_id') if isinstance(data,dict) else None
+    if not isinstance(event_id,str) or not re.fullmatch(r'[A-Fa-f0-9]{20}',event_id):
+        return jsonify(error='Invalid signal ID'),400
+    try:
+        with _db_connect() as con:
+            _ensure_schema(con)
+            with con.cursor() as cur:
+                cur.execute('SELECT 1 FROM luxalgo_signal_receipts WHERE event_id=%s LIMIT 1',(event_id,))
+                if cur.fetchone() is None:return jsonify(error='Signal not found'),404
+                cur.execute('INSERT INTO luxalgo_hidden_signal_rows(event_id) VALUES (%s) ON CONFLICT DO NOTHING',(event_id,))
+        response=jsonify(hidden=True,audit_retained=True,orders_placed=0)
+        response.headers['Cache-Control']='no-store'
+        return response
+    except (psycopg.Error,RuntimeError,OSError):
+        return jsonify(error='Signal history database unavailable'),503
+
 @app.post('/webhook')
 def webhook():
     if len(expected_webhook_token()) < 24:
@@ -1283,6 +1330,27 @@ def webhook():
         return jsonify(error='Invalid symbol, side, or timeframe'), 422
     received_at = datetime.now(timezone.utc)
     tf = '5m' if tf.startswith('5') else '15m'
+    # Missing/invalid LuxAlgo prices never authorize an exchange order.
+    # Preserve legacy signal reception but flag missing/invalid levels in audit.
+    from decimal import Decimal, InvalidOperation
+    supplied = [data.get(k) for k in ('entry','sl','tp1')]
+    parsed=[]
+    for value in supplied:
+        try:
+            n=Decimal(str(value)) if value is not None and not isinstance(value,bool) else None
+            if n is None or not n.is_finite() or n<=0: n=None
+        except (InvalidOperation, ValueError, TypeError):n=None
+        parsed.append(n)
+    entry_price, stop_loss, take_profit=parsed
+    if any(v is None for v in supplied):
+        level_status='MISSING';level_reason='Missing explicit LuxAlgo entry, SL1 or TP1'
+    elif any(v is None for v in parsed):
+        level_status='INVALID';level_reason='Non-numeric, unresolved, or non-positive LuxAlgo level'
+    elif ((allowed[side]=='LONG' and stop_loss<entry_price<take_profit) or
+          (allowed[side]=='SHORT' and take_profit<entry_price<stop_loss)):
+        level_status='VALID';level_reason='Direction and numeric levels checked; exchange protection still unavailable'
+    else:
+        level_status='INVALID';level_reason='Stop loss and take profit are on the wrong sides of entry'
     record = {'dt':received_at,'symbol':symbol,'side':allowed[side],'tf':tf}
     # This event key is based on RECEIVE time, not a verified candle ID.
     # For live orders, require a TradingView event/bar identifier and
@@ -1291,12 +1359,17 @@ def webhook():
     event_id = sha256(f'{symbol}|{allowed[side]}|{tf}|{bucket}'.encode()).hexdigest()[:20]
     try:
         duplicate = _db_record(record,event_id)
+        with _db_connect() as con:
+            _ensure_schema(con)
+            con.execute("""INSERT INTO luxalgo_signal_levels(event_id,status,entry_price,stop_loss,take_profit,reason)
+                VALUES (%s,%s,%s,%s,%s,%s) ON CONFLICT (event_id) DO NOTHING""",
+                (event_id,level_status,entry_price,stop_loss,take_profit,level_reason))
     except (psycopg.Error,RuntimeError,OSError):
         app.logger.exception('Cannot durably record incoming LuxAlgo signal')
         return jsonify(error='Signal not stored; retry later',orders_placed=0),503
     return jsonify(status='signal_received', mode='SIGNAL_ONLY', symbol=symbol,
                    side=allowed[side], timeframe=tf, duplicate_in_candle=duplicate,
-                   dry_run_intent_id=event_id, orders_placed=0), 200
+                   dry_run_intent_id=event_id, level_status=level_status, orders_placed=0), 200
 
 
 def binance_read_only_ping(api_key, api_secret):
@@ -1610,7 +1683,7 @@ def terminal_live_risk_check():
         available=account['available_usdt']
         if not all(math.isfinite(float(x)) for x in (equity,available)) or equity<=0 or available<0:
             raise ValueError('Invalid account data')
-        risk_budget=round(equity * .005, 8)
+        risk_budget=round(equity * .03, 8)
         checks.append(dict(name='Verified Gate.io account equity',passed=True,
                            detail='Read-only equity and available funds verified'))
     except (RuntimeError,HTTPError,URLError,TimeoutError,ValueError,KeyError,TypeError,OSError):
@@ -1642,11 +1715,11 @@ def terminal_live_risk_check():
     checks.append(dict(name='Leverage maximum 5x',passed=False,
                        detail='5x is the planned ceiling; a live order/contract leverage validation does not exist'))
     checks.append(dict(name='Atomic account-wide risk and exposure lock',passed=False,
-                       detail='0.5% is a budget, not enforced for simultaneous orders or pending exchange requests'))
+                       detail='3% is a budget, not enforced for simultaneous orders or pending exchange requests'))
     checks.append(dict(name='Exchange protective stops and take profit',passed=False,
                        detail='No verified exchange-side SL/TP placement or recovery'))
     response=jsonify(status='BLOCKED',safe_to_trade=False,orders_placed=0,live_trading=False,
-                     limits=dict(max_new_positions=1,max_leverage=5,risk_percent=.5),
+                     limits=dict(max_new_positions=1,max_leverage=5,risk_percent=3),
                      snapshot=dict(verified_equity_usdt=equity,verified_available_usdt=available,
                                    risk_budget_usdt=risk_budget,open_positions=position_count),
                      checks=checks,
@@ -1696,7 +1769,7 @@ def terminal_positions():
 def _gate_atr_plan(symbol, direction, tf="15m"):
     """Read ONLY public, completed timeframe candles. Return an illustrative plan.
 
-    Not order sizing: 0.5% risk requires verified available funds, instrument
+    Not order sizing: 3% risk requires verified available funds, instrument
     contract multiplier, minimum contract count, open positions, and margin rules.
     """
     if tf not in ('5m', '15m'):
@@ -1883,7 +1956,7 @@ def terminal_execution_precheck():
         return jsonify(error='Invalid stored event ID', orders_placed=0), 422
     from decimal import Decimal, InvalidOperation
     try:
-        risk_percent = Decimal(os.getenv('DEFAULT_RISK_PERCENT', '1'))
+        risk_percent = Decimal(os.getenv('DEFAULT_RISK_PERCENT', '3'))
         if not risk_percent.is_finite() or risk_percent < Decimal('0.5') or risk_percent > Decimal('5'):
             raise InvalidOperation()
     except (InvalidOperation, TypeError, ValueError):
