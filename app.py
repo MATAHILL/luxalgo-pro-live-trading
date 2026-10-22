@@ -322,6 +322,17 @@ h2{font-size:15px;font-weight:850;letter-spacing:.3px}
 .bot-control-panel{display:flex;justify-content:space-between;align-items:center;gap:12px;margin:12px 0;padding:13px 17px;background:#11253c;border:1px solid #335d82;border-radius:10px}
 .bot-control-panel strong{color:#ffc47c;font-size:14px}.bot-control-panel p{font-size:12px;margin:4px 0 0}.bot-control-actions{display:flex;gap:8px;white-space:nowrap}.bot-control-actions .btn{font-weight:800}
 @media(max-width:670px){.bot-control-panel{align-items:stretch;flex-direction:column}.bot-control-actions .btn{flex:1}}
+/* Requested visual refinements only: avatar size, news top edge, glossy parrot-green letters. */
+.profile-avatar{width:52px;height:52px;flex:0 0 52px;border-width:2px;box-shadow:inset 0 1px 2px #ffffff66,0 3px 15px #19c9ff66}
+/* Extra height is added ABOVE the original news area; no side or bottom padding is changed. */
+.news-slot{padding-top:22px;margin-top:-14px}
+.news-heading>span:first-child,.news-item a{
+ color:#abff36;
+ background:linear-gradient(180deg,#f2ffc6 0%,#ccff67 25%,#a1ff14 50%,#66dc03 73%,#b8ff52 100%);
+ -webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;
+ filter:drop-shadow(0 0 4px #85ff2380);
+}
+.news-item a:hover,.news-item a:focus-visible{filter:brightness(1.2) drop-shadow(0 0 7px #92ff43b0);text-decoration:underline}
 /* Profile greeting and high-gloss logout; keeps the news center intact. */
 .profile-greeting{display:flex;align-items:center;gap:9px;margin-top:11px;min-width:0}
 .profile-avatar{width:38px;height:38px;flex:0 0 38px;border-radius:50%;overflow:hidden;
