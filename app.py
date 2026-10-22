@@ -400,6 +400,30 @@ h2{font-size:15px;font-weight:850;letter-spacing:.3px}
 .futures-liquidity .liquidity-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:11px;padding:13px}
 .futures-liquidity .liquidity-grid .metric{min-width:0}
 @media(max-width:670px){.futures-liquidity .liquidity-grid{grid-template-columns:1fr;gap:9px;padding:10px}}
+
+/* Individual read-only position cards; each position is independently expandable. */
+.position-card-list{display:grid;gap:13px;margin-top:13px}
+.position-card{border:1px solid #345c83;border-radius:13px;background:linear-gradient(150deg,#142d49,#0b1c31);box-shadow:inset 0 1px 0 #ffffff12,0 8px 20px #0003;overflow:hidden}
+.position-card>summary{list-style:none;cursor:pointer;padding:15px 17px;display:flex;justify-content:space-between;align-items:center;gap:10px}
+.position-card>summary::-webkit-details-marker{display:none}
+.position-card>summary:focus-visible{outline:2px solid #66e6ff;outline-offset:-3px}
+.position-head{display:flex;align-items:center;gap:9px;flex-wrap:wrap;min-width:0}
+.position-symbol{font-size:17px;font-weight:850;color:#e8f7ff}
+.position-side{font-size:12px;font-weight:850;border-radius:5px;padding:4px 7px}
+.position-side.long{background:#17765c;color:#d9fff1}.position-side.short{background:#9b3453;color:#fff0f3}
+.position-leverage{font-size:12px;background:#223e5c;border:1px solid #42688c;color:#d7e9fa;padding:4px 8px;border-radius:5px}
+.position-summary-pnl{font-weight:850;font-size:17px;white-space:nowrap}
+.position-card-inner{padding:0 17px 17px}
+.position-facts{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}
+.position-fact{background:#0b2037;border:1px solid #234969;border-radius:8px;padding:10px;min-width:0}
+.position-fact small{display:block;color:#9eb9d1;font-size:11px;margin-bottom:3px}
+.position-fact strong{font-size:15px;overflow-wrap:anywhere}
+.position-card-actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}
+.position-card-actions button:disabled{opacity:.44;cursor:not-allowed;filter:grayscale(.35)}
+.position-chart-action{background:linear-gradient(150deg,#63d6ff,#227bb0 53%,#104d89 54%,#319bd0);border-color:#83deff;font-weight:750}
+.position-readonly-hint{font-size:11px;color:#afc3d9;margin-top:10px}
+@media(max-width:970px){.position-facts{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:500px){.position-card>summary{align-items:flex-start}.position-facts{grid-template-columns:repeat(2,minmax(0,1fr))}.position-symbol{font-size:14px}.position-summary-pnl{font-size:14px}}
 </style></head><body><div class="wrap"><header class="terminal-header"><div class="terminal-brand"><h1>LUXALGO PRO · TRADING TERMINAL</h1><p>Gate.io USDT Perpetual · LuxAlgo 5m / 15m · Coded by · SUBHASISH</p>
 <div class="profile-greeting"><div class="profile-avatar" id="avatarDisplay"><span>SD</span></div>
 <div><div class="profile-name">Hello SUBHASISH</div><label class="profile-change" for="profileImageInput" tabindex="0">Change Photo</label><input type="file" id="profileImageInput" accept="image/png,image/jpeg,image/webp" hidden></div></div></div><section class="news-slot" aria-label="Latest crypto news"><div class="news-heading"><span>● CRYPTO NEWS</span><span id="newsFeedStatus">Loading headlines…</span></div><div class="news-viewport" id="newsViewport"><div class="news-stack" id="newsStack"><span class="news-empty">Retrieving publisher headlines…</span></div></div></section><div class="profile-right"><div class="tag trading-status">● LIVE TRADING OFF</div>
@@ -423,7 +447,7 @@ h2{font-size:15px;font-weight:850;letter-spacing:.3px}
 <div class="metric"><small>WIN RATE</small><strong>—</strong><span>Requires completed trades</span></div>
 <div class="metric"><small>DATABASE SIGNALS</small><strong>{{ count }}</strong><span>Webhook: {{ 'configured' if configured else 'not configured' }}</span></div>
 </div><section class="panel position-panel"><div class="panel-heading"><h2>OPEN POSITIONS <span class="gloss-cyan">· GATE.IO FUTURES</span></h2><button class="btn btn-danger gloss-safe-disabled" disabled title="Verified exchange positions and safe close-order execution are not connected">MANUALLY CLOSE SELECTED POSITION · DISABLED</button><button class="btn gloss-action" id="positionRefresh" type="button">↻ Refresh Positions</button></div>
-<div class="tablewrap"><table><thead><tr><th>PAIR</th><th>SIDE / SIZE</th><th>ENTRY</th><th>MARK PRICE</th><th>UNREALIZED P&amp;L</th><th>LEVERAGE</th><th>SL</th><th>TP1</th><th>STATE</th></tr></thead><tbody id="gatePositionsBody"><tr><td colspan="9" class="empty-state">Checking read-only Gate.io open positions…</td></tr></tbody></table></div><p id="gatePositionsUpdated" class="light">Read-only Gate.io account data; manual close disabled. SL/TP order status is not synchronized.</p></section><section class="panel"><h2>IN-TERMINAL MARKET CHART</h2>
+<div id="gatePositionsBody" class="position-card-list" aria-live="polite"><p class="light">Checking read-only Gate.io open positions…</p></div><p id="gatePositionsUpdated" class="light">Read-only Gate.io account data; manual close disabled. SL/TP order status is not synchronized.</p></section><section class="panel"><h2>IN-TERMINAL MARKET CHART</h2>
 <p class="light">Select a signal above, or enter a Gate.io USDT perpetual pair. Charts use public market candles only (not position/fill data).</p>
 <div class="controls"><label>Trading pair <input id="chartSymbol" value="BTCUSDT" maxlength="29" autocomplete="off"></label><label>Chart timeframe<select id="chartTf"><option value="15m">15 minutes</option><option value="5m">5 minutes</option></select></label><label>Chart refresh <button class="btn gloss-action" id="chartRefresh" type="button">Refresh Chart</button></label></div>
 <div class="chart-toolbar" style="display:flex;flex-wrap:wrap;gap:8px;margin:10px 0;align-items:center"><button class="btn" id="zoomIn" type="button">＋ Zoom In</button><button class="btn" id="zoomOut" type="button">－ Zoom Out</button><button class="btn" id="resetChart" type="button">Reset View</button><button class="btn" id="olderChart" type="button">Load Older Candles</button><button class="btn" id="fullChart" type="button">⛶ Fullscreen</button><button class="btn" id="openTradingView" type="button">Open in TradingView ↗</button><span class="light" style="font-size:12px">Wheel: zoom · drag: pan · scroll back for history</span></div>
@@ -652,7 +676,92 @@ setInterval(()=>{if(!document.hidden)loadChart();},30000);
  });
 })();
 
-// Private read-only Gate.io position monitor. No write endpoints or trading actions.
+// Private read-only Gate.io position cards. NO account-mutating actions.
+(function(){
+'use strict';
+const body=document.getElementById('gatePositionsBody'),updated=document.getElementById('gatePositionsUpdated');
+const count=document.getElementById('openPositionCount'),pnl=document.getElementById('unrealizedPositionPnl');
+const connection=document.getElementById('gatePositionStatus'),button=document.getElementById('positionRefresh');
+let busy=false,equityBusy=false;
+const expanded=new Set();
+function money(value){if(value===null||value===undefined)return '—';const v=Number(value);return Number.isFinite(v)?v.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:4}):'—';}
+function price(value){if(value===null||value===undefined)return '—';const v=Number(value);if(!Number.isFinite(v)||v<=0)return '—';return v.toLocaleString(undefined,{maximumSignificantDigits:10});}
+function element(tag,cl,text){const n=document.createElement(tag);if(cl)n.className=cl;if(text!==undefined)n.textContent=text;return n;}
+function clearEquity(message){
+ document.getElementById('futuresEquity').textContent='—';
+ document.getElementById('futuresAvailable').textContent='—';
+ document.getElementById('futuresBalance').textContent='—';
+ document.getElementById('futuresEquityUpdated').textContent=message||'Account figures unavailable';
+}
+async function loadFuturesEquity(){
+ if(equityBusy)return;equityBusy=true;
+ try{
+  const r=await fetch('/terminal/futures-equity',{cache:'no-store'}),d=await r.json();
+  if(!r.ok)throw Error(d.error||'Futures balance not available');
+  document.getElementById('futuresEquity').textContent=money(d.equity_usdt);
+  document.getElementById('futuresAvailable').textContent=money(d.available_usdt);
+  document.getElementById('futuresBalance').textContent=money(d.balance_usdt);
+  document.getElementById('futuresEquityUpdated').textContent='Gate.io verified · '+new Date(d.fetched_at*1000).toLocaleTimeString();
+ }catch(e){clearEquity('Cannot verify: '+e.message);}finally{equityBusy=false;}
+}
+function field(grid,label,value,colorClass){const x=element('div','position-fact');x.append(element('small','',label),element('strong',colorClass||'',value));grid.append(x);}
+function renderPositions(positions){
+ body.replaceChildren();
+ if(!positions.length){body.append(element('p','light','Gate.io reports no open USDT perpetual positions. This terminal remains READ ONLY.'));return;}
+ const seen=new Set();
+ positions.forEach((p,i)=>{
+  const id=p.contract+'|'+p.position_mode;seen.add(id);
+  const card=element('details','position-card');card.open=expanded.has(id)||!window.__positionCardsInitialized;
+  card.addEventListener('toggle',()=>{if(card.open)expanded.add(id);else expanded.delete(id);});
+  const heading=element('summary');const left=element('div','position-head');
+  left.append(element('span','position-side '+(p.side==='LONG'?'long':'short'),p.side==='LONG'?'L':'S'),
+              element('span','position-symbol',p.contract.replace('_','/')),
+              element('span','position-leverage',p.leverage_label));
+  const right=element('span','position-summary-pnl '+(p.unrealized_pnl>=0?'positive':'negative'),(p.unrealized_pnl>=0?'+':'')+money(p.unrealized_pnl)+' USDT ⌄');
+  heading.append(left,right);card.append(heading);
+  const inner=element('div','position-card-inner'),grid=element('div','position-facts');
+  field(grid,'Unrealized P&L (USDT)',(p.unrealized_pnl>=0?'+':'')+money(p.unrealized_pnl),p.unrealized_pnl>=0?'positive':'negative');
+  field(grid,'ROI (based on reported margin)',p.roi_percent===null?'—':(p.roi_percent>=0?'+':'')+p.roi_percent.toFixed(2)+'%',p.roi_percent===null?'':p.roi_percent>=0?'positive':'negative');
+  field(grid,'Position size (USDT)',p.position_value_usdt===null?'—':money(p.position_value_usdt));
+  field(grid,'Margin (USDT)',p.margin_usdt===null?'—':money(p.margin_usdt));
+  field(grid,'Contracts',String(p.size_contracts));
+  field(grid,'Entry price',price(p.entry_price));
+  field(grid,'Mark price',price(p.mark_price));
+  field(grid,'Liquidation price',price(p.liquidation_price));
+  grid && inner.append(grid);
+  const actions=element('div','position-card-actions');
+  const chart=element('button','btn position-chart-action','View Chart');chart.type='button';
+  chart.addEventListener('click',()=>{
+   document.getElementById('chartSymbol').value=p.contract.replace('_','');
+   if(typeof window.loadChart==='function')window.loadChart();
+   document.getElementById('chartShell').scrollIntoView({behavior:'smooth',block:'center'});
+  });actions.append(chart);
+  for(const name of ['Set TP/SL','Reverse','Market Close','Close Position']){
+   const action=element('button','btn btn-danger',name+' · LOCKED');action.type='button';action.disabled=true;
+   action.title='Disabled: live order execution and exchange-side risk protection have not been implemented';actions.append(action);
+  }
+  inner.append(actions,element('p','position-readonly-hint','Read-only Gate.io account snapshot · Actions remain locked until secure order management is implemented. ROI excludes fees and funding. SL/TP status not verified.'));
+  card.append(inner);body.append(card);
+ });
+ for(const key of expanded){if(!seen.has(key))expanded.delete(key);}
+ window.__positionCardsInitialized=true;
+}
+async function loadPositions(){
+ if(busy)return;busy=true;button.disabled=true;
+ try{
+  const r=await fetch('/terminal/positions',{cache:'no-store'}),d=await r.json();
+  if(!r.ok)throw Error(d.error||'Gate.io account temporarily unavailable');
+  count.textContent=String(d.count);pnl.textContent=money(d.unrealized_pnl_usdt);
+  pnl.classList.toggle('positive',d.unrealized_pnl_usdt>0);pnl.classList.toggle('negative',d.unrealized_pnl_usdt<0);
+  connection.textContent='Position feed connected · READ ONLY';renderPositions(d.positions);
+  updated.textContent='Gate.io snapshot · '+new Date(d.fetched_at*1000).toLocaleTimeString()+' · refresh every 30s · no trading orders enabled.';
+ }catch(e){count.textContent='—';pnl.textContent='—';pnl.classList.remove('positive','negative');connection.textContent='Position feed unavailable';body.replaceChildren(element('p','light','Unable to verify positions: '+e.message));updated.textContent='Position data unavailable; no empty positions assumed.';}
+ finally{busy=false;button.disabled=false;}
+}
+button.addEventListener('click',()=>{loadPositions();loadFuturesEquity();});
+loadPositions();loadFuturesEquity();setInterval(()=>{if(!document.hidden){loadPositions();loadFuturesEquity();}},30000);
+})();
+
 (function(){
 'use strict';
 const body=document.getElementById('gatePositionsBody'),updated=document.getElementById('gatePositionsUpdated');
@@ -1266,9 +1375,23 @@ def _gate_read_only_positions():
         leverage_label = (leverage + '×' if leverage not in ('0','None','') else '—')
         if margin_mode in ('cross','isolated'):
             leverage_label += ' · ' + margin_mode.title()
+        # Gate.io positions may omit some values by account mode: report unavailable, never guess.
+        def optional_nonnegative(*names):
+            for name in names:
+                value = p.get(name)
+                if value is not None and value != '':
+                    n = number(value)
+                    return abs(n)
+            return None
+        margin = optional_nonnegative('margin')
+        position_value = optional_nonnegative('value')
+        liquidation = optional_nonnegative('liq_price')
+        roi = round(unrealized / margin * 100, 4) if margin is not None and margin > 0 else None
         positions.append(dict(contract=contract, side=side, size_contracts=abs(size),
                               entry_price=entry, mark_price=mark, unrealized_pnl=unrealized,
-                              leverage_label=leverage_label, position_mode=mode))
+                              leverage_label=leverage_label, position_mode=mode,
+                              margin_usdt=margin, position_value_usdt=position_value,
+                              liquidation_price=liquidation, roi_percent=roi))
     return positions
 
 
