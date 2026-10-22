@@ -439,6 +439,7 @@ h2{font-size:15px;font-weight:850;letter-spacing:.3px}
 <div class="metric"><small>AVAILABLE FUTURES · USDT</small><strong id="futuresAvailable">—</strong><span>Exchange-reported trading availability</span></div>
 <div class="metric"><small>FUTURES BALANCE · USDT</small><strong id="futuresBalance">—</strong><span>Account balance before unrealized P&amp;L</span></div>
 </div></details>
+<details class="panel" style="margin:12px 0" id="liveReadinessPanel"><summary style="font-weight:850;cursor:pointer;color:#ffcf89">LIVE EXECUTION READINESS · SAFETY CHECK (READ ONLY)</summary><p class="light">This panel checks safeguards only. It cannot start trading or enable Gate.io API writes.</p><button class="btn" type="button" id="readinessRefresh">Check readiness</button><div id="readinessOutput" role="status" aria-live="polite" style="margin-top:10px;color:#fdbfbf">Live execution BLOCKED until all critical safeguards are implemented and tested.</div></details>
 <div class="grid metric-grid">
 <div class="metric"><small>GATE.IO CONNECTION</small><strong class="gloss-cyan">READ-ONLY</strong><span id="gatePositionStatus">Checking position feed…</span></div>
 <div class="metric"><small>OPEN POSITIONS</small><strong id="openPositionCount">—</strong><span>Verified Gate.io positions only</span></div>
@@ -490,6 +491,21 @@ h2{font-size:15px;font-weight:850;letter-spacing:.3px}
    catch(e){alert('Photo could not be saved. Use a smaller JPEG/PNG/WebP image.');}
    input.value='';
  });
+})();
+
+// Read-only live readiness, intentionally never provides an execute button.
+(function(){
+  const b=document.getElementById('readinessRefresh'),o=document.getElementById('readinessOutput');
+  b.addEventListener('click',async()=>{
+    b.disabled=true;o.textContent='Checking safety gates…';
+    try {
+      const r=await fetch('/terminal/live-readiness',{cache:'no-store'});
+      const d=await r.json();if(!r.ok)throw Error(d.error||'Readiness unavailable');
+      o.replaceChildren();
+      const title=document.createElement('p');title.textContent='LIVE TRADING '+d.status+' · NO ORDERS ENABLED';title.style.color='#ffa6a6';title.style.fontWeight='bold';o.appendChild(title);
+      for(const c of d.checks){const line=document.createElement('div');line.style.margin='6px 0';line.textContent=(c.ready?'✓ ':'✕ ')+c.name+' — '+c.detail;o.appendChild(line);}
+    } catch(e){o.textContent='Readiness unavailable; live trading remains BLOCKED.';}finally{b.disabled=false;}
+  });
 })();
 
 // Remote control: persisted in PostgreSQL, never enables exchange trading.
@@ -1434,6 +1450,65 @@ def _gate_futures_account_summary():
                 unrealized_pnl_usdt=upl, equity_usdt=round(balance+upl,8),
                 currency='USDT', source='GATE_IO_FUTURES_CLASSIC_ACCOUNT',
                 fetched_at=int(time.time()), orders_enabled=False,live_trading=False)
+
+
+# LIVE-EXECUTION READINESS: observational fail-closed inspection only.
+# This endpoint never sends an order, changes permissions, or enables trading.
+@app.get('/terminal/live-readiness')
+def terminal_live_readiness():
+    if not _terminal_permitted():
+        return _terminal_guard()
+    checks = [
+        dict(name='Dedicated protected live-order engine', ready=False,
+             detail='No order-submission route or tested signing/contract-sizing engine exists'),
+        dict(name='Exchange-side protective SL and TP', ready=False,
+             detail='Must be acknowledged by Gate.io and survive browser/server shutdown'),
+        dict(name='Post-fill exchange reconciliation', ready=False,
+             detail='Must reconcile entry, fills, position mode and protective orders'),
+        dict(name='Durable order idempotency and restart recovery', ready=False,
+             detail='PostgreSQL dry-run IDs are not a live exchange order ledger'),
+        dict(name='Global risk and one-position enforcement', ready=False,
+             detail='Must enforce account-wide exposure atomically before exchange writes'),
+        dict(name='Emergency stop and position handling', ready=False,
+             detail='Current BOT OFF stops new paper simulations only'),
+        dict(name='Reliable always-on service and API health', ready=False,
+             detail='Render Free sleeps and recent queue/market-data warnings are unresolved'),
+    ]
+    try:
+        data = _gate_futures_account_summary()
+        checks.append(dict(name='Read-only Gate.io USDT equity', ready=True,
+                           detail='Authenticated equity endpoint responded successfully'))
+        # Report availability, not the private balance, in a readiness checklist.
+        equity_verified = True
+    except (RuntimeError, HTTPError, URLError, TimeoutError, ValueError, TypeError, KeyError, OSError):
+        checks.append(dict(name='Read-only Gate.io USDT equity', ready=False,
+                           detail='Account verification currently unavailable'))
+        equity_verified = False
+    try:
+        positions = _gate_read_only_positions()
+        checks.append(dict(name='Read-only open positions', ready=True,
+                           detail='Exchange returned %d verified positions' % len(positions)))
+    except (RuntimeError, HTTPError, URLError, TimeoutError, ValueError, TypeError, KeyError, OSError):
+        checks.append(dict(name='Read-only open positions', ready=False,
+                           detail='Cannot validate the current position inventory'))
+    try:
+        with _db_connect() as con:
+            _ensure_schema(con)
+            with con.cursor() as cur:
+                bot_enabled = _bot_enabled(cur)
+        checks.append(dict(name='Persistent paper-bot state', ready=True,
+                           detail='Paper bot is '+('ON' if bot_enabled else 'OFF')+'; not a live-order kill switch'))
+    except (psycopg.Error, RuntimeError, OSError):
+        checks.append(dict(name='Persistent paper-bot state', ready=False,
+                           detail='PostgreSQL cannot verify current paper-bot state'))
+    live_env = os.getenv('LIVE_TRADING_ENABLED', 'false').strip().lower()
+    checks.append(dict(name='Safe environment flag', ready=live_env == 'false',
+                       detail='Keep LIVE_TRADING_ENABLED=false; no order routes exist'))
+    response=jsonify(status='BLOCKED',safe_to_trade=False,orders_enabled=False,
+                     live_trading=False,orders_placed=0,equity_verified=equity_verified,
+                     checks=checks,notice='Readiness inspection only. Never change API write permissions on this basis.')
+    response.headers['Cache-Control']='private, no-store'
+    return response
 
 
 @app.get('/terminal/futures-equity')
