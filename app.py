@@ -75,6 +75,12 @@ CREATE TABLE IF NOT EXISTS luxalgo_paper_tracking (
   estimated_pnl_usdt NUMERIC,
   notes TEXT NOT NULL DEFAULT 'Hypothetical only; never an exchange fill'
 );
+CREATE TABLE IF NOT EXISTS luxalgo_bot_control (
+ id SMALLINT PRIMARY KEY CHECK (id=1),
+ enabled BOOLEAN NOT NULL DEFAULT FALSE,
+ changed_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+INSERT INTO luxalgo_bot_control(id,enabled) VALUES (1,FALSE) ON CONFLICT(id) DO NOTHING;
 CREATE TABLE IF NOT EXISTS luxalgo_auto_paper_queue (
  event_id TEXT PRIMARY KEY,
  received_at TIMESTAMPTZ NOT NULL,
@@ -102,6 +108,54 @@ def _db_connect():
 def _ensure_schema(connection):
     # Repeated CREATE IF NOT EXISTS is safe across Railway restarts.
     connection.execute(DB_SCHEMA)
+
+# Every queue writer and toggle obtains the same DB transaction lock.
+# Fail closed if PostgreSQL is unreachable.
+BOT_CONTROL_LOCK = 65913042
+
+def _bot_enabled(cur, lock=False):
+    if lock:
+        cur.execute('SELECT pg_advisory_xact_lock(%s)', (BOT_CONTROL_LOCK,))
+    cur.execute('SELECT enabled FROM luxalgo_bot_control WHERE id=1')
+    row=cur.fetchone()
+    return bool(row and row['enabled'])
+
+@app.get('/terminal/bot-control')
+def terminal_bot_control_get():
+    if not _terminal_permitted(): return _terminal_guard()
+    try:
+        with _db_connect() as con:
+            _ensure_schema(con)
+            with con.cursor() as cur:
+                enabled=_bot_enabled(cur)
+        return jsonify(bot_enabled=enabled, scope='AUTOMATIC_PAPER_SIMULATION_ONLY', live_trading=False, orders_enabled=False)
+    except (psycopg.Error,RuntimeError,OSError):
+        return jsonify(error='Bot state unavailable; treat as OFF',bot_enabled=False,orders_enabled=False),503
+
+@app.post('/terminal/bot-control')
+def terminal_bot_control_post():
+    if not _terminal_permitted(): return _terminal_guard()
+    # Reject cross-origin browser submissions. JSON and Basic auth are required.
+    origin=request.headers.get('Origin')
+    if origin and origin.rstrip('/') != request.host_url.rstrip('/'):
+        return jsonify(error='Origin mismatch'),403
+    data=request.get_json(silent=True) if request.is_json else None
+    if not isinstance(data,dict) or type(data.get('enabled')) is not bool:
+        return jsonify(error='Boolean enabled is required'),400
+    desired=data['enabled']
+    if desired and os.getenv('LIVE_TRADING_ENABLED','false').strip().lower()!='false':
+        return jsonify(error='Live-trading environment must remain disabled'),503
+    try:
+        with _db_connect() as con:
+            _ensure_schema(con)
+            with con.cursor() as cur:
+                _bot_enabled(cur,lock=True)
+                cur.execute('UPDATE luxalgo_bot_control SET enabled=%s, changed_at=NOW() WHERE id=1',(desired,))
+                if not desired:
+                    cur.execute("UPDATE luxalgo_auto_paper_queue SET state='REJECTED', checked_at=NOW(),note='Bot manually switched OFF' WHERE state='PENDING'")
+        return jsonify(bot_enabled=desired, scope='AUTOMATIC_PAPER_SIMULATION_ONLY',orders_enabled=False,live_trading=False)
+    except (psycopg.Error,RuntimeError,OSError):
+        return jsonify(error='Unable to save bot state; treat as OFF',orders_enabled=False),503
 
 def _db_recent():
     with _db_connect() as con:
@@ -143,10 +197,11 @@ def _db_record(record,event_id):
                            ON CONFLICT (event_id) DO NOTHING RETURNING event_id''',
                         (event_id,record['dt'],record['symbol'],record['side'],record['tf']))
             duplicate = cur.fetchone() is None
-            # Persist intent BEFORE the webhook responds. No orders are ever submitted.
-            cur.execute('''INSERT INTO luxalgo_auto_paper_queue(event_id,received_at)
-                        VALUES (%s,%s) ON CONFLICT(event_id) DO NOTHING''',
-                        (event_id,record['dt']))
+            # Persist paper intent only if the account owner has enabled the bot.
+            if _bot_enabled(cur, lock=True):
+                cur.execute('''INSERT INTO luxalgo_auto_paper_queue(event_id,received_at)
+                            VALUES (%s,%s) ON CONFLICT(event_id) DO NOTHING''',
+                            (event_id,record['dt']))
     return duplicate
 
 PAGE = '''<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>LUXALGO PRO · Trading Terminal</title><script defer src="https://cdn.jsdelivr.net/npm/lightweight-charts@5.0.8/dist/lightweight-charts.standalone.production.js"></script>
@@ -233,7 +288,14 @@ h2{font-size:15px;font-weight:850;letter-spacing:.3px}
 @media(max-width:1100px){
  .bottom-grid{grid-template-columns:1fr}
 }
+.bot-control-panel{display:flex;justify-content:space-between;align-items:center;gap:12px;margin:12px 0;padding:13px 17px;background:#11253c;border:1px solid #335d82;border-radius:10px}
+.bot-control-panel strong{color:#ffc47c;font-size:14px}.bot-control-panel p{font-size:12px;margin:4px 0 0}.bot-control-actions{display:flex;gap:8px;white-space:nowrap}.bot-control-actions .btn{font-weight:800}
+@media(max-width:670px){.bot-control-panel{align-items:stretch;flex-direction:column}.bot-control-actions .btn{flex:1}}
 </style></head><body><div class="wrap"><header class="terminal-header"><div class="terminal-brand"><h1>LUXALGO PRO · TRADING TERMINAL</h1><p>Gate.io USDT Perpetual · LuxAlgo 5m / 15m · Coded by · SUBHASISH</p></div><section class="news-slot" aria-label="Latest crypto news"><div class="news-heading"><span>● CRYPTO NEWS</span><span id="newsFeedStatus">Loading headlines…</span></div><div class="news-viewport" id="newsViewport"><div class="news-stack" id="newsStack"><span class="news-empty">Retrieving publisher headlines…</span></div></div></section><div class="tag trading-status">● LIVE TRADING OFF</div></header>
+<section class="bot-control-panel" aria-label="Remote bot control">
+ <div><strong id="botControlLabel">BOT OFF · PAPER SIMULATION PAUSED</strong><p id="botControlDetail">New LuxAlgo signals remain logged. No live orders are possible.</p></div>
+ <div class="bot-control-actions"><button class="btn" id="botTurnOn" type="button">▶ BOT ON</button><button class="btn" id="botTurnOff" type="button">■ BOT OFF</button></div>
+</section>
 <div class="grid metric-grid">
 <div class="metric"><small>GATE.IO CONNECTION</small><strong class="gloss-cyan">READ-ONLY</strong><span id="gatePositionStatus">Checking position feed…</span></div>
 <div class="metric"><small>OPEN POSITIONS</small><strong id="openPositionCount">—</strong><span>Verified Gate.io positions only</span></div>
@@ -269,7 +331,17 @@ h2{font-size:15px;font-weight:850;letter-spacing:.3px}
 <section class="panel performance-panel"><div class="panel-heading"><h2>PERFORMANCE ANALYTICS</h2><span class="label-muted">VERIFIED FILLS ONLY</span></div><div class="perf-grid"><div><span>Total Closed Trades</span><strong>—</strong></div><div><span>Winning Trades</span><strong>—</strong></div><div><span>Losing Trades</span><strong>—</strong></div><div><span>Win Rate</span><strong>—</strong></div><div><span>Total Realized P&amp;L</span><strong>—</strong></div><div><span>Unrealized P&amp;L</span><strong>—</strong></div></div><p class="light">Waiting for authenticated position and fill synchronization. No synthetic P&amp;L or win statistics.</p></section></div><section class="panel"><h2>TRADE PLAN · SL · TP1 <span class="tag">READ ONLY</span></h2>
 <div class="controls"><label>Entry reference <input id="entry" type="number" step="any" placeholder="Choose a signal" readonly></label><label>Stop Loss · 1.5 ATR <input id="sl" type="number" step="any" readonly></label><label>TP1 · 2 ATR · 100% exit <input id="tp1" type="number" step="any" readonly></label></div>
 <div id="planResults">Select Plan + Chart beside a signal to calculate illustrative entry, SL and TP1. No orders are placed.</div></section>
-<section class="panel"><div class="panel-heading"><h2>COMPLETED TRADES · EXIT RECORD</h2><span class="label-muted">PENDING ACCOUNT HISTORY INTEGRATION</span></div><div class="tablewrap"><table><thead><tr><th>TIME (UTC)</th><th>PAIR</th><th>DIRECTION</th><th>ENTRY FILL</th><th>EXIT FILL</th><th>NET REALIZED P&amp;L</th><th>RESULT</th></tr></thead><tbody><tr><td colspan="7" class="empty-state">No verified exchange fills have been synchronized. Signal receipts are not executed trades.</td></tr></tbody></table></div></section><section class="panel"><div class="panel-heading"><h2>PAPER TRADE MONITOR <span class="tag">SIMULATION ONLY</span></h2><button class="btn" id="paperRefresh" type="button">↻ Check Paper Trades</button></div><p class="light" id="paperStatus" role="status" aria-live="polite">Checks queued simulated orders when the dashboard is open; historical outcomes remain estimates, not fills.</p><div class="tablewrap"><table><thead><tr><th>CREATED (UTC)</th><th>PAIR</th><th>SIDE</th><th>SIM ENTRY</th><th>SIM SL</th><th>SIM TP</th><th>STATE</th><th>EST. P&amp;L (USDT)</th></tr></thead><tbody id="paperBody"><tr><td colspan="8">No simulated positions loaded.</td></tr></tbody></table></div><p class="light">Simulation outcomes assume the reference entry was achievable and exclude fees, slippage and funding. If both SL and TP are touched in one candle, SL is assumed first. Historical-data gaps are not guessed. Simulated P&amp;L is never included in verified real-trade analytics.</p></section><section class="panel"><div class="panel-heading"><h2>EXECUTION SAFETY PREVIEW <span class="tag">DRY RUN ONLY</span></h2><span class="label-muted">NO EXCHANGE ORDERS</span></div><p class="light">Preview illustrative risk and contract-size checks using a hypothetical USDT equity. This does not validate your actual available margin, fee-adjusted fills, current hedge settings, or protective order placement.</p><div class="controls"><label>Trading pair<input id="previewSymbol" value="BTCUSDT" maxlength="29" autocomplete="off"></label><label>Direction<select id="previewSide"><option value="LONG">LONG / BUY</option><option value="SHORT">SHORT / SELL</option></select></label><label>Timeframe<select id="previewTf"><option value="15m">15 minutes</option><option value="5m">5 minutes</option></select></label><label>Hypothetical equity (USDT)<input id="previewEquity" type="number" value="100" min="1" max="10000000" step="any"></label><label>Risk per trade (%)<select id="previewRisk"><option value="0.5">0.5%</option><option value="1" selected>1% (default)</option><option value="1.5">1.5%</option><option value="2">2%</option><option value="2.5">2.5%</option><option value="3">3%</option><option value="3.5">3.5%</option><option value="4">4%</option><option value="4.5">4.5%</option><option value="5">5% (maximum)</option></select></label></div><button class="btn" id="previewButton" type="button">Generate Read-Only Risk Preview</button><p id="signalPreviewContext" class="light" aria-live="polite">Manual calculator input; not a trading recommendation.</p><div id="previewResult" role="status" aria-live="polite" style="white-space:pre-wrap;margin-top:12px;background:#0b1a2b;border:1px solid #2b435e;border-radius:8px;padding:14px;font:12px/1.8 ui-monospace,Consolas,monospace">Ready for a simulated preview. Nothing can place or close orders.</div></section><div class="foot">LUXALGO PRO · Private terminal · Market data is public Gate.io data. Scanners are technical watchlists, not LuxAlgo entry signals. No account positions, fills, profit or loss are available until authenticated exchange sync is implemented. LIVE TRADING OFF; no orders are placed.</div></div><script>
+<section class="panel"><div class="panel-heading"><h2>COMPLETED TRADES · EXIT RECORD</h2><span class="label-muted">PENDING ACCOUNT HISTORY INTEGRATION</span></div><div class="tablewrap"><table><thead><tr><th>TIME (UTC)</th><th>PAIR</th><th>DIRECTION</th><th>ENTRY FILL</th><th>EXIT FILL</th><th>NET REALIZED P&amp;L</th><th>RESULT</th></tr></thead><tbody><tr><td colspan="7" class="empty-state">No verified exchange fills have been synchronized. Signal receipts are not executed trades.</td></tr></tbody></table></div></section><section class="panel"><div class="panel-heading"><h2>PAPER TRADE MONITOR <span class="tag">SIMULATION ONLY</span></h2><button class="btn" id="paperRefresh" type="button">↻ Check Paper Trades</button></div><p class="light" id="paperStatus" role="status" aria-live="polite">Checks queued simulated orders when the dashboard is open; historical outcomes remain estimates, not fills.</p><div class="tablewrap"><table><thead><tr><th>CREATED (UTC)</th><th>PAIR</th><th>SIDE</th><th>SIM ENTRY</th><th>SIM SL</th><th>SIM TP</th><th>STATE</th><th>EST. P&amp;L (USDT)</th></tr></thead><tbody id="paperBody"><tr><td colspan="8">No simulated positions loaded.</td></tr></tbody></table></div><p class="light">Simulation outcomes assume the reference entry was achievable and exclude fees, slippage and funding. If both SL and TP are touched in one candle, SL is assumed first. Historical-data gaps are not guessed. Simulated P&amp;L is never included in verified real-trade analytics.</p></section><section class="panel"><div class="panel-heading"><h2>EXECUTION SAFETY PREVIEW <span class="tag">DRY RUN ONLY</span></h2><span class="label-muted">NO EXCHANGE ORDERS</span></div><p class="light">Preview illustrative risk and contract-size checks using a hypothetical USDT equity. This does not validate your actual available margin, fee-adjusted fills, current hedge settings, or protective order placement.</p><div class="controls"><label>Trading pair<input id="previewSymbol" value="BTCUSDT" maxlength="29" autocomplete="off"></label><label>Direction<select id="previewSide"><option value="LONG">LONG / BUY</option><option value="SHORT">SHORT / SELL</option></select></label><label>Timeframe<select id="previewTf"><option value="15m">15 minutes</option><option value="5m">5 minutes</option></select></label><label>Hypothetical equity (USDT)<input id="previewEquity" type="number" value="100" min="1" max="10000000" step="any"></label><label>Risk per trade (%)<select id="previewRisk"><option value="0.5">0.5%</option><option value="1" selected>1% (default)</option><option value="1.5">1.5%</option><option value="2">2%</option><option value="2.5">2.5%</option><option value="3">3%</option><option value="3.5">3.5%</option><option value="4">4%</option><option value="4.5">4.5%</option><option value="5">5% (maximum)</option></select></label></div><button class="btn" id="previewButton" type="button">Generate Read-Only Risk Preview</button><p id="signalPreviewContext" class="light" aria-live="polite">Manual calculator input; not a trading recommendation.</p><div id="previewResult" role="status" aria-live="polite" style="white-space:pre-wrap;margin-top:12px;background:#0b1a2b;border:1px solid #2b435e;border-radius:8px;padding:14px;font:12px/1.8 ui-monospace,Consolas,monospace">Ready for a simulated preview. Nothing can place or close orders.</div></section><div class="foot">LUXALGO PRO · Private terminal · Coded by· SUBHASISH · Market data is public Gate.io data. Scanners are technical watchlists. No account positions, fills, profit or loss are available until authenticated exchange sync is implemented. LIVE TRADING OFF</div></div><script>
+// Remote control: persisted in PostgreSQL, never enables exchange trading.
+(function(){
+ const label=document.getElementById('botControlLabel'),detail=document.getElementById('botControlDetail');
+ const on=document.getElementById('botTurnOn'),off=document.getElementById('botTurnOff');
+ function render(enabled){label.textContent=enabled?'BOT ON · AUTO PAPER SIMULATION':'BOT OFF · PAPER SIMULATION PAUSED';label.style.color=enabled?'#6cf3ba':'#ffc47c';detail.textContent=enabled?'Fresh LuxAlgo signals can create simulated intents. LIVE TRADING IS STILL OFF.':'New signals are logged but no new simulated entries are created. Existing paper history remains.';on.disabled=enabled;off.disabled=!enabled;}
+ async function refresh(){try{const r=await fetch('/terminal/bot-control',{cache:'no-store'});const d=await r.json();if(!r.ok)throw Error();render(d.bot_enabled);}catch(e){render(false);detail.textContent='Cannot verify saved bot state: treat as OFF.';on.disabled=true;}}
+ async function change(enabled){on.disabled=true;off.disabled=true;try{const r=await fetch('/terminal/bot-control',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({enabled}),cache:'no-store'});const d=await r.json();if(!r.ok)throw Error(d.error||'Update rejected');render(d.bot_enabled);}catch(e){detail.textContent='Cannot change bot state: '+e.message;await refresh();}}
+ on.addEventListener('click',()=>change(true));off.addEventListener('click',()=>change(false));refresh();setInterval(()=>{if(!document.hidden)refresh();},30000);
+})();
+
 const entry=document.getElementById('entry'), sl=document.getElementById('sl'), tp1=document.getElementById('tp1');
 // Use the genuine stored LuxAlgo direction to populate the existing risk calculator.
 // This is a manual, read-only action: no webhook or trading API is invoked.
@@ -1243,6 +1315,11 @@ def terminal_simulate_order():
         with _db_connect() as con:
             _ensure_schema(con)
             with con.cursor() as cur:
+                if not _bot_enabled(cur):
+                    return jsonify(error='BOT OFF: paper simulations paused',orders_placed=0),409
+        with _db_connect() as con:
+            _ensure_schema(con)
+            with con.cursor() as cur:
                 cur.execute('SELECT details FROM luxalgo_simulated_orders WHERE event_id=%s',(event_id,))
                 row=cur.fetchone()
                 if row:
@@ -1385,6 +1462,8 @@ def _auto_paper_process(max_items=5):
     with _db_connect() as con:
         _ensure_schema(con)
         with con.cursor() as cur:
+            if not _bot_enabled(cur):
+                return 0
             cur.execute('''SELECT q.event_id,q.received_at,i.symbol,i.side,i.timeframe
                 FROM luxalgo_auto_paper_queue q
                 JOIN luxalgo_dry_run_intents i ON i.event_id=q.event_id
@@ -1414,7 +1493,9 @@ def _auto_paper_process(max_items=5):
                             orders_placed=0)
                         with _db_connect() as con:
                             with con.cursor() as cur:
-                                # Queue row locks serialize duplicate workers across processes.
+                                # Coordinate with OFF toggle across workers.
+                                if not _bot_enabled(cur,lock=True):
+                                    return completed
                                 cur.execute('SELECT state FROM luxalgo_auto_paper_queue WHERE event_id=%s FOR UPDATE',(eid,))
                                 row=cur.fetchone()
                                 if row and row['state']=='PENDING':
