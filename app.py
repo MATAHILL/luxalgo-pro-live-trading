@@ -16,6 +16,10 @@ from collections import deque
 from hashlib import sha256
 from datetime import datetime, timezone
 from threading import Lock
+from concurrent.futures import ThreadPoolExecutor
+from xml.etree import ElementTree as ET
+from email.utils import parsedate_to_datetime
+from urllib.parse import urlsplit
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
@@ -51,6 +55,16 @@ CREATE TABLE IF NOT EXISTS luxalgo_execution_prechecks (
  risk_percent NUMERIC NOT NULL,
  details JSONB NOT NULL
 );
+CREATE TABLE IF NOT EXISTS luxalgo_simulated_orders (
+ event_id TEXT PRIMARY KEY,
+ created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+ symbol TEXT NOT NULL,
+ side TEXT NOT NULL,
+ timeframe TEXT NOT NULL,
+ status TEXT NOT NULL CHECK(status='SIMULATED_ONLY'),
+ details JSONB NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_luxalgo_sim_orders_recent ON luxalgo_simulated_orders(created_at DESC);
 CREATE TABLE IF NOT EXISTS luxalgo_dry_run_intents (
  event_id TEXT PRIMARY KEY,
  received_at TIMESTAMPTZ NOT NULL,
@@ -156,7 +170,27 @@ h2{font-size:15px;font-weight:850;letter-spacing:.3px}
 @media(max-width:1300px){.metric-grid{grid-template-columns:repeat(3,minmax(0,1fr))}.bottom-grid{grid-template-columns:1fr}}
 @media(max-width:900px){.market-grid{grid-template-columns:1fr}.wrap{padding:12px}.metric-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:540px){.metric-grid{grid-template-columns:1fr 1fr}.metric strong{font-size:17px}header h1{font-size:20px}.panel{padding:13px}.btn-danger{font-size:11px}}
-</style></head><body><div class="wrap"><header><div><h1>LUXALGO PRO · TRADING TERMINAL</h1><p>Gate.io USDT Perpetual · LuxAlgo 5m / 15m · Coded by · SUBHASISH</p></div><div class="tag">● LIVE TRADING OFF</div></header>
+
+/* Only the unused header center area: upward-scrolling, accessible news. */
+.terminal-header{display:grid;grid-template-columns:minmax(220px,1fr) minmax(300px,1.65fr) auto;align-items:center;gap:18px}
+.terminal-brand{min-width:0}.trading-status{white-space:nowrap;align-self:start;text-align:right}
+.news-slot{min-width:0;border:1px solid #365d82;border-radius:9px;background:#07192c;padding:8px 12px;overflow:hidden}
+.news-heading{display:flex;justify-content:space-between;gap:8px;color:#ffd584;font-size:10px;font-weight:800;letter-spacing:.6px;margin-bottom:5px}
+#newsFeedStatus{color:#99b5cd;font-size:10px;font-weight:500;white-space:nowrap}
+.news-viewport{height:42px;overflow:hidden;position:relative;mask-image:linear-gradient(transparent 0%,#000 13%,#000 88%,transparent 100%)}
+.news-stack{display:flex;flex-direction:column;will-change:transform}
+.news-item{height:42px;min-height:42px;display:flex;flex-direction:column;justify-content:center;gap:2px;overflow:hidden}
+.news-item a{display:block;color:#daf2ff;text-decoration:none;white-space:nowrap;text-overflow:ellipsis;overflow:hidden;font-size:12px;font-weight:700}
+.news-item a:hover,.news-item a:focus-visible{color:#57e6ff;text-decoration:underline}
+.news-meta{font-size:10px;color:#95afc6;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.news-empty{font-size:12px;color:#a8bed6;margin-top:10px}
+.news-stack.news-animated{animation:news-scroll-up var(--news-duration,48s) linear infinite}
+.news-viewport:hover .news-stack,.news-viewport:focus-within .news-stack{animation-play-state:paused}
+@keyframes news-scroll-up{from{transform:translateY(0)}to{transform:translateY(-50%)}}
+@media(max-width:1200px){.terminal-header{grid-template-columns:1fr auto}.news-slot{grid-column:1/-1;grid-row:2}}
+@media(max-width:680px){.terminal-header{grid-template-columns:minmax(0,1fr)}.trading-status{grid-row:2;text-align:left}.news-slot{grid-column:1;grid-row:3}}
+@media(prefers-reduced-motion:reduce){.news-stack.news-animated{animation:none}.news-stack .news-item:not(:first-child){display:none}}
+</style></head><body><div class="wrap"><header class="terminal-header"><div class="terminal-brand"><h1>LUXALGO PRO · TRADING TERMINAL</h1><p>Gate.io USDT Perpetual · LuxAlgo 5m / 15m · Coded by · SUBHASISH</p></div><section class="news-slot" aria-label="Latest crypto news"><div class="news-heading"><span>● CRYPTO NEWS</span><span id="newsFeedStatus">Loading headlines…</span></div><div class="news-viewport" id="newsViewport"><div class="news-stack" id="newsStack"><span class="news-empty">Retrieving publisher headlines…</span></div></div></section><div class="tag trading-status">● LIVE TRADING OFF</div></header>
 <div class="grid metric-grid">
 <div class="metric"><small>GATE.IO CONNECTION</small><strong class="gloss-cyan">READ-ONLY</strong><span id="gatePositionStatus">Checking position feed…</span></div>
 <div class="metric"><small>OPEN POSITIONS</small><strong id="openPositionCount">—</strong><span>Verified Gate.io positions only</span></div>
@@ -188,7 +222,7 @@ h2{font-size:15px;font-weight:850;letter-spacing:.3px}
 <div class="tablewrap market-scroll"><table><thead><tr><th>PAIR · CHART ↗</th><th>BIAS</th><th>SCORE</th><th>RSI</th><th>VOL RATIO</th></tr></thead><tbody id="scannerBody"><tr><td colspan="5">Scanning…</td></tr></tbody></table></div>
 <p class="light">Technical labels reflect EMA trend, RSI, recent price-range break and candle volume. They are not LuxAlgo orders.</p>
 </section></div>
-<div class="bottom-grid"><section class="panel"><h2>RECENT LUXALGO SIGNALS · 5m / 15m</h2><div class="tablewrap"><table><thead><tr><th>Received (UTC)</th><th>Token</th><th>Signal</th><th>Timeframe</th><th>Status</th><th>Entry / SL / TP Plan</th></tr></thead><tbody>{% for r in records %}<tr><td>{{r.time[:19]|e}}</td><td>{{r.symbol|e}}</td><td>{{r.side|e}}</td><td>{{r.tf|e}}</td><td>Received · Not executed</td><td><button class="btn plan" data-symbol="{{r.symbol|e}}" data-side="{{r.side|e}}" data-tf="{{r.tf|e}}">Plan + Chart</button> <button class="btn signal-risk" type="button" data-received="{{r.time|e}}" data-symbol="{{r.symbol|e}}" data-side="{{r.side|e}}" data-tf="{{r.tf|e}}">Signal Risk Check</button> <button class="btn execution-check" type="button" data-event-id="{{r.event_id|e}}">Execution Precheck</button></td></tr>{% else %}<tr><td colspan="6">No signals stored in the database yet.</td></tr>{% endfor %}</tbody></table></div><p id="executionCheckStatus" class="light" role="status" aria-live="polite">Execution engine foundation: protected prechecks only; exchange orders disabled.</p><p class="light">Signals are received events, not fills. Signal receipts and dry-run intent IDs are saved in PostgreSQL. Duplicate signals may not create separate dry-run intents.</p></section>
+<div class="bottom-grid"><section class="panel"><h2>RECENT LUXALGO SIGNALS · 5m / 15m</h2><div class="tablewrap"><table><thead><tr><th>Received (UTC)</th><th>Token</th><th>Signal</th><th>Timeframe</th><th>Status</th><th>Entry / SL / TP Plan</th></tr></thead><tbody>{% for r in records %}<tr><td>{{r.time[:19]|e}}</td><td>{{r.symbol|e}}</td><td>{{r.side|e}}</td><td>{{r.tf|e}}</td><td>Received · Not executed</td><td><button class="btn plan" data-symbol="{{r.symbol|e}}" data-side="{{r.side|e}}" data-tf="{{r.tf|e}}">Plan + Chart</button> <button class="btn signal-risk" type="button" data-received="{{r.time|e}}" data-symbol="{{r.symbol|e}}" data-side="{{r.side|e}}" data-tf="{{r.tf|e}}">Signal Risk Check</button> <button class="btn execution-check" type="button" data-event-id="{{r.event_id|e}}">Execution Precheck</button> <button class="btn simulate-order" type="button" data-event-id="{{r.event_id|e}}">Simulate Order</button></td></tr>{% else %}<tr><td colspan="6">No signals stored in the database yet.</td></tr>{% endfor %}</tbody></table></div><p id="executionCheckStatus" class="light" role="status" aria-live="polite">Execution engine foundation: protected prechecks only; exchange orders disabled.</p><p id="simulatedOrderStatus" class="light" role="status" aria-live="polite">Stage 2: explicit simulated order requests only; no actual exchange positions or protective orders.</p><p class="light">Signals are received events, not fills. Signal receipts and dry-run intent IDs are saved in PostgreSQL. Duplicate signals may not create separate dry-run intents.</p></section>
 <section class="panel performance-panel"><div class="panel-heading"><h2>PERFORMANCE ANALYTICS</h2><span class="label-muted">VERIFIED FILLS ONLY</span></div><div class="perf-grid"><div><span>Total Closed Trades</span><strong>—</strong></div><div><span>Winning Trades</span><strong>—</strong></div><div><span>Losing Trades</span><strong>—</strong></div><div><span>Win Rate</span><strong>—</strong></div><div><span>Total Realized P&amp;L</span><strong>—</strong></div><div><span>Unrealized P&amp;L</span><strong>—</strong></div></div><p class="light">Waiting for authenticated position and fill synchronization. No synthetic P&amp;L or win statistics.</p></section></div><section class="panel"><h2>TRADE PLAN · SL · TP1 <span class="tag">READ ONLY</span></h2>
 <div class="controls"><label>Entry reference <input id="entry" type="number" step="any" placeholder="Choose a signal" readonly></label><label>Stop Loss · 1.5 ATR <input id="sl" type="number" step="any" readonly></label><label>TP1 · 2 ATR · 100% exit <input id="tp1" type="number" step="any" readonly></label></div>
 <div id="planResults">Select Plan + Chart beside a signal to calculate illustrative entry, SL and TP1. No orders are placed.</div></section>
@@ -222,6 +256,19 @@ document.querySelectorAll('.execution-check').forEach(b=>b.addEventListener('cli
   const p=d.precheck;out.textContent=p.symbol+' '+p.side+' '+p.timeframe+' | '+p.status+' | Risk default: '+p.risk_percent+'% | '+(d.duplicate?'Existing persisted check. ':'Saved to PostgreSQL. ')+'No orders placed. Blockers: '+p.blockers.join('; ');
  }catch(e){out.textContent='Execution precheck blocked: '+e.message+'; no orders placed.'}
  finally{b.disabled=false}
+}));
+
+// Stage 2: simulate a hypothetical market entry from a stored fresh event; no exchange writes.
+document.querySelectorAll('.simulate-order').forEach(b=>b.addEventListener('click',async()=>{
+ const out=document.getElementById('simulatedOrderStatus');
+ b.disabled=true;out.textContent='Creating a simulated order record (no actual orders)…';
+ try{
+  const r=await fetch('/terminal/simulate-order',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({event_id:b.dataset.eventId}),cache:'no-store'});
+  const d=await r.json();if(!r.ok)throw Error(d.error||'Simulation rejected');
+  const x=d.simulation;
+  out.textContent=x.symbol+' '+x.side+' '+x.timeframe+' | '+x.status+' | Entry reference: '+x.reference_entry+' | Illustrative SL: '+x.stop_loss+' | Illustrative TP: '+x.take_profit+' | Contracts: '+x.size_contracts+' | Risk: '+x.risk_percent+'% | '+(d.duplicate?'Existing simulation; not duplicated.':'Saved to PostgreSQL.')+' | Exchange orders: 0. No real protection.';
+ }catch(e){out.textContent='Simulation not created: '+e.message+' | Orders placed: 0.';}
+ finally{b.disabled=false;}
 }));
 
 document.querySelectorAll('.plan').forEach(b=>b.addEventListener('click',async()=>{
@@ -408,7 +455,129 @@ for(const b of document.querySelectorAll('#scannerTabs button'))b.addEventListen
 document.getElementById('radarRefresh').addEventListener('click',loadRadar);document.getElementById('radarSearch').addEventListener('input',renderRadar);document.getElementById('radarLimit').addEventListener('change',renderRadar);document.getElementById('scannerSearch').addEventListener('input',renderScanner);document.getElementById('scannerRefresh').addEventListener('click',()=>loadScanner(true));document.getElementById('scannerTf').addEventListener('change',e=>{scanTf=e.target.value;scanData=[];loadScanner();});
 loadRadar();loadScanner();setInterval(()=>{if(!document.hidden)loadRadar()},60000);setInterval(()=>{if(!document.hidden)loadScanner()},15000);
 })();
+
+// News is display-only; has no access to trading functions or signals.
+(function(){
+ 'use strict';
+ const viewport=document.getElementById('newsViewport');
+ const stack=document.getElementById('newsStack');
+ const status=document.getElementById('newsFeedStatus');
+ const meta=x=>String(x||'').slice(0,90);
+ const linkSafe=u=>{try{const x=new URL(u);return x.protocol==='https:'?x.href:null}catch(e){return null}};
+ function render(items,updated){
+   stack.replaceChildren();
+   const valid=(items||[]).filter(x=>linkSafe(x.url)&&x.title).slice(0,12);
+   if(!valid.length){const e=document.createElement('span');e.className='news-empty';e.textContent='No recent verified-source headlines available';stack.appendChild(e);return;}
+   const add=(x)=>{
+     const wrap=document.createElement('div');wrap.className='news-item';
+     const a=document.createElement('a');a.href=linkSafe(x.url);a.target='_blank';a.rel='noopener noreferrer';a.textContent=x.title;a.title=x.title;wrap.appendChild(a);
+     const info=document.createElement('span');info.className='news-meta';info.textContent=meta(x.source)+(x.published?' · '+meta(x.published):'');wrap.appendChild(info);stack.appendChild(wrap);
+   };
+   valid.forEach(add);
+   if(valid.length>1){valid.forEach(add);stack.style.setProperty('--news-duration',String(Math.max(36,valid.length*6))+'s');stack.classList.add('news-animated');}
+   status.textContent=String(valid.length)+' headlines · direct publisher links';
+ }
+ async function load(){
+   try{
+     const ctl=new AbortController();const t=setTimeout(()=>ctl.abort(),9500);
+     let res;
+     try{res=await fetch('/terminal/news',{cache:'no-store',signal:ctl.signal})}finally{clearTimeout(t)}
+     if(!res.ok)throw Error('News unavailable');
+     const data=await res.json();render(data.items||[],data.fetched_at);
+   }catch(e){status.textContent='News temporarily unavailable';if(!stack.querySelector('.news-item'))stack.textContent='News unavailable · trading terminal unaffected';}
+ }
+ load();setInterval(()=>{if(!document.hidden)load()},300000);
+})();
 </script></body></html>'''
+
+
+# Curated public publisher feeds. This UI is editorial news, not verified trade signals.
+NEWS_FEEDS = (
+    ('CoinDesk', 'https://www.coindesk.com/arc/outboundfeeds/rss/', 'www.coindesk.com'),
+    ('The Block', 'https://www.theblock.co/rss.xml', 'www.theblock.co'),
+    ('Decrypt', 'https://decrypt.co/feed', 'decrypt.co'),
+)
+_news_cache = {'expires_at': 0, 'items': [], 'fetched_at': None}
+_news_lock = Lock()
+
+def _news_fetch_source(source):
+    label, url, host = source
+    req = Request(url, headers={'User-Agent':'LuxAlgoPRO-NewsTicker/1.0 (+RSS reader)', 'Accept':'application/rss+xml,application/atom+xml,application/xml,text/xml'})
+    with urlopen(req, timeout=4) as res:
+        xml = res.read(450000)
+    root = ET.fromstring(xml)
+    entries = root.findall('.//item')
+    if not entries:
+        entries = root.findall('.//{http://www.w3.org/2005/Atom}entry')
+    items = []
+    for item in entries[:12]:
+        def field(name):
+            element = item.find(name)
+            return (element.text or '').strip() if element is not None and element.text else ''
+        title = field('title') or field('{http://www.w3.org/2005/Atom}title')
+        link = field('link')
+        if not link:
+            el = item.find('{http://www.w3.org/2005/Atom}link')
+            link = el.get('href','') if el is not None else ''
+        parts=urlsplit(link)
+        if parts.scheme!='https' or (parts.hostname or '').lower() not in (host,host.removeprefix('www.')):
+            continue
+        date_str = field('pubDate') or field('{http://www.w3.org/2005/Atom}published') or field('{http://www.w3.org/2005/Atom}updated')
+        date_ts = 0
+        if date_str:
+            try:
+                dt=parsedate_to_datetime(date_str)
+            except (TypeError,ValueError,IndexError):
+                try: dt=datetime.fromisoformat(date_str.replace('Z','+00:00'))
+                except ValueError: dt=None
+            if dt:
+                if dt.tzinfo is None: dt=dt.replace(tzinfo=timezone.utc)
+                date_ts=dt.timestamp()
+        if not title or not date_ts or date_ts>time.time()+600 or date_ts<time.time()-3*86400:
+            continue
+        items.append({'title': title[:200], 'url': link, 'source': label,
+                      'published': datetime.fromtimestamp(date_ts,timezone.utc).strftime('%d %b %H:%M UTC'),
+                      '_timestamp':date_ts})
+    return items
+
+@app.get('/terminal/news')
+def terminal_news():
+    if not _terminal_permitted():
+        return _terminal_guard()
+    now=time.time()
+    with _news_lock:
+        cached=dict(_news_cache)
+    if cached['expires_at']>now:
+        response=jsonify(items=cached['items'],fetched_at=cached['fetched_at'],status='cached')
+        response.headers['Cache-Control']='private, no-store'
+        return response
+    found=[]
+    # Independent timeouts; publisher outages must never break the trading dashboard.
+    with ThreadPoolExecutor(max_workers=3) as pool:
+        jobs=[pool.submit(_news_fetch_source, source) for source in NEWS_FEEDS]
+        for job in jobs:
+            try: found.extend(job.result(timeout=5))
+            except Exception: pass
+    found.sort(key=lambda x:x['_timestamp'],reverse=True)
+    seen=set(); articles=[]
+    for article in found:
+        if article['url'] in seen: continue
+        seen.add(article['url']);article.pop('_timestamp',None);articles.append(article)
+        if len(articles)>=12: break
+    with _news_lock:
+        if articles:
+            _news_cache.update(items=articles, expires_at=now+600, fetched_at=int(now))
+        else:
+            # Do not clear fresh-enough news during a temporary feed outage.
+            existing=_news_cache.get('items',[])
+            if _news_cache.get('fetched_at') and now-_news_cache['fetched_at']<3*3600:
+                articles=existing
+            else:
+                articles=[]
+            _news_cache.update(expires_at=now+120,items=articles)
+    response=jsonify(items=articles,fetched_at=_news_cache.get('fetched_at'),status='ok' if articles else 'unavailable')
+    response.headers['Cache-Control']='private, no-store'
+    return response
 
 def expected_webhook_token():
     return os.getenv('LUXALGO_WEBHOOK_TOKEN', '')
@@ -989,6 +1158,72 @@ def terminal_execution_precheck():
     except (psycopg.Error, RuntimeError, OSError):
         app.logger.exception('Execution precheck database unavailable; fail closed')
         return jsonify(error='Database unavailable; execution precheck blocked', orders_placed=0), 503
+
+@app.post('/terminal/simulate-order')
+def terminal_simulate_order():
+    """Manual paper intent only; no order APIs, no simulated fills and no autonomous trading."""
+    if not _terminal_permitted():
+        return _terminal_guard()
+    data=request.get_json(silent=True) if request.is_json else None
+    if not isinstance(data,dict) or not isinstance(data.get('event_id'),str) or not re.fullmatch(r'[a-f0-9]{20}',data['event_id']):
+        return jsonify(error='Valid stored event ID required',orders_placed=0),422
+    event_id=data['event_id']
+    try:
+        with _db_connect() as con:
+            _ensure_schema(con)
+            with con.cursor() as cur:
+                cur.execute('SELECT details FROM luxalgo_simulated_orders WHERE event_id=%s',(event_id,))
+                row=cur.fetchone()
+                if row:
+                    return jsonify(simulation=row['details'],duplicate=True,orders_placed=0,mode='SIMULATION_ONLY')
+                cur.execute('SELECT received_at,symbol,side,timeframe FROM luxalgo_dry_run_intents WHERE event_id=%s',(event_id,))
+                signal=cur.fetchone()
+                if not signal:
+                    return jsonify(error='Stored event not found',orders_placed=0),404
+                age=(datetime.now(timezone.utc)-signal['received_at']).total_seconds()
+                if age<0 or age>120:
+                    return jsonify(error='Signal is older than 120 seconds. Cannot simulate a fresh entry from stale data',orders_placed=0),422
+                try:
+                    from decimal import Decimal
+                    risk=Decimal(os.getenv('DEFAULT_RISK_PERCENT','1'))
+                    if not risk.is_finite() or not Decimal('0.5')<=risk<=Decimal('5'):
+                        raise ValueError('Risk setting outside 0.5%-5%')
+                except (ValueError,ArithmeticError):
+                    return jsonify(error='Invalid risk configuration',orders_placed=0),503
+                if os.getenv('LIVE_TRADING_ENABLED','false').strip().lower() != 'false':
+                    return jsonify(error='Simulation blocked: LIVE_TRADING_ENABLED must be false',orders_placed=0),503
+                # Release the transaction before public API reads; reacquire for the unique insert.
+                sym,side,tf=signal['symbol'],signal['side'],signal['timeframe']
+        preview=_execution_dry_run_preview(sym,side,tf,100,str(risk))
+        if not preview.get('size_contracts'):
+            return jsonify(error='Risk preview has no valid illustrative contract size',orders_placed=0),422
+        if any('unverified' in x.lower() for x in preview.get('blockers',[])):
+            return jsonify(error='Contract metadata is unverified; simulation rejected',orders_placed=0),422
+        details=dict(event_id=event_id,symbol=sym,side=side,timeframe=tf,
+            status='SIMULATED_ONLY',simulated_fill=False,
+            risk_percent=str(risk),hypothetical_equity_usdt='100',
+            reference_entry=preview['reference_entry'],stop_loss=preview['stop_loss'],
+            take_profit=preview['take_profit'],size_contracts=preview['size_contracts'],
+            notes='Manual simulated intent. Prices are from a completed candle, not a market fill. No orders, no SL/TP placement, no position created.',
+            orders_placed=0)
+        with _db_connect() as con:
+            _ensure_schema(con)
+            with con.cursor() as cur:
+                cur.execute("""INSERT INTO luxalgo_simulated_orders(event_id,symbol,side,timeframe,status,details)
+                    VALUES (%s,%s,%s,%s,'SIMULATED_ONLY',%s::jsonb) ON CONFLICT(event_id) DO NOTHING""",
+                    (event_id,sym,side,tf,json.dumps(details)))
+                duplicate=cur.rowcount==0
+                if duplicate:
+                    cur.execute('SELECT details FROM luxalgo_simulated_orders WHERE event_id=%s',(event_id,))
+                    details=cur.fetchone()['details']
+        response=jsonify(simulation=details,duplicate=duplicate,orders_placed=0,mode='SIMULATION_ONLY')
+        response.headers['Cache-Control']='no-store'
+        return response
+    except (psycopg.Error,RuntimeError,OSError):
+        app.logger.exception('Simulation database not available')
+        return jsonify(error='Simulation store unavailable; no order created',orders_placed=0),503
+    except (HTTPError,URLError,TimeoutError,ValueError,KeyError,TypeError,OverflowError):
+        return jsonify(error='Risk preview unavailable; simulation rejected',orders_placed=0),502
 
 @app.post('/gate/plan')
 def gate_plan():
