@@ -447,6 +447,22 @@ h2{font-size:15px;font-weight:850;letter-spacing:.3px}
 .position-readonly-hint{font-size:11px;color:#afc3d9;margin-top:10px}
 @media(max-width:970px){.position-facts{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:500px){.position-card>summary{align-items:flex-start}.position-facts{grid-template-columns:repeat(2,minmax(0,1fr))}.position-symbol{font-size:14px}.position-summary-pnl{font-size:14px}}
+
+/* Distinct high-gloss RED Delete action; isolated from other signal buttons. */
+.bottom-grid>section:first-child td:last-child .btn.delete-recent-signal {
+ color:#fff7fa!important;
+ background:linear-gradient(160deg,#ffb0b9 0%,#f45068 39%,#9c193e 52%,#dc3558 100%)!important;
+ border:1px solid #ff8098!important;
+ font-weight:900;
+ text-shadow:0 1px 2px #560c24;
+ box-shadow:inset 0 1px 0 #ffe4e8b5,inset 0 -2px 2px #470a22a0,0 2px 9px #e7325875!important;
+}
+.bottom-grid>section:first-child td:last-child .btn.delete-recent-signal:not(:disabled):hover {
+ filter:brightness(1.17);box-shadow:inset 0 1px 0 #fff,0 0 14px #ff507dc4!important;
+}
+.bottom-grid>section:first-child td:last-child .btn.delete-recent-signal:focus-visible {
+ outline:2px solid #ffe0e8;outline-offset:2px;
+}
 </style></head><body><div class="wrap"><header class="terminal-header"><div class="terminal-brand"><h1>LUXALGO PRO · TRADING TERMINAL</h1><p>Gate.io USDT Perpetual · LuxAlgo 5m / 15m · Coded by · SUBHASISH</p>
 <div class="profile-greeting"><div class="profile-avatar" id="avatarDisplay"><span>SD</span></div>
 <div><div class="profile-name">Hello SUBHASISH</div><label class="profile-change" for="profileImageInput" tabindex="0">Change Photo</label><input type="file" id="profileImageInput" accept="image/png,image/jpeg,image/webp" hidden></div></div></div><section class="news-slot" aria-label="Latest crypto news"><div class="news-heading"><span>● CRYPTO NEWS</span><span id="newsFeedStatus">Loading headlines…</span></div><div class="news-viewport" id="newsViewport"><div class="news-stack" id="newsStack"><span class="news-empty">Retrieving publisher headlines…</span></div></div></section><div class="profile-right"><div class="tag trading-status">● LIVE TRADING OFF</div>
