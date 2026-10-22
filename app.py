@@ -105,6 +105,14 @@ CREATE TABLE IF NOT EXISTS luxalgo_auto_paper_queue (
  note TEXT NOT NULL DEFAULT ''
 );
 CREATE INDEX IF NOT EXISTS idx_auto_paper_pending ON luxalgo_auto_paper_queue(state,received_at);
+-- Fail-closed live-order candidate audit. This table NEVER authorizes a live order.
+CREATE TABLE IF NOT EXISTS luxalgo_live_order_guard_audit (
+  event_id TEXT PRIMARY KEY,
+  checked_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  decision TEXT NOT NULL DEFAULT 'BLOCKED' CHECK(decision='BLOCKED'),
+  reason TEXT NOT NULL,
+  source TEXT NOT NULL DEFAULT 'DASHBOARD_GUARD_TEST'
+);
 CREATE TABLE IF NOT EXISTS luxalgo_dry_run_intents (
  event_id TEXT PRIMARY KEY,
  received_at TIMESTAMPTZ NOT NULL,
@@ -439,7 +447,7 @@ h2{font-size:15px;font-weight:850;letter-spacing:.3px}
 <div class="metric"><small>AVAILABLE FUTURES · USDT</small><strong id="futuresAvailable">—</strong><span>Exchange-reported trading availability</span></div>
 <div class="metric"><small>FUTURES BALANCE · USDT</small><strong id="futuresBalance">—</strong><span>Account balance before unrealized P&amp;L</span></div>
 </div></details>
-<details class="panel" style="margin:12px 0" id="liveReadinessPanel"><summary style="font-weight:850;cursor:pointer;color:#ffcf89">LIVE EXECUTION READINESS · SAFETY CHECK (READ ONLY)</summary><p class="light">This panel checks safeguards only. It cannot start trading or enable Gate.io API writes.</p><button class="btn" type="button" id="readinessRefresh">Check readiness</button><div id="readinessOutput" role="status" aria-live="polite" style="margin-top:10px;color:#fdbfbf">Live execution BLOCKED until all critical safeguards are implemented and tested.</div></details>
+<details class="panel" style="margin:12px 0" id="liveReadinessPanel"><summary style="font-weight:850;cursor:pointer;color:#ffcf89">LIVE EXECUTION READINESS · SAFETY CHECK (READ ONLY)</summary><p class="light">This panel checks safeguards only. It cannot start trading or enable Gate.io API writes.</p><button class="btn" type="button" id="readinessRefresh">Check readiness</button><button class="btn gloss-action" type="button" id="guardTestButton" style="margin-left:8px">Test Duplicate Order Guard</button><p class="light" id="guardTestResult">Test only: all candidates are BLOCKED; no exchange orders.</p><div id="readinessOutput" role="status" aria-live="polite" style="margin-top:10px;color:#fdbfbf">Live execution BLOCKED until all critical safeguards are implemented and tested.</div></details>
 <div class="grid metric-grid">
 <div class="metric"><small>GATE.IO CONNECTION</small><strong class="gloss-cyan">READ-ONLY</strong><span id="gatePositionStatus">Checking position feed…</span></div>
 <div class="metric"><small>OPEN POSITIONS</small><strong id="openPositionCount">—</strong><span>Verified Gate.io positions only</span></div>
@@ -507,6 +515,23 @@ h2{font-size:15px;font-weight:850;letter-spacing:.3px}
     } catch(e){o.textContent='Readiness unavailable; live trading remains BLOCKED.';}finally{b.disabled=false;}
   });
 })();
+
+ // Live-order guard test: audit first stored signal, never execute an order.
+ (function(){
+ const b=document.getElementById('guardTestButton'),out=document.getElementById('guardTestResult');
+ const eventId={{ (records[0].event_id if records else '')|tojson }};
+ b.disabled=!eventId;
+ if(!eventId){out.textContent='No received signals available for a guard test.';return;}
+ b.addEventListener('click',async()=>{
+  b.disabled=true;out.textContent='Checking PostgreSQL duplicate guard (no exchange writes)…';
+  try{
+   const r=await fetch('/terminal/live-order-guard-test',{method:'POST',headers:{'Content-Type':'application/json','X-Terminal-CSRF':{{ csrf_token|tojson }}},body:JSON.stringify({event_id:eventId}),cache:'no-store'});
+   const d=await r.json();if(!r.ok)throw Error(d.error||'Guard unavailable');
+   out.textContent='BLOCKED · '+(d.duplicate?'Duplicate event recognized. ':'Guard record saved. ')+'Exchange orders: 0. '+d.reason;
+  }catch(e){out.textContent='Guard test failed CLOSED: '+e.message+' · Orders: 0.';}
+  finally{b.disabled=false;}
+ });
+ })();
 
 // Remote control: persisted in PostgreSQL, never enables exchange trading.
 (function(){
@@ -1454,6 +1479,46 @@ def _gate_futures_account_summary():
 
 # LIVE-EXECUTION READINESS: observational fail-closed inspection only.
 # This endpoint never sends an order, changes permissions, or enables trading.
+
+# STEP 413: Only audits a BLOCKED live-order candidate. Absolutely no exchange writes.
+# A real execution ledger will require explicit exchange client-order IDs and reconciliation.
+@app.post('/terminal/live-order-guard-test')
+def terminal_live_order_guard_test():
+    if not _terminal_permitted():
+        return _terminal_guard()
+    if not _csrf_valid():
+        return jsonify(error='Invalid session verification', orders_placed=0), 403
+    if not request.is_json:
+        return jsonify(error='JSON required', orders_placed=0), 400
+    data=request.get_json(silent=True)
+    if not isinstance(data,dict):
+        return jsonify(error='Invalid request', orders_placed=0),400
+    event_id=data.get('event_id')
+    if not isinstance(event_id,str) or not (1 <= len(event_id) <= 128) or not re.fullmatch(r'[A-Za-z0-9_.:-]+',event_id):
+        return jsonify(error='Valid stored signal ID required',orders_placed=0),400
+    try:
+        with _db_connect() as con:
+            _ensure_schema(con)
+            with con.cursor() as cur:
+                # Only authenticated previously received events may be guard-tested.
+                cur.execute('SELECT 1 FROM luxalgo_dry_run_intents WHERE event_id=%s',(event_id,))
+                if cur.fetchone() is None:
+                    return jsonify(error='Signal event not found; guard rejected',orders_placed=0),404
+                cur.execute('''INSERT INTO luxalgo_live_order_guard_audit(event_id,reason)
+                    VALUES (%s,%s) ON CONFLICT(event_id) DO NOTHING''',
+                    (event_id,'Live execution not implemented; exchange SL/TP, reconciliation, risk lock and always-on host unverified'))
+                duplicate = cur.rowcount == 0
+                cur.execute('SELECT checked_at,decision,reason FROM luxalgo_live_order_guard_audit WHERE event_id=%s',(event_id,))
+                row=cur.fetchone()
+        response=jsonify(status='BLOCKED',duplicate=duplicate,event_id=event_id,
+                         decision=row['decision'],reason=row['reason'],checked_at=row['checked_at'].isoformat(),
+                         exchange_requests=0,orders_placed=0,live_trading=False)
+        response.headers['Cache-Control']='no-store'
+        return response
+    except (psycopg.Error,RuntimeError,OSError):
+        app.logger.exception('Live guard audit unavailable')
+        return jsonify(error='Live guard database unavailable: blocked',orders_placed=0),503
+
 @app.get('/terminal/live-readiness')
 def terminal_live_readiness():
     if not _terminal_permitted():
