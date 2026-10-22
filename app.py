@@ -12,6 +12,8 @@ import os
 import re
 import time
 import math
+import secrets
+import base64
 from collections import deque
 from hashlib import sha256
 from datetime import datetime, timezone
@@ -23,13 +25,21 @@ from urllib.parse import urlsplit
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
-from flask import Flask, jsonify, render_template_string, request, Response
+from flask import Flask, jsonify, render_template_string, request, Response, session, redirect, url_for
 
 # PostgreSQL dependency: psycopg[binary] (see requirements addition).
 import psycopg
 from psycopg.rows import dict_row
 
 app = Flask(__name__)
+# Secure signed cookie sessions. Changing TERMINAL_PASSWORD revokes old cookies.
+_password_for_cookie = os.getenv('TERMINAL_PASSWORD', '')
+app.secret_key = hmac.new(_password_for_cookie.encode('utf-8'), b'luxalgo-pro/session/v1', hashlib.sha256).digest()
+app.config.update(SESSION_COOKIE_SECURE=True, SESSION_COOKIE_HTTPONLY=True,
+                  SESSION_COOKIE_SAMESITE='Strict', PERMANENT_SESSION_LIFETIME=28800,
+                  MAX_CONTENT_LENGTH=400000)
+_login_failures = {}
+_login_lock = Lock()
 _lock = Lock()
 
 # Durable signal-only audit store. All trade execution remains disabled.
@@ -74,6 +84,12 @@ CREATE TABLE IF NOT EXISTS luxalgo_paper_tracking (
   exit_price NUMERIC,
   estimated_pnl_usdt NUMERIC,
   notes TEXT NOT NULL DEFAULT 'Hypothetical only; never an exchange fill'
+);
+CREATE TABLE IF NOT EXISTS luxalgo_user_avatar (
+  id SMALLINT PRIMARY KEY CHECK (id=1),
+  image_data BYTEA NOT NULL,
+  image_type TEXT NOT NULL CHECK (image_type IN ('image/png','image/jpeg','image/webp')),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 CREATE TABLE IF NOT EXISTS luxalgo_bot_control (
  id SMALLINT PRIMARY KEY CHECK (id=1),
@@ -306,7 +322,26 @@ h2{font-size:15px;font-weight:850;letter-spacing:.3px}
 .bot-control-panel{display:flex;justify-content:space-between;align-items:center;gap:12px;margin:12px 0;padding:13px 17px;background:#11253c;border:1px solid #335d82;border-radius:10px}
 .bot-control-panel strong{color:#ffc47c;font-size:14px}.bot-control-panel p{font-size:12px;margin:4px 0 0}.bot-control-actions{display:flex;gap:8px;white-space:nowrap}.bot-control-actions .btn{font-weight:800}
 @media(max-width:670px){.bot-control-panel{align-items:stretch;flex-direction:column}.bot-control-actions .btn{flex:1}}
-</style></head><body><div class="wrap"><header class="terminal-header"><div class="terminal-brand"><h1>LUXALGO PRO · TRADING TERMINAL</h1><p>Gate.io USDT Perpetual · LuxAlgo 5m / 15m · Coded by · SUBHASISH</p></div><section class="news-slot" aria-label="Latest crypto news"><div class="news-heading"><span>● CRYPTO NEWS</span><span id="newsFeedStatus">Loading headlines…</span></div><div class="news-viewport" id="newsViewport"><div class="news-stack" id="newsStack"><span class="news-empty">Retrieving publisher headlines…</span></div></div></section><div class="tag trading-status">● LIVE TRADING OFF</div></header>
+/* Profile greeting and high-gloss logout; keeps the news center intact. */
+.profile-greeting{display:flex;align-items:center;gap:9px;margin-top:11px;min-width:0}
+.profile-avatar{width:38px;height:38px;flex:0 0 38px;border-radius:50%;overflow:hidden;
+  background:linear-gradient(140deg,#3b8fc8,#1b395c);border:2px solid #79dfff;
+  box-shadow:0 2px 12px #19c9ff55;display:grid;place-items:center;font-weight:900;color:#e8fbff}
+.profile-avatar img{width:100%;height:100%;object-fit:cover}
+.profile-name{font-weight:850;color:#d8f4ff;letter-spacing:.25px;font-size:13px}
+.profile-change{display:inline-block;cursor:pointer;color:#8fdfff;font-size:11px;text-decoration:underline;margin-left:2px}
+.profile-right{display:flex;flex-direction:column;align-items:flex-end;gap:10px;min-width:140px}
+.glossy-logout{border:1px solid #b9e5ff;border-radius:10px;cursor:pointer;padding:10px 21px;
+ background:linear-gradient(155deg,#d5f5ff 0%,#8ad5ff 24%,#3d92dc 51%,#13538d 53%,#2176bc 95%);
+ color:white;font-weight:900;letter-spacing:1px;text-shadow:0 1px 2px #04365b;
+ box-shadow:inset 0 2px 2px #fff9,inset 0 -2px 4px #092b5088,0 5px 17px #0a8aff55}
+.glossy-logout:hover{filter:brightness(1.14);box-shadow:inset 0 2px 3px #fff9,0 4px 22px #25b7ff90}
+.glossy-logout:focus-visible,.profile-change:focus-visible{outline:3px solid #ffe39e;outline-offset:2px}
+@media(max-width:680px){.profile-right{align-items:flex-start}.profile-name{font-size:12px}}
+</style></head><body><div class="wrap"><header class="terminal-header"><div class="terminal-brand"><h1>LUXALGO PRO · TRADING TERMINAL</h1><p>Gate.io USDT Perpetual · LuxAlgo 5m / 15m · Coded by · SUBHASISH</p>
+<div class="profile-greeting"><div class="profile-avatar" id="avatarDisplay"><span>SD</span></div>
+<div><div class="profile-name">Hello SUBHASISH</div><label class="profile-change" for="profileImageInput" tabindex="0">Change Photo</label><input type="file" id="profileImageInput" accept="image/png,image/jpeg,image/webp" hidden></div></div></div><section class="news-slot" aria-label="Latest crypto news"><div class="news-heading"><span>● CRYPTO NEWS</span><span id="newsFeedStatus">Loading headlines…</span></div><div class="news-viewport" id="newsViewport"><div class="news-stack" id="newsStack"><span class="news-empty">Retrieving publisher headlines…</span></div></div></section><div class="profile-right"><div class="tag trading-status">● LIVE TRADING OFF</div>
+<form method="post" action="/logout"><input type="hidden" name="csrf_token" value="{{ csrf_token|e }}"><button class="glossy-logout" type="submit">⇥ LOGOUT</button></form></div></header>
 <section class="bot-control-panel" aria-label="Remote bot control">
  <div><strong id="botControlLabel">BOT OFF · PAPER SIMULATION PAUSED</strong><p id="botControlDetail">New LuxAlgo signals remain logged. No live orders are possible.</p></div>
  <div class="bot-control-actions"><button class="btn" id="botTurnOn" type="button">▶ BOT ON</button><button class="btn" id="botTurnOff" type="button">■ BOT OFF</button></div>
@@ -347,6 +382,23 @@ h2{font-size:15px;font-weight:850;letter-spacing:.3px}
 <div class="controls"><label>Entry reference <input id="entry" type="number" step="any" placeholder="Choose a signal" readonly></label><label>Stop Loss · 1.5 ATR <input id="sl" type="number" step="any" readonly></label><label>TP1 · 2 ATR · 100% exit <input id="tp1" type="number" step="any" readonly></label></div>
 <div id="planResults">Select Plan + Chart beside a signal to calculate illustrative entry, SL and TP1. No orders are placed.</div></section>
 <section class="panel"><div class="panel-heading"><h2>COMPLETED TRADES · EXIT RECORD</h2><span class="label-muted">PENDING ACCOUNT HISTORY INTEGRATION</span></div><div class="tablewrap"><table><thead><tr><th>TIME (UTC)</th><th>PAIR</th><th>DIRECTION</th><th>ENTRY FILL</th><th>EXIT FILL</th><th>NET REALIZED P&amp;L</th><th>RESULT</th></tr></thead><tbody><tr><td colspan="7" class="empty-state">No verified exchange fills have been synchronized. Signal receipts are not executed trades.</td></tr></tbody></table></div></section><section class="panel"><div class="panel-heading"><h2>PAPER TRADE MONITOR <span class="tag">SIMULATION ONLY</span></h2><button class="btn" id="paperRefresh" type="button">↻ Check Paper Trades</button></div><p class="light" id="paperStatus" role="status" aria-live="polite">Checks queued simulated orders when the dashboard is open; historical outcomes remain estimates, not fills.</p><div class="tablewrap"><table><thead><tr><th>CREATED (UTC)</th><th>PAIR</th><th>SIDE</th><th>SIM ENTRY</th><th>SIM SL</th><th>SIM TP</th><th>STATE</th><th>EST. P&amp;L (USDT)</th></tr></thead><tbody id="paperBody"><tr><td colspan="8">No simulated positions loaded.</td></tr></tbody></table></div><p class="light">Simulation outcomes assume the reference entry was achievable and exclude fees, slippage and funding. If both SL and TP are touched in one candle, SL is assumed first. Historical-data gaps are not guessed. Simulated P&amp;L is never included in verified real-trade analytics.</p></section><section class="panel"><div class="panel-heading"><h2>EXECUTION SAFETY PREVIEW <span class="tag">DRY RUN ONLY</span></h2><span class="label-muted">NO EXCHANGE ORDERS</span></div><p class="light">Preview illustrative risk and contract-size checks using a hypothetical USDT equity. This does not validate your actual available margin, fee-adjusted fills, current hedge settings, or protective order placement.</p><div class="controls"><label>Trading pair<input id="previewSymbol" value="BTCUSDT" maxlength="29" autocomplete="off"></label><label>Direction<select id="previewSide"><option value="LONG">LONG / BUY</option><option value="SHORT">SHORT / SELL</option></select></label><label>Timeframe<select id="previewTf"><option value="15m">15 minutes</option><option value="5m">5 minutes</option></select></label><label>Hypothetical equity (USDT)<input id="previewEquity" type="number" value="100" min="1" max="10000000" step="any"></label><label>Risk per trade (%)<select id="previewRisk"><option value="0.5">0.5%</option><option value="1" selected>1% (default)</option><option value="1.5">1.5%</option><option value="2">2%</option><option value="2.5">2.5%</option><option value="3">3%</option><option value="3.5">3.5%</option><option value="4">4%</option><option value="4.5">4.5%</option><option value="5">5% (maximum)</option></select></label></div><button class="btn" id="previewButton" type="button">Generate Read-Only Risk Preview</button><p id="signalPreviewContext" class="light" aria-live="polite">Manual calculator input; not a trading recommendation.</p><div id="previewResult" role="status" aria-live="polite" style="white-space:pre-wrap;margin-top:12px;background:#0b1a2b;border:1px solid #2b435e;border-radius:8px;padding:14px;font:12px/1.8 ui-monospace,Consolas,monospace">Ready for a simulated preview. Nothing can place or close orders.</div></section><div class="foot">LUXALGO PRO · Private terminal · Market data is public Gate.io data. Scanners are technical watchlists, not LuxAlgo entry signals. No account positions, fills, profit or loss are available until authenticated exchange sync is implemented. LIVE TRADING OFF; no orders are placed.</div></div><script>
+// Optional editable profile image. Uploaded securely to PostgreSQL; never touches Gate.io.
+(function(){
+ const input=document.getElementById('profileImageInput'),display=document.getElementById('avatarDisplay');
+ function showPhoto(){const im=document.createElement('img');im.src='/terminal/avatar?version='+Date.now();im.alt='SUBHASISH profile picture';im.addEventListener('error',()=>{display.replaceChildren();const t=document.createElement('span');t.textContent='SD';display.appendChild(t);});display.replaceChildren(im);}
+ showPhoto();
+ const changer=document.querySelector('.profile-change');
+ changer.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();input.click();}});
+ input.addEventListener('change',async()=>{
+   const file=input.files&&input.files[0];if(!file)return;
+   if(file.size>200000||!['image/jpeg','image/png','image/webp'].includes(file.type)){alert('Choose a JPEG, PNG or WebP image under 200 KB.');input.value='';return;}
+   const fd=new FormData();fd.append('photo',file);fd.append('csrf_token',{{ csrf_token|tojson }});
+   try{const r=await fetch('/terminal/avatar',{method:'POST',body:fd,credentials:'same-origin'});if(!r.ok)throw Error('Upload rejected');showPhoto();}
+   catch(e){alert('Photo could not be saved. Use a smaller JPEG/PNG/WebP image.');}
+   input.value='';
+ });
+})();
+
 // Remote control: persisted in PostgreSQL, never enables exchange trading.
 (function(){
  const label=document.getElementById('botControlLabel'),detail=document.getElementById('botControlDetail');
@@ -750,21 +802,106 @@ def authorized(data):
 
 
 def _terminal_permitted():
-    # A separate dashboard password; never reuse webhook token or exchange credentials.
-    expected = os.getenv('TERMINAL_PASSWORD', '')
-    user = os.getenv('TERMINAL_USER', 'admin')
-    auth = request.authorization
-    return (len(expected) >= 24 and auth is not None
-            and hmac.compare_digest(auth.username or '', user)
-            and hmac.compare_digest(auth.password or '', expected))
+    # Do NOT accept cached HTTP Basic credentials after logout.
+    # A signed, HttpOnly session cookie is needed for a reliable logout.
+    return (len(os.getenv('TERMINAL_PASSWORD','')) >= 24 and
+            session.get('authenticated') is True and
+            session.get('user') == os.getenv('TERMINAL_USER','admin'))
 
 
 def _terminal_guard():
-    if not os.getenv('TERMINAL_PASSWORD'):
-        return Response('Private terminal unavailable. Configure TERMINAL_PASSWORD in Render environment variables.', status=503)
-    return Response('Authentication required', status=401,
-                    headers={'WWW-Authenticate': 'Basic realm="LuxAlgo Private Terminal"',
-                             'Cache-Control': 'no-store'})
+    if len(os.getenv('TERMINAL_PASSWORD', '')) < 24:
+        return Response('Private terminal unavailable. Set a password of at least 24 characters in Render.',status=503)
+    if request.path.startswith('/terminal/'):
+        return jsonify(error='Session expired; sign in again',login_url='/login'),401
+    return redirect(url_for('terminal_login', next=request.path),code=303)
+
+
+LOGIN_PAGE = '''<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>LUXALGO PRO · Sign In</title>
+<style>body{background:radial-gradient(ellipse at top,#173f65,#08111f 70%);color:#e8f7ff;font:15px system-ui,Arial;min-height:100vh;display:grid;place-items:center;margin:0}.panel{box-sizing:border-box;width:min(420px,94vw);background:linear-gradient(160deg,#163553,#102034);padding:32px;border:1px solid #3d688c;border-radius:16px;box-shadow:0 20px 45px #0008}h1{font-size:22px;margin:0 0 8px}p{color:#abc9df;margin:0 0 23px}label{display:block;margin:13px 0 6px;color:#aed7f0}input{width:100%;box-sizing:border-box;padding:12px;background:#08192b;border:1px solid #46759b;border-radius:8px;color:white;font:inherit}button{width:100%;cursor:pointer;margin-top:24px;padding:13px;border-radius:9px;border:1px solid #bcf0ff;font-weight:900;color:#fff;background:linear-gradient(#8cdcff,#278bd1 50%,#124875 52%,#2980c3);box-shadow:inset 0 2px 3px #fff7,0 5px 17px #0a8aff55}.error{color:#ffc2cd;margin-top:15px}</style></head><body><main class="panel"><h1>LUXALGO PRO</h1><p>Private Trading Terminal · Secure Sign In</p><form action="/login" method="post"><input type="hidden" name="next" value="{{ next_path|e }}"><label for="username">Username</label><input id="username" name="username" autocomplete="username" required autofocus><label for="password">Password</label><input id="password" type="password" name="password" autocomplete="current-password" required><button type="submit">SIGN IN</button></form>{% if error %}<p class="error">Incorrect username/password or too many attempts. Please retry.</p>{% endif %}</main></body></html>'''
+
+
+def _safe_next(path):
+    return path if isinstance(path,str) and path.startswith('/') and not path.startswith('//') and not path.startswith('/\\') else '/'
+
+
+@app.route('/login',methods=['GET','POST'])
+def terminal_login():
+    if len(os.getenv('TERMINAL_PASSWORD','')) < 24:
+        return Response('Configure TERMINAL_PASSWORD (minimum 24 characters) in Render first.',status=503)
+    if request.method=='GET':
+        return Response(render_template_string(LOGIN_PAGE,error=False,next_path=_safe_next(request.args.get('next','/'))),headers={'Cache-Control':'no-store'})
+    # Minimal in-memory login attempt throttle; independent of exchange credentials.
+    ip=(request.remote_addr or 'unknown')[:80];now=time.monotonic()
+    with _login_lock:
+        failures=[t for t in _login_failures.get(ip,[]) if now-t<900]
+        _login_failures[ip]=failures
+        limited=len(failures)>=8
+    name=request.form.get('username','');password=request.form.get('password','')
+    valid=(not limited and hmac.compare_digest(name,os.getenv('TERMINAL_USER','admin'))
+           and hmac.compare_digest(password,os.getenv('TERMINAL_PASSWORD','')))
+    if not valid:
+        with _login_lock:
+            _login_failures.setdefault(ip,[]).append(now)
+        return Response(render_template_string(LOGIN_PAGE,error=True,next_path='/'),status=429 if limited else 401,headers={'Cache-Control':'no-store'})
+    with _login_lock: _login_failures.pop(ip,None)
+    session.clear();session.permanent=True
+    session['authenticated']=True;session['user']=name;session['csrf_token']=secrets.token_urlsafe(32)
+    return redirect(_safe_next(request.form.get('next','/')),code=303)
+
+
+def _csrf_valid():
+    submitted=request.form.get('csrf_token','') or request.headers.get('X-Terminal-CSRF','')
+    expected=session.get('csrf_token','')
+    return bool(expected and submitted and hmac.compare_digest(submitted,expected))
+
+
+@app.post('/logout')
+def terminal_logout():
+    if not _terminal_permitted(): return redirect('/login',code=303)
+    if not _csrf_valid(): return Response('Invalid logout request',status=403)
+    session.clear()
+    response=redirect('/login',code=303)
+    response.headers['Cache-Control']='no-store'
+    return response
+
+
+@app.get('/terminal/avatar')
+def terminal_avatar_get():
+    if not _terminal_permitted():return _terminal_guard()
+    try:
+        with _db_connect() as con:
+            _ensure_schema(con)
+            with con.cursor() as cur:
+                cur.execute('SELECT image_data,image_type FROM luxalgo_user_avatar WHERE id=1')
+                row=cur.fetchone()
+        if not row: return Response(status=404)
+        return Response(bytes(row['image_data']),mimetype=row['image_type'],headers={'Cache-Control':'private, no-store','X-Content-Type-Options':'nosniff'})
+    except (psycopg.Error,RuntimeError,OSError):return Response(status=503)
+
+
+@app.post('/terminal/avatar')
+def terminal_avatar_post():
+    if not _terminal_permitted():return _terminal_guard()
+    if not _csrf_valid():return jsonify(error='Invalid request'),403
+    photo=request.files.get('photo')
+    if not photo:return jsonify(error='Image missing'),400
+    raw=photo.read(200001)
+    if len(raw)>200000 or len(raw)<40:return jsonify(error='Image must be 40 bytes to 200 KB'),413
+    # Only accept recognized image signatures; SVG is not accepted.
+    if raw.startswith(b'\x89PNG\r\n\x1a\n'):kind='image/png'
+    elif raw.startswith(b'\xff\xd8\xff'):kind='image/jpeg'
+    elif raw.startswith(b'RIFF') and raw[8:12]==b'WEBP':kind='image/webp'
+    else:return jsonify(error='Unsupported image file'),415
+    try:
+        with _db_connect() as con:
+            _ensure_schema(con)
+            with con.cursor() as cur:
+                cur.execute('''INSERT INTO luxalgo_user_avatar(id,image_data,image_type)
+                    VALUES(1,%s,%s) ON CONFLICT(id) DO UPDATE
+                    SET image_data=EXCLUDED.image_data,image_type=EXCLUDED.image_type,updated_at=NOW()''',(raw,kind))
+        return jsonify(status='saved')
+    except (psycopg.Error,RuntimeError,OSError):return jsonify(error='Photo storage unavailable'),503
 
 
 @app.get('/')
@@ -777,7 +914,7 @@ def home():
         app.logger.exception('Persistent signal storage unavailable')
         return Response('Persistent signal database temporarily unavailable. No trading is active.', status=503)
     response = Response(render_template_string(PAGE, configured=len(expected_webhook_token()) >= 24,
-                                               count=count, records=records), mimetype='text/html')
+                                               count=count, records=records,csrf_token=session.get('csrf_token','')), mimetype='text/html')
     response.headers['Cache-Control'] = 'no-store'
     response.headers['X-Frame-Options'] = 'DENY'
     response.headers['X-Content-Type-Options'] = 'nosniff'
