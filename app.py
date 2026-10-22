@@ -65,6 +65,16 @@ CREATE TABLE IF NOT EXISTS luxalgo_simulated_orders (
  details JSONB NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_luxalgo_sim_orders_recent ON luxalgo_simulated_orders(created_at DESC);
+CREATE TABLE IF NOT EXISTS luxalgo_paper_tracking (
+  event_id TEXT PRIMARY KEY REFERENCES luxalgo_simulated_orders(event_id),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  checked_at TIMESTAMPTZ,
+  state TEXT NOT NULL DEFAULT 'OPEN' CHECK(state IN ('OPEN','SL','TP','UNVERIFIABLE')),
+  last_checked_candle BIGINT,
+  exit_price NUMERIC,
+  estimated_pnl_usdt NUMERIC,
+  notes TEXT NOT NULL DEFAULT 'Hypothetical only; never an exchange fill'
+);
 CREATE TABLE IF NOT EXISTS luxalgo_dry_run_intents (
  event_id TEXT PRIMARY KEY,
  received_at TIMESTAMPTZ NOT NULL,
@@ -247,7 +257,7 @@ h2{font-size:15px;font-weight:850;letter-spacing:.3px}
 <section class="panel performance-panel"><div class="panel-heading"><h2>PERFORMANCE ANALYTICS</h2><span class="label-muted">VERIFIED FILLS ONLY</span></div><div class="perf-grid"><div><span>Total Closed Trades</span><strong>—</strong></div><div><span>Winning Trades</span><strong>—</strong></div><div><span>Losing Trades</span><strong>—</strong></div><div><span>Win Rate</span><strong>—</strong></div><div><span>Total Realized P&amp;L</span><strong>—</strong></div><div><span>Unrealized P&amp;L</span><strong>—</strong></div></div><p class="light">Waiting for authenticated position and fill synchronization. No synthetic P&amp;L or win statistics.</p></section></div><section class="panel"><h2>TRADE PLAN · SL · TP1 <span class="tag">READ ONLY</span></h2>
 <div class="controls"><label>Entry reference <input id="entry" type="number" step="any" placeholder="Choose a signal" readonly></label><label>Stop Loss · 1.5 ATR <input id="sl" type="number" step="any" readonly></label><label>TP1 · 2 ATR · 100% exit <input id="tp1" type="number" step="any" readonly></label></div>
 <div id="planResults">Select Plan + Chart beside a signal to calculate illustrative entry, SL and TP1. No orders are placed.</div></section>
-<section class="panel"><div class="panel-heading"><h2>COMPLETED TRADES · EXIT RECORD</h2><span class="label-muted">PENDING ACCOUNT HISTORY INTEGRATION</span></div><div class="tablewrap"><table><thead><tr><th>TIME (UTC)</th><th>PAIR</th><th>DIRECTION</th><th>ENTRY FILL</th><th>EXIT FILL</th><th>NET REALIZED P&amp;L</th><th>RESULT</th></tr></thead><tbody><tr><td colspan="7" class="empty-state">No verified exchange fills have been synchronized. Signal receipts are not executed trades.</td></tr></tbody></table></div></section><section class="panel"><div class="panel-heading"><h2>EXECUTION SAFETY PREVIEW <span class="tag">DRY RUN ONLY</span></h2><span class="label-muted">NO EXCHANGE ORDERS</span></div><p class="light">Preview illustrative risk and contract-size checks using a hypothetical USDT equity. This does not validate your actual available margin, fee-adjusted fills, current hedge settings, or protective order placement.</p><div class="controls"><label>Trading pair<input id="previewSymbol" value="BTCUSDT" maxlength="29" autocomplete="off"></label><label>Direction<select id="previewSide"><option value="LONG">LONG / BUY</option><option value="SHORT">SHORT / SELL</option></select></label><label>Timeframe<select id="previewTf"><option value="15m">15 minutes</option><option value="5m">5 minutes</option></select></label><label>Hypothetical equity (USDT)<input id="previewEquity" type="number" value="100" min="1" max="10000000" step="any"></label><label>Risk per trade (%)<select id="previewRisk"><option value="0.5">0.5%</option><option value="1" selected>1% (default)</option><option value="1.5">1.5%</option><option value="2">2%</option><option value="2.5">2.5%</option><option value="3">3%</option><option value="3.5">3.5%</option><option value="4">4%</option><option value="4.5">4.5%</option><option value="5">5% (maximum)</option></select></label></div><button class="btn" id="previewButton" type="button">Generate Read-Only Risk Preview</button><p id="signalPreviewContext" class="light" aria-live="polite">Manual calculator input; not a trading recommendation.</p><div id="previewResult" role="status" aria-live="polite" style="white-space:pre-wrap;margin-top:12px;background:#0b1a2b;border:1px solid #2b435e;border-radius:8px;padding:14px;font:12px/1.8 ui-monospace,Consolas,monospace">Ready for a simulated preview. Nothing can place or close orders.</div></section><div class="foot">LUXALGO PRO · Private terminal · Market data is public Gate.io data. Scanners are technical watchlists, not LuxAlgo entry signals. No account positions, fills, profit or loss are available until authenticated exchange sync is implemented. LIVE TRADING OFF; no orders are placed.</div></div><script>
+<section class="panel"><div class="panel-heading"><h2>COMPLETED TRADES · EXIT RECORD</h2><span class="label-muted">PENDING ACCOUNT HISTORY INTEGRATION</span></div><div class="tablewrap"><table><thead><tr><th>TIME (UTC)</th><th>PAIR</th><th>DIRECTION</th><th>ENTRY FILL</th><th>EXIT FILL</th><th>NET REALIZED P&amp;L</th><th>RESULT</th></tr></thead><tbody><tr><td colspan="7" class="empty-state">No verified exchange fills have been synchronized. Signal receipts are not executed trades.</td></tr></tbody></table></div></section><section class="panel"><div class="panel-heading"><h2>PAPER TRADE MONITOR <span class="tag">SIMULATION ONLY</span></h2><button class="btn" id="paperRefresh" type="button">↻ Check Paper Trades</button></div><p class="light" id="paperStatus" role="status" aria-live="polite">Tracks completed candles only when you click refresh. It is not a live order or an exchange fill.</p><div class="tablewrap"><table><thead><tr><th>CREATED (UTC)</th><th>PAIR</th><th>SIDE</th><th>SIM ENTRY</th><th>SIM SL</th><th>SIM TP</th><th>STATE</th><th>EST. P&amp;L (USDT)</th></tr></thead><tbody id="paperBody"><tr><td colspan="8">No simulated positions loaded.</td></tr></tbody></table></div><p class="light">Simulation outcomes assume the reference entry was achievable and exclude fees, slippage and funding. If both SL and TP are touched in one candle, SL is assumed first. Historical-data gaps are not guessed. Simulated P&amp;L is never included in verified real-trade analytics.</p></section><section class="panel"><div class="panel-heading"><h2>EXECUTION SAFETY PREVIEW <span class="tag">DRY RUN ONLY</span></h2><span class="label-muted">NO EXCHANGE ORDERS</span></div><p class="light">Preview illustrative risk and contract-size checks using a hypothetical USDT equity. This does not validate your actual available margin, fee-adjusted fills, current hedge settings, or protective order placement.</p><div class="controls"><label>Trading pair<input id="previewSymbol" value="BTCUSDT" maxlength="29" autocomplete="off"></label><label>Direction<select id="previewSide"><option value="LONG">LONG / BUY</option><option value="SHORT">SHORT / SELL</option></select></label><label>Timeframe<select id="previewTf"><option value="15m">15 minutes</option><option value="5m">5 minutes</option></select></label><label>Hypothetical equity (USDT)<input id="previewEquity" type="number" value="100" min="1" max="10000000" step="any"></label><label>Risk per trade (%)<select id="previewRisk"><option value="0.5">0.5%</option><option value="1" selected>1% (default)</option><option value="1.5">1.5%</option><option value="2">2%</option><option value="2.5">2.5%</option><option value="3">3%</option><option value="3.5">3.5%</option><option value="4">4%</option><option value="4.5">4.5%</option><option value="5">5% (maximum)</option></select></label></div><button class="btn" id="previewButton" type="button">Generate Read-Only Risk Preview</button><p id="signalPreviewContext" class="light" aria-live="polite">Manual calculator input; not a trading recommendation.</p><div id="previewResult" role="status" aria-live="polite" style="white-space:pre-wrap;margin-top:12px;background:#0b1a2b;border:1px solid #2b435e;border-radius:8px;padding:14px;font:12px/1.8 ui-monospace,Consolas,monospace">Ready for a simulated preview. Nothing can place or close orders.</div></section><div class="foot">LUXALGO PRO · Private terminal · Market data is public Gate.io data. Scanners are technical watchlists, not LuxAlgo entry signals. No account positions, fills, profit or loss are available until authenticated exchange sync is implemented. LIVE TRADING OFF; no orders are placed.</div></div><script>
 const entry=document.getElementById('entry'), sl=document.getElementById('sl'), tp1=document.getElementById('tp1');
 // Use the genuine stored LuxAlgo direction to populate the existing risk calculator.
 // This is a manual, read-only action: no webhook or trading API is invoked.
@@ -508,6 +518,31 @@ loadRadar();loadScanner();setInterval(()=>{if(!document.hidden)loadRadar()},6000
    }catch(e){status.textContent='News temporarily unavailable';if(!stack.querySelector('.news-item'))stack.textContent='News unavailable · trading terminal unaffected';}
  }
  load();setInterval(()=>{if(!document.hidden)load()},300000);
+})();
+
+// Stage 3: manual, read-only, completed-candle paper review; no trading API writes.
+(function(){
+ const btn=document.getElementById('paperRefresh'), body=document.getElementById('paperBody'), label=document.getElementById('paperStatus');
+ if(!btn||!body)return;
+ async function refresh(){
+  btn.disabled=true;label.textContent='Checking completed candles for hypothetical trades…';
+  try{
+   const res=await fetch('/terminal/paper-trades',{cache:'no-store'});const data=await res.json();
+   if(!res.ok)throw Error(data.error||'Paper review unavailable');
+   body.replaceChildren();
+   const rows=data.trades||[];
+   if(!rows.length){const r=body.insertRow(),c=r.insertCell();c.colSpan=8;c.textContent='No simulated orders stored yet.';}
+   for(const x of rows){
+    const r=body.insertRow();
+    for(const v of [x.created_at,x.symbol,x.side,x.entry,x.stop,x.take,x.state,x.estimated_pnl_usdt===null?'—':x.estimated_pnl_usdt]){
+     const c=r.insertCell();c.textContent=String(v===null?'—':v);
+    }
+   }
+   label.textContent=rows.length+' stored simulated intents checked · '+(data.errors||0)+' unverified; no orders or exchange fills.';
+  }catch(e){label.textContent='Paper review unavailable: '+e.message+' (real trading remains OFF)';}
+  finally{btn.disabled=false;}
+ }
+ btn.addEventListener('click',refresh);
 })();
 </script></body></html>'''
 
@@ -1245,6 +1280,140 @@ def terminal_simulate_order():
         return jsonify(error='Simulation store unavailable; no order created',orders_placed=0),503
     except (HTTPError,URLError,TimeoutError,ValueError,KeyError,TypeError,OverflowError):
         return jsonify(error='Risk preview unavailable; simulation rejected',orders_placed=0),502
+
+def _completed_gate_candles_after(symbol, tf, after):
+    """Public OHLC only; fail closed on insufficient contiguous candle history."""
+    seconds = 300 if tf == '5m' else 900
+    start = int(after.timestamp())
+    now = int(time.time())
+    if now <= start + seconds:
+        return []
+    # Bound historical review; never silently infer outcomes outside the available history.
+    if now - start > seconds * 950:
+        raise ValueError('Historical interval exceeds conservative candle retrieval window')
+    contract = symbol[:-4] + '_USDT'
+    url = ('https://api.gateio.ws/api/v4/futures/usdt/candlesticks?' +
+           urlencode({'contract':contract,'interval':tf,'from':max(0,start-seconds), 'to':now, 'limit':1000}))
+    req=Request(url,headers={'Accept':'application/json','User-Agent':'LuxAlgoPRO-PaperMonitor/1.0'},method='GET')
+    with urlopen(req,timeout=10) as res:
+        raw=json.loads(res.read(450000))
+    if not isinstance(raw,list): raise ValueError('Invalid candle data')
+    out=[]
+    for bar in raw:
+        stamp=int(bar['t'])
+        if stamp < start or stamp + seconds > now:continue
+        high,low=(float(bar[k]) for k in ('h','l'))
+        if not math.isfinite(high) or not math.isfinite(low) or low<=0 or high<low:
+            raise ValueError('Invalid completed candle')
+        out.append((stamp, high, low))
+    out=sorted(set(out))
+    # Require a consecutive series for all *fully completed* intervals after intent creation.
+    first=((start + seconds-1)//seconds)*seconds
+    last=((now//seconds)-1)*seconds
+    required=max(0,(last-first)//seconds+1)
+    if required and (len(out)<required or out[0][0]!=first or
+                     any(b[0]-a[0]!=seconds for a,b in zip(out,out[1:]))):
+        raise ValueError('Candle history has gaps; outcome cannot be established')
+    return out
+
+
+def _paper_trade_snapshot(order):
+    """Conservative hypothetical OHLC simulation, NOT a trade execution or fill."""
+    from decimal import Decimal, InvalidOperation
+    doc=order['details']
+    try:
+        entry=Decimal(str(doc['reference_entry']))
+        stop=Decimal(str(doc['stop_loss']))
+        take=Decimal(str(doc['take_profit']))
+        contracts=Decimal(str(doc['size_contracts']))
+        if not all(v.is_finite() and v>0 for v in (entry,stop,take,contracts)):
+            raise ValueError('Invalid simulation prices/size')
+        side=order['side']
+        if not ((side=='LONG' and stop<entry<take) or (side=='SHORT' and take<entry<stop)):
+            raise ValueError('Invalid risk geometry')
+        # Public specs are not assumed to be unchanged: P&L needs a known multiplier.
+        contract=order['symbol'][:-4]+'_USDT'
+        req=Request('https://api.gateio.ws/api/v4/futures/usdt/contracts/'+contract,
+                    headers={'Accept':'application/json','User-Agent':'LuxAlgoPRO-PaperMonitor/1.0'},method='GET')
+        with urlopen(req,timeout=8) as res:spec=json.loads(res.read(65536))
+        mult=Decimal(str(spec['quanto_multiplier']))
+        if not mult.is_finite() or mult<=0:raise ValueError('Multiplier unverified')
+    except (InvalidOperation,KeyError,TypeError):
+        raise ValueError('Unverifiable simulated trade fields')
+    candles=_completed_gate_candles_after(order['symbol'],order['timeframe'],order['created_at'])
+    state='OPEN';exit_price=None;exit_bar=None
+    for t,hi,lo in candles:
+        stop_hit=lo<=float(stop) if side=='LONG' else hi>=float(stop)
+        take_hit=hi>=float(take) if side=='LONG' else lo<=float(take)
+        if stop_hit or take_hit:
+            # Pessimistic assumption for same-bar ambiguity: stop first.
+            state='SL' if stop_hit else 'TP'
+            exit_price=stop if stop_hit else take
+            exit_bar=t
+            break
+    pnl=None
+    if exit_price is not None:
+        delta=(exit_price-entry) if side=='LONG' else (entry-exit_price)
+        pnl=delta*contracts*mult
+    return dict(event_id=order['event_id'],created_at=order['created_at'].isoformat(),
+                symbol=order['symbol'],side=side,timeframe=order['timeframe'],
+                entry=str(entry),stop=str(stop),take=str(take),
+                state=state,exit_candle=exit_bar,exit_price=str(exit_price) if exit_price is not None else None,
+                estimated_pnl_usdt=str(round(pnl,8)) if pnl is not None else None)
+
+
+@app.get('/terminal/paper-trades')
+def terminal_paper_trades():
+    if not _terminal_permitted():return _terminal_guard()
+    if os.getenv('LIVE_TRADING_ENABLED','false').strip().lower() != 'false':
+        return jsonify(error='Paper monitor requires LIVE_TRADING_ENABLED=false'),503
+    output=[];errors=0
+    try:
+        with _db_connect() as con:
+            _ensure_schema(con)
+            with con.cursor() as cur:
+                cur.execute("SELECT event_id, created_at, symbol, side, timeframe, details FROM luxalgo_simulated_orders ORDER BY created_at DESC LIMIT 10")
+                orders=cur.fetchall()
+        for order in orders:
+            try:
+                # Once a simulated outcome has been recorded, never rewrite it after later candles.
+                with _db_connect() as con:
+                    with con.cursor() as cur:
+                        cur.execute('SELECT state,exit_price,estimated_pnl_usdt,last_checked_candle FROM luxalgo_paper_tracking WHERE event_id=%s',(order['event_id'],))
+                        saved=cur.fetchone()
+                if saved and saved['state'] in ('SL','TP'):
+                    d=order['details']
+                    output.append(dict(event_id=order['event_id'],created_at=order['created_at'].isoformat(),
+                        symbol=order['symbol'],side=order['side'],entry=d['reference_entry'],stop=d['stop_loss'],
+                        take=d['take_profit'],state=saved['state'],estimated_pnl_usdt=str(saved['estimated_pnl_usdt']) if saved['estimated_pnl_usdt'] is not None else None))
+                    continue
+                snapshot=_paper_trade_snapshot(order)
+                with _db_connect() as con:
+                    with con.cursor() as cur:
+                        cur.execute("""INSERT INTO luxalgo_paper_tracking
+                           (event_id,checked_at,state,last_checked_candle,exit_price,estimated_pnl_usdt,notes)
+                           VALUES (%s,NOW(),%s,%s,%s,%s,'Historical OHLC estimate only; no exchange fill')
+                           ON CONFLICT(event_id) DO UPDATE SET checked_at=NOW(),state=EXCLUDED.state,
+                           last_checked_candle=EXCLUDED.last_checked_candle,exit_price=EXCLUDED.exit_price,
+                           estimated_pnl_usdt=EXCLUDED.estimated_pnl_usdt
+                           WHERE luxalgo_paper_tracking.state='OPEN' """,
+                           (order['event_id'],snapshot['state'],snapshot['exit_candle'],
+                            snapshot['exit_price'],snapshot['estimated_pnl_usdt']))
+                output.append(snapshot)
+            except (ValueError,HTTPError,URLError,TimeoutError,KeyError,TypeError,OSError,psycopg.Error) as err:
+                errors+=1
+                app.logger.warning('Paper candle review unavailable for event %s: %s',order['event_id'],type(err).__name__)
+                d=order['details']
+                output.append(dict(event_id=order['event_id'],created_at=order['created_at'].isoformat(),
+                    symbol=order['symbol'],side=order['side'],entry=d.get('reference_entry'),
+                    stop=d.get('stop_loss'),take=d.get('take_profit'),state='UNVERIFIABLE',estimated_pnl_usdt=None))
+        response=jsonify(trades=output,errors=errors,mode='HISTORICAL_PAPER_ONLY',orders_placed=0)
+        response.headers['Cache-Control']='no-store'
+        return response
+    except (psycopg.Error,RuntimeError,OSError):
+        app.logger.exception('Paper tracking database unavailable')
+        return jsonify(error='Paper tracking DB unavailable',orders_placed=0),503
+
 
 @app.post('/gate/plan')
 def gate_plan():
