@@ -1408,8 +1408,10 @@ loadRadar();loadScanner();setInterval(()=>{if(!document.hidden)loadRadar()},6000
 // Stage 3: manual, read-only, completed-candle paper review; no trading API writes.
 (function(){
  const btn=document.getElementById('paperRefresh'), body=document.getElementById('paperBody'), label=document.getElementById('paperStatus'), total=document.getElementById('paperOpenPnlTotal');
+ let quoteBusy=false; let refreshBusy=false;
  if(!btn||!body)return;
  async function refresh(){
+  if(refreshBusy)return;refreshBusy=true;
   btn.disabled=true;label.textContent='Checking completed candles for hypothetical trades…';
   try{
    const res=await fetch('/terminal/paper-trades',{cache:'no-store'});const data=await res.json();
@@ -1418,7 +1420,7 @@ loadRadar();loadScanner();setInterval(()=>{if(!document.hidden)loadRadar()},6000
    const rows=data.trades||[];
    if(!rows.length){const r=body.insertRow(),c=r.insertCell();c.colSpan=10;c.textContent='No simulated orders stored yet.';}
    for(const x of rows){
-    const r=body.insertRow();
+    const r=body.insertRow();r.dataset.paperEventId=x.event_id;r.dataset.paperState=x.state;
     for(const v of [x.created_at,x.symbol,x.side,x.entry,x.stop,x.take,x.state,x.state==='OPEN'?(x.mark_price??'—'):'—',x.state==='OPEN'?(x.unrealized_pnl_usdt??'—'):'—',x.state!=='OPEN'?(x.estimated_pnl_usdt??'—'):'—']){
      const c=r.insertCell();c.textContent=String(v===null?'—':v);
     }
@@ -1427,12 +1429,44 @@ loadRadar();loadScanner();setInterval(()=>{if(!document.hidden)loadRadar()},6000
    if(total){const available=rows.filter(x=>x.state==='OPEN' && x.unrealized_pnl_usdt!==null && x.unrealized_pnl_usdt!==undefined).length;
     total.textContent='OPEN PAPER UNREALIZED P&L (USDT): '+(data.open_unrealized_pnl_usdt===null?'Unavailable / incomplete market data':data.open_unrealized_pnl_usdt)+' · Priced '+available+'/'+rows.filter(x=>x.state==='OPEN').length+' open simulations · Public Gate.io last prices, estimated only; excludes fees, funding and slippage.';}
   }catch(e){label.textContent='Paper review unavailable: '+e.message+' (real trading remains OFF)';}
-  finally{btn.disabled=false;}
+  finally{btn.disabled=false;refreshBusy=false;}
  }
  btn.addEventListener('click',refresh);
- // Best-effort when dashboard is open; Render Free is not a 24/7 worker.
- setInterval(()=>{if(!document.hidden && !btn.disabled)refresh();},30000);
- refresh();
+ // Fast read-only mark-to-market updates never invoke the lifecycle processor.
+ async function refreshQuotes(){
+  if(quoteBusy||document.hidden)return;quoteBusy=true;
+  try{
+   const controller=new AbortController();const timeout=setTimeout(()=>controller.abort(),6500);
+   let res;
+   try{res=await fetch('/terminal/paper-live-pnl',{cache:'no-store',signal:controller.signal});}
+   finally{clearTimeout(timeout);}
+   if(!res.ok)throw Error('Quote feed unavailable');
+   const d=await res.json();const marks=d.marks||{};
+   for(const r of body.querySelectorAll('tr[data-paper-event-id]')){
+    if(r.dataset.paperState!=='OPEN')continue;
+    const cells=r.cells;if(cells.length<10)continue;
+    const mark=marks[r.dataset.paperEventId];
+    cells[7].textContent=mark?.mark_price??'—';
+    cells[8].textContent=mark?.unrealized_pnl_usdt??'—';
+    const v=Number(mark?.unrealized_pnl_usdt);
+    cells[8].classList.toggle('positive',mark&&Number.isFinite(v)&&v>0);
+    cells[8].classList.toggle('negative',mark&&Number.isFinite(v)&&v<0);
+   }
+   if(total){
+    const complete=d.open_count===d.priced && d.open_unrealized_pnl_usdt!==null;
+    total.textContent='OPEN PAPER UNREALIZED P&L (USDT): '+(complete?d.open_unrealized_pnl_usdt:'Unavailable / incomplete prices')+' · Priced '+d.priced+'/'+d.open_count+' open simulations · Auto-updates about every 3 seconds · Last public prices (not exchange fills).';
+    const v=Number(d.open_unrealized_pnl_usdt);
+    total.classList.toggle('positive',complete&&Number.isFinite(v)&&v>0);
+    total.classList.toggle('negative',complete&&Number.isFinite(v)&&v<0);
+   }
+  }catch(e){if(total)total.textContent='Paper live quotes temporarily unavailable; automatic retrying. No actual exchange P&L.';}
+  finally{quoteBusy=false;}
+ }
+ // Lifecycle review runs slowly; quotes refresh independently without rebuilding the table.
+ setInterval(()=>{if(!document.hidden)refresh();},60000);
+ setInterval(refreshQuotes,3000);
+ document.addEventListener('visibilitychange',()=>{if(!document.hidden){refresh();refreshQuotes();}});
+ refresh().then(refreshQuotes);
 })();
 
 // Auto-update LuxAlgo signal receipts without manual page refresh.
@@ -4201,6 +4235,8 @@ def _auto_paper_process(max_items=5):
     return completed
 
 
+_paper_multiplier_cache = {}  # public contract specifications; cached for 30 minutes
+
 def _paper_open_marks(orders):
     """Public GET-only marked hypothetical P&L. Never estimates missing specs."""
     from decimal import Decimal, InvalidOperation
@@ -4228,8 +4264,12 @@ def _paper_open_marks(orders):
             entry = Decimal(str(o['entry']))
             size = Decimal(str(o['size_contracts']))
             if contract not in multipliers:
-                spec = _scan_http_json('/api/v4/futures/usdt/contracts/'+contract)
-                multipliers[contract] = Decimal(str(spec['quanto_multiplier']))
+                cached=_paper_multiplier_cache.get(contract)
+                if cached is None or time.monotonic()-cached[0]>1800:
+                    spec = _scan_http_json('/api/v4/futures/usdt/contracts/'+contract)
+                    cached=(time.monotonic(),str(spec['quanto_multiplier']))
+                    _paper_multiplier_cache[contract]=cached
+                multipliers[contract]=Decimal(cached[1])
             mult = multipliers[contract]
             if not all(x.is_finite() and x>0 for x in (price,entry,size,mult)):
                 raise ValueError('Invalid market valuation inputs')
@@ -4242,6 +4282,45 @@ def _paper_open_marks(orders):
             complete = False
     return marked, round(total,8) if complete else None
 
+
+# Fast, GET-only paper quote snapshots. Never runs candle simulation or writes to DB.
+# A brief shared cache prevents each browser polling session from multiplying API load.
+_paper_live_cache_lock = Lock()
+_paper_live_cache = {'at':0.0,'value':None}
+
+@app.get('/terminal/paper-live-pnl')
+def terminal_paper_live_pnl():
+    if not _terminal_permitted(): return _terminal_guard()
+    if os.getenv('LIVE_TRADING_ENABLED','false').strip().lower() != 'false':
+        return jsonify(error='Live exchange execution must remain disabled',orders_placed=0),503
+    try:
+        now=time.monotonic()
+        with _paper_live_cache_lock:
+            if _paper_live_cache['value'] is not None and now-_paper_live_cache['at']<3.0:
+                result=_paper_live_cache['value']
+            else:
+                with _db_connect() as con:
+                    with con.cursor() as cur:
+                        cur.execute("""SELECT o.event_id,o.symbol,o.side,o.details
+                          FROM luxalgo_simulated_orders o
+                          JOIN luxalgo_paper_tracking t ON t.event_id=o.event_id
+                          WHERE t.state='OPEN'
+                          ORDER BY o.created_at DESC LIMIT 10""")
+                        orders=cur.fetchall()
+                opens=[dict(event_id=o['event_id'],symbol=o['symbol'],side=o['side'],
+                    state='OPEN',entry=o['details'].get('reference_entry'),
+                    size_contracts=o['details'].get('size_contracts')) for o in orders]
+                marks,total=_paper_open_marks(opens)
+                result=dict(marks=marks,open_unrealized_pnl_usdt=str(total) if total is not None else None,
+                    priced=len(marks),open_count=len(opens),source='GATE_IO_PUBLIC_LAST_PRICE',
+                    as_of=datetime.now(timezone.utc).isoformat(),orders_placed=0)
+                _paper_live_cache.update(at=time.monotonic(),value=result)
+        response=jsonify(result)
+        response.headers['Cache-Control']='no-store'
+        return response
+    except (psycopg.Error,RuntimeError,OSError,ValueError,TypeError):
+        app.logger.warning('Fast paper mark data temporarily unavailable',exc_info=False)
+        return jsonify(error='Paper live quotes unavailable',orders_placed=0),503
 
 @app.get('/terminal/paper-trades')
 def terminal_paper_trades():
