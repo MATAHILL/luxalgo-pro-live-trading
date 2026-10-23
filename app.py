@@ -1353,6 +1353,32 @@ def terminal_hide_recent_signal():
     except (psycopg.Error,RuntimeError,OSError):
         return jsonify(error='Signal history database unavailable'),503
 
+def _repair_wrapped_token_newlines(text):
+    """Repair one known TradingView formatting defect, never arbitrary malformed JSON.
+
+    Some alert templates insert physical newlines within an alphanumeric token
+    and, rarely, omit the token's closing quote. Only repair that field when
+    it matches the *configured* secret after whitespace removal. All other
+    fields must still parse as normal JSON and pass existing validation.
+    """
+    expected = expected_webhook_token()
+    if len(expected) < 24 or not re.fullmatch(r'[A-Za-z0-9]+', expected):
+        return text
+
+    # Match only the token field directly followed by another recognized key.
+    # A missing closing quote is tolerated ONLY with the configured secret.
+    pattern = (r'("token"\s*:\s*")([A-Za-z0-9\s]+)("?)\s*'
+               r'(,)(?=\s*"(?:source|alert|symbol|ticker|side|tf|entry|sl|tp1)"\s*:)')
+
+    def repair(match):
+        candidate = re.sub(r'\s+', '', match.group(2))
+        if not hmac.compare_digest(candidate, expected):
+            return match.group(0)
+        return match.group(1) + expected + '"' + match.group(4)
+
+    return re.sub(pattern, repair, text, count=1)
+
+
 def _parse_luxalgo_webhook_body(raw):
     """Parse a genuine JSON object, including TradingView/LuxAlgo quote wrappers.
 
@@ -1367,6 +1393,10 @@ def _parse_luxalgo_webhook_body(raw):
         return None
     if not text:
         return None
+
+    # Apply a restricted, authenticated repair for a line-wrapped token.
+    # This does not accept malformed data elsewhere in the payload.
+    text = _repair_wrapped_token_newlines(text)
 
     # Most TradingView alert() messages are ordinary JSON text. Some providers
     # wrap the WHOLE message in an extra pair of quotes, escaped or unescaped.
@@ -1384,7 +1414,7 @@ def _parse_luxalgo_webhook_body(raw):
         if len(text) >= 4 and text.startswith('"') and text.endswith('"'):
             inner = text[1:-1].strip()
             if inner.startswith('{') and inner.endswith('}'):
-                text = inner
+                text = _repair_wrapped_token_newlines(inner)
                 continue
         break
     return None
