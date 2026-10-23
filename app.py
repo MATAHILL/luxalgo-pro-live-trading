@@ -1762,6 +1762,84 @@ def terminal_live_order_guard_test():
         app.logger.exception('Live guard audit unavailable')
         return jsonify(error='Live guard database unavailable: blocked',orders_placed=0),503
 
+# STAGE 1 — purely computational candidate validation. NO EXCHANGE WRITES.
+# Deliberately isolated from the existing /webhook route and all paper queues.
+def _live_candidate_dry_run(payload):
+    from decimal import Decimal, InvalidOperation
+    if not isinstance(payload, dict):
+        return {'status': 'BLOCKED', 'reason': 'JSON object required', 'orders_placed': 0}
+    symbol = str(payload.get('symbol', '')).strip().upper().removeprefix('GATE:').removesuffix('.P')
+    side = str(payload.get('side', '')).strip().upper()
+    tf = str(payload.get('tf', '')).strip().lower()
+    if not re.fullmatch(r'[A-Z0-9]{3,25}USDT', symbol) or side not in ('LONG','SHORT') or tf not in ('5','5m','15','15m'):
+        return {'status': 'BLOCKED', 'reason': 'Invalid symbol, direction or timeframe', 'orders_placed': 0}
+    try:
+        def positive(name):
+            value = payload.get(name)
+            if isinstance(value, bool) or value is None:
+                raise ValueError(name)
+            n = Decimal(str(value))
+            if not n.is_finite() or n <= 0:
+                raise ValueError(name)
+            return n
+        entry, stop, tp, equity = [positive(k) for k in ('entry','sl','tp1','equity_usdt')]
+        risk_percent = Decimal(str(payload.get('risk_percent', '0.5')))
+        if not risk_percent.is_finite() or risk_percent <= 0 or risk_percent > Decimal('0.5'):
+            raise ValueError('risk_percent')
+        if equity > Decimal('1000000000'):
+            raise ValueError('equity_usdt')
+        if side == 'LONG' and not (stop < entry < tp):
+            raise ValueError('Invalid LONG stop/target order')
+        if side == 'SHORT' and not (tp < entry < stop):
+            raise ValueError('Invalid SHORT stop/target order')
+        stop_gap = abs(entry-stop)
+        risk_budget = equity * risk_percent / Decimal('100')
+        base_asset_quantity = risk_budget / stop_gap
+        indicative_notional = base_asset_quantity * entry
+        if not all(v.is_finite() for v in (risk_budget,base_asset_quantity,indicative_notional)):
+            raise ValueError('Nonfinite calculation')
+    except (ValueError, TypeError, InvalidOperation, OverflowError, ZeroDivisionError):
+        return {'status': 'BLOCKED', 'reason': 'Invalid prices, equity or risk; no quote/size inferred', 'orders_placed': 0}
+    return {
+        'status': 'DRY_RUN_ONLY', 'safe_to_trade': False, 'orders_enabled': False,
+        'orders_placed': 0, 'exchange_requests': 0, 'symbol': symbol,
+        'side': side, 'timeframe': '5m' if tf.startswith('5') else '15m',
+        'risk_percent': str(risk_percent), 'risk_budget_usdt': str(risk_budget),
+        'hypothetical_base_asset_quantity': str(base_asset_quantity),
+        'hypothetical_notional_usdt': str(indicative_notional),
+        'risk_reward_ratio': str(abs(tp-entry)/stop_gap),
+        'blockers': [
+            'Equity is user-supplied, not verified by this calculation',
+            'Gate.io contract multiplier and lot increments are NOT validated',
+            'Margin, fees, spread, leverage, position mode and existing exposure are NOT checked',
+            'Exchange SL/TP placement, fill reconciliation and durable live idempotency are not implemented',
+            'No real trading authorization exists'
+        ]
+    }
+
+
+@app.post('/terminal/live-candidate-preview')
+def terminal_live_candidate_preview():
+    # Authenticated read-only calculator. Enforces same-origin when Origin exists.
+    if not _terminal_permitted():
+        return _terminal_guard()
+    origin = request.headers.get('Origin')
+    if origin:
+        configured = os.getenv('PUBLIC_BASE_URL','').strip().rstrip('/') or ('https://' + request.host)
+        target = urlsplit(configured)
+        given = urlsplit(origin)
+        if (target.scheme != 'https' or not target.netloc or target.path or target.query or target.fragment
+                or given.scheme != 'https' or given.netloc != target.netloc or given.path or given.query or given.fragment):
+            return jsonify(error='Origin mismatch',orders_placed=0),403
+    if os.getenv('LIVE_TRADING_ENABLED','false').strip().lower() != 'false':
+        return jsonify(error='Preview requires LIVE_TRADING_ENABLED=false',orders_placed=0),503
+    data = request.get_json(silent=True) if request.is_json else None
+    result = _live_candidate_dry_run(data)
+    response = jsonify(result)
+    response.headers['Cache-Control'] = 'private, no-store'
+    return response, (200 if result['status'] == 'DRY_RUN_ONLY' else 422)
+
+
 @app.get('/terminal/live-readiness')
 def terminal_live_readiness():
     if not _terminal_permitted():
