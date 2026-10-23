@@ -722,7 +722,7 @@ h2{font-size:15px;font-weight:850;letter-spacing:.3px}
       const r=await fetch('/terminal/stage8-ack-recovery-test',{method:'POST',credentials:'same-origin',cache:'no-store',headers:{'Content-Type':'application/json'},body:'{}'});
       const d=await r.json();
       out.textContent='Stage 8 '+String(d.status||'BLOCKED')+' · '+String(d.detail||d.error||'Unavailable')+' · Exchange orders: 0';
-      out.style.color=r.ok&&d.status==='PASS'?'#63f0c3':'#ffb6b6';
+      out.style.color=r.ok&&d.status==='PASS'?'#63f0c3':(r.ok&&d.status==='PASS_WITH_GAPS'?'#ffcf89':'#ffb6b6');
     }catch(e){out.textContent='Stage 8 BLOCKED · Diagnostic unavailable; no exchange orders.';out.style.color='#ffb6b6';}
     finally{b.disabled=false;}
   });
@@ -3408,10 +3408,18 @@ def terminal_stage15_real_paper_audit():
                     LEFT JOIN luxalgo_paper_tracking p ON p.event_id=i.event_id
                     ORDER BY i.received_at DESC LIMIT 100""")
                 rows=cur.fetchall()
-        invalid=[]
+        # Classify actual lifecycle inconsistencies separately from historical
+        # signal metadata gaps. Missing metadata remains visible and is NOT repaired.
+        invalid=[];missing_levels=[];incomplete_levels=[];historical_simulated_gaps=[]
         for r in rows:
+            if r['levels_status'] is None:
+                missing_levels.append(r['event_id'])
+                if r['simulated_status']=='SIMULATED_ONLY':
+                    historical_simulated_gaps.append(r['event_id'])
+            elif r['levels_status']!='VALID':
+                incomplete_levels.append(r['event_id'])
             if (r['side'] not in ('LONG','SHORT') or r['timeframe'] not in ('5m','15m') or
-                r['levels_status'] not in ('VALID','INVALID','MISSING') or
+                r['levels_status'] not in (None,'VALID','INVALID','MISSING') or
                 r['queue_state'] not in (None,'PENDING','CREATED','REJECTED') or
                 r['simulated_status'] not in (None,'SIMULATED_ONLY') or
                 r['tracking_state'] not in (None,'OPEN','SL','TP','UNVERIFIABLE') or
@@ -3424,19 +3432,25 @@ def terminal_stage15_real_paper_audit():
         simulated=sum(r['simulated_status']=='SIMULATED_ONLY' for r in rows)
         with_levels=sum(r['levels_status']=='VALID' for r in rows)
         if invalid:
-            state='BLOCKED';detail=f'{len(invalid)} inconsistent paper lifecycle record(s) in latest {len(rows)} intents; review required'
+            state='BLOCKED';detail=f'{len(invalid)} core paper lifecycle conflict(s) in latest {len(rows)} intents; review required'
         elif not rows or simulated==0:
-            state='INSUFFICIENT_DATA';detail=('Read-only database integrity OK, but no complete webhook-to-paper simulation in latest 100 intents. '
-                'Enable PAPER bot only if desired and observe a genuine new LuxAlgo alert. '
-                'Previously stored alerts alone do not establish end-to-end paper execution')
+            state='INSUFFICIENT_DATA';detail=('No verified end-to-end webhook-to-paper simulation among latest intents. '
+                f'Missing level records: {len(missing_levels)}; non-valid level records: {len(incomplete_levels)}. '
+                'Historical receipts do not prove TradingView origin or paper execution')
+        elif missing_levels or incomplete_levels:
+            state='PASS_WITH_GAPS';detail=(f'Core lifecycle conflicts: 0 among {len(rows)} intents; '
+                f'{simulated} simulated, {with_levels} valid explicit level sets; '
+                f'{len(missing_levels)} missing level records, {len(incomplete_levels)} non-valid level records, '
+                f'{len(historical_simulated_gaps)} older simulated trades without level records. '
+                'Historical gaps were not altered; full integrity is NOT confirmed')
         else:
-            state='PASS';detail=(f'Read-only stored webhook-to-paper consistency verified for {len(rows)} recent intents; '
-                f'{simulated} simulated, {with_levels} explicit valid level sets, '
+            state='PASS';detail=(f'No detected lifecycle or signal-level record gaps across {len(rows)} recent intents; '
+                f'{simulated} simulated, {with_levels} valid level sets, '
                 f'queue created={breakdown["CREATED"]}, pending={breakdown["PENDING"]}, rejected={breakdown["REJECTED"]}. '
-                'Does NOT prove TradingView origin, actual order fills, protective order coverage or 24/7 runtime')
+                'Does NOT prove TradingView origin, real fills, protective orders or 24/7 runtime')
         response=jsonify(status=state,detail=detail,receipt_count=counts['n'],
             distinct_receipt_events=counts['distinct_n'],intents_inspected=len(rows),
-            simulated_count=simulated,queue_counts=breakdown,paper_bot_enabled=bool(bot['enabled']),
+            simulated_count=simulated,queue_counts=breakdown,core_lifecycle_conflicts=len(invalid),missing_level_records=len(missing_levels),nonvalid_level_records=len(incomplete_levels),historical_simulated_missing_levels=len(historical_simulated_gaps),paper_bot_enabled=bool(bot['enabled']),
             persistent_halt=True,live_trading=False,real_exchange_reconciled=False,exchange_orders=0)
         response.headers['Cache-Control']='private, no-store'
         return response, 503 if state=='BLOCKED' else 200
@@ -4118,9 +4132,11 @@ def _auto_paper_process(max_items=5):
         with con.cursor() as cur:
             if not _bot_enabled(cur):
                 return 0
-            cur.execute('''SELECT q.event_id,q.received_at,i.symbol,i.side,i.timeframe
+            cur.execute('''SELECT q.event_id,q.received_at,i.symbol,i.side,i.timeframe,
+                       l.status AS levels_status
                 FROM luxalgo_auto_paper_queue q
                 JOIN luxalgo_dry_run_intents i ON i.event_id=q.event_id
+                LEFT JOIN luxalgo_signal_levels l ON l.event_id=q.event_id
                 WHERE q.state='PENDING' ORDER BY q.received_at ASC LIMIT %s''',(max_items,))
             pending=cur.fetchall()
     completed=0
@@ -4128,7 +4144,11 @@ def _auto_paper_process(max_items=5):
         eid=item['event_id']
         age=(datetime.now(timezone.utc)-item['received_at']).total_seconds()
         state='REJECTED';note='Unverified risk or market data'
-        if age < 0 or age > 120:
+        if item['levels_status']!='VALID':
+            # Never create a new simulated order when the original alert did
+            # not supply validated LONG/SHORT entry, stop and target levels.
+            note='Rejected: explicit LuxAlgo entry/SL/TP levels missing or invalid'
+        elif age < 0 or age > 120:
             note='Signal expired before paper simulation; no retrospective entry assumed'
         else:
             try:
