@@ -1353,13 +1353,57 @@ def terminal_hide_recent_signal():
     except (psycopg.Error,RuntimeError,OSError):
         return jsonify(error='Signal history database unavailable'),503
 
+def _parse_luxalgo_webhook_body(raw):
+    """Accept the strict JSON object or LuxAlgo's quoted JSON-message wrapper.
+
+    TradingView can deliver alert() messages with text/plain and LuxAlgo may
+    enclose the serialized JSON object in quotation marks. No token validation
+    happens here: the caller always authenticates the resulting dictionary.
+    """
+    if not raw or len(raw) > 16000:
+        return None
+    try:
+        text = raw.decode('utf-8-sig').strip()
+    except UnicodeDecodeError:
+        return None
+    if not text:
+        return None
+    # Pass 1: standards-compliant JSON object or JSON string containing an object.
+    try:
+        parsed = json.loads(text)
+    except (ValueError, TypeError):
+        parsed = None
+    if isinstance(parsed, dict):
+        return parsed
+    if isinstance(parsed, str):
+        try:
+            nested = json.loads(parsed.strip())
+            if isinstance(nested, dict):
+                return nested
+        except (ValueError, TypeError):
+            pass
+    # Pass 2: LuxAlgo's literal, unescaped outer double quotes seen in TV logs:
+    #     "{\n  \"token\": ...\n}"
+    # Only remove ONE paired outer wrapper; the inside MUST still be valid JSON.
+    if len(text) >= 4 and text[0] == text[-1] == '"':
+        inner = text[1:-1].strip()
+        if inner.startswith('{') and inner.endswith('}'):
+            try:
+                parsed = json.loads(inner)
+                if isinstance(parsed, dict):
+                    return parsed
+            except (ValueError, TypeError):
+                pass
+    return None
+
+
 @app.post('/webhook')
 def webhook():
     if len(expected_webhook_token()) < 24:
         return jsonify(error='Webhook token not configured'), 503
-    if not request.is_json:
-        return jsonify(error='JSON required'), 400
-    data = request.get_json(silent=True)
+    # TradingView alert() may use text/plain even when its message is JSON.
+    # Never accept invalid JSON, and NEVER bypass authentication.
+    data = _parse_luxalgo_webhook_body(request.get_data(cache=False, as_text=False))
     if not isinstance(data, dict):
         return jsonify(error='JSON object required'), 400
     if not authorized(data):
