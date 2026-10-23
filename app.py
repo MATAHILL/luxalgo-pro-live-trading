@@ -3276,9 +3276,11 @@ def terminal_stage14_final_paper_test():
     run_id='st14_'+secrets.token_hex(16)
     rows=[(run_id,'case_'+str(i),side,_stage14_paper_case(side,e,s,t,p),50)
           for i,(side,e,s,t,p,expected) in enumerate(cases) if expected.startswith('PAPER_')]
+    phase='connect_and_schema'
     try:
         with _db_connect() as con:
             _ensure_schema(con)
+            phase='halt_and_fixture_writes'
             with con.cursor() as cur:
                 cur.execute('SELECT halted FROM luxalgo_stage6_execution_halt WHERE id=1')
                 h=cur.fetchone()
@@ -3294,6 +3296,7 @@ def terminal_stage14_final_paper_test():
                     ON CONFLICT (run_id,event_id) DO NOTHING RETURNING event_id''',rows[0])
                 if cur.fetchone() is not None:
                     return jsonify(status='BLOCKED',error='Duplicate event not rejected',exchange_orders=0),503
+        phase='fresh_connection_readback'
         with _db_connect() as con:
             with con.cursor() as cur:
                 cur.execute('''SELECT event_id,side,state,risk_bps FROM luxalgo_stage14_final_diagnostics
@@ -3301,6 +3304,7 @@ def terminal_stage14_final_paper_test():
                 persisted=cur.fetchall()
                 cur.execute('SELECT halted FROM luxalgo_stage6_execution_halt WHERE id=1')
                 h=cur.fetchone()
+        phase='readback_validation'
         expected=sorted((event,side,state,risk) for _,event,side,state,risk in rows)
         actual=sorted((r['event_id'],r['side'],r['state'],r['risk_bps']) for r in persisted)
         if actual!=expected or not h or h['halted'] is not True or any(risk>50 for _,_,_,risk in rows):
@@ -3315,8 +3319,19 @@ def terminal_stage14_final_paper_test():
                          real_end_to_end_tested=False,exchange_orders=0,live_trading=False,detail=detail)
         response.headers['Cache-Control']='private, no-store'
         return response,200
-    except (psycopg.Error,RuntimeError,OSError,ValueError,TypeError):
-        return jsonify(status='BLOCKED',error='Database or safety audit unavailable; fail closed',exchange_orders=0),503
+    except (psycopg.Error,RuntimeError,OSError,ValueError,TypeError) as exc:
+        # Sanitized diagnostics: no SQL text, credentials, private account data, or exception message.
+        # Gives the operator a concrete failure location and stable error classification.
+        code=getattr(exc, 'sqlstate', None)
+        if not isinstance(code,str) or not re.fullmatch(r'[0-9A-Z]{5}',code):
+            code='NONE'
+        kind=type(exc).__name__
+        if not re.fullmatch(r'[A-Za-z][A-Za-z0-9_]{0,63}',kind):
+            kind='UnknownError'
+        return jsonify(status='BLOCKED',error='Stage 14 audit failed safely',
+                       diagnostic_phase=phase,error_type=kind,sqlstate=code,
+                       detail=f'Audit blocked at {phase}; {kind}, SQLSTATE {code}. Live trading stays OFF',
+                       exchange_orders=0,live_trading=False),503
 
 @app.get('/terminal/live-readiness')
 def terminal_live_readiness():
