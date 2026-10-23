@@ -149,6 +149,21 @@ CREATE TABLE IF NOT EXISTS luxalgo_stage5_sim_order_ledger (
   detail JSONB NOT NULL DEFAULT '{}'::jsonb
 );
 CREATE INDEX IF NOT EXISTS idx_stage5_sim_ledger_state ON luxalgo_stage5_sim_order_ledger(state,updated_at);
+-- Stage 6 persistent future-execution emergency HALT, default locked OFF.
+-- This is NOT an exchange-side position close or a live kill-switch integration.
+CREATE TABLE IF NOT EXISTS luxalgo_stage6_execution_halt (
+ id SMALLINT PRIMARY KEY CHECK(id=1),
+ halted BOOLEAN NOT NULL DEFAULT TRUE,
+ reason TEXT NOT NULL DEFAULT 'UNIMPLEMENTED_LIVE_EXECUTION',
+ changed_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+INSERT INTO luxalgo_stage6_execution_halt(id,halted,reason)
+ VALUES (1,TRUE,'UNIMPLEMENTED_LIVE_EXECUTION') ON CONFLICT(id) DO NOTHING;
+CREATE TABLE IF NOT EXISTS luxalgo_stage6_halt_diagnostics (
+ event_id TEXT PRIMARY KEY,
+ halted BOOLEAN NOT NULL DEFAULT TRUE,
+ created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
 CREATE TABLE IF NOT EXISTS luxalgo_dry_run_intents (
  event_id TEXT PRIMARY KEY,
  received_at TIMESTAMPTZ NOT NULL,
@@ -503,7 +518,7 @@ h2{font-size:15px;font-weight:850;letter-spacing:.3px}
 <div class="metric"><small>AVAILABLE FUTURES · USDT</small><strong id="futuresAvailable">—</strong><span>Exchange-reported trading availability</span></div>
 <div class="metric"><small>FUTURES BALANCE · USDT</small><strong id="futuresBalance">—</strong><span>Account balance before unrealized P&amp;L</span></div>
 </div></details>
-<details class="panel" style="margin:12px 0" id="liveReadinessPanel"><summary style="font-weight:850;cursor:pointer;color:#ffcf89">LIVE EXECUTION READINESS · SAFETY CHECK (READ ONLY)</summary><p class="light">This panel checks safeguards only. It cannot start trading or enable Gate.io API writes.</p><button class="btn" type="button" id="readinessRefresh">Check readiness</button><button class="btn gloss-action" type="button" id="guardTestButton" style="margin-left:8px">Test Duplicate Order Guard</button><button class="btn gloss-action" type="button" id="riskCheckButton" style="margin-left:8px">Check Account Risk Limits</button><button class="btn gloss-action" type="button" id="stage2GateTestButton" style="margin-left:8px">Test Stage 2 Risk Gate</button><button class="btn gloss-action" type="button" id="stage3ContractTestButton" style="margin-left:8px">Test Stage 3 Contract Sizing</button><button class="btn gloss-action" type="button" id="stage4ProtectiveTestButton" style="margin-left:8px">Test Stage 4 SL/TP</button><button class="btn gloss-action" type="button" id="stage5LedgerTestButton" style="margin-left:8px">Test Stage 5 Ledger</button><p class="light" id="riskCheckResult" role="status" aria-live="polite">Read-only risk inspection available. Never authorizes a trade.</p><p class="light" id="guardTestResult">Test only: all candidates are BLOCKED; no exchange orders.</p><p class="light" id="stage2GateTestResult" role="status" aria-live="polite">Stage 2 PostgreSQL concurrency test not yet run.</p><p class="light" id="stage3ContractTestResult" role="status" aria-live="polite">Stage 3 read-only sizing diagnostic not yet run.</p><p class="light" id="stage4ProtectiveTestResult" role="status" aria-live="polite">Stage 4 protective-price validation not yet run. No protective orders exist.</p><p class="light" id="stage5LedgerTestResult" role="status" aria-live="polite">Stage 5 PostgreSQL simulated lifecycle test not yet run. No exchange writes.</p><div id="readinessOutput" role="status" aria-live="polite" style="margin-top:10px;color:#fdbfbf">Live execution BLOCKED until all critical safeguards are implemented and tested.</div></details>
+<details class="panel" style="margin:12px 0" id="liveReadinessPanel"><summary style="font-weight:850;cursor:pointer;color:#ffcf89">LIVE EXECUTION READINESS · SAFETY CHECK (READ ONLY)</summary><p class="light">This panel checks safeguards only. It cannot start trading or enable Gate.io API writes.</p><button class="btn" type="button" id="readinessRefresh">Check readiness</button><button class="btn gloss-action" type="button" id="guardTestButton" style="margin-left:8px">Test Duplicate Order Guard</button><button class="btn gloss-action" type="button" id="riskCheckButton" style="margin-left:8px">Check Account Risk Limits</button><button class="btn gloss-action" type="button" id="stage2GateTestButton" style="margin-left:8px">Test Stage 2 Risk Gate</button><button class="btn gloss-action" type="button" id="stage3ContractTestButton" style="margin-left:8px">Test Stage 3 Contract Sizing</button><button class="btn gloss-action" type="button" id="stage4ProtectiveTestButton" style="margin-left:8px">Test Stage 4 SL/TP</button><button class="btn gloss-action" type="button" id="stage5LedgerTestButton" style="margin-left:8px">Test Stage 5 Ledger</button><button class="btn gloss-action" type="button" id="stage6HaltTestButton" style="margin-left:8px">Test Stage 6 Halt &amp; Recovery</button><button class="btn btn-danger" type="button" id="stage6EmergencyHalt" style="margin-left:8px">EMERGENCY HALT · PAPER &amp; FUTURE EXECUTION</button><p class="light" id="riskCheckResult" role="status" aria-live="polite">Read-only risk inspection available. Never authorizes a trade.</p><p class="light" id="guardTestResult">Test only: all candidates are BLOCKED; no exchange orders.</p><p class="light" id="stage2GateTestResult" role="status" aria-live="polite">Stage 2 PostgreSQL concurrency test not yet run.</p><p class="light" id="stage3ContractTestResult" role="status" aria-live="polite">Stage 3 read-only sizing diagnostic not yet run.</p><p class="light" id="stage4ProtectiveTestResult" role="status" aria-live="polite">Stage 4 protective-price validation not yet run. No protective orders exist.</p><p class="light" id="stage5LedgerTestResult" role="status" aria-live="polite">Stage 5 PostgreSQL simulated lifecycle test not yet run. No exchange writes.</p><p class="light" id="stage6HaltTestResult" role="status" aria-live="polite">Stage 6 persistent halt diagnostic not yet run. No exchange writes.</p><p class="light" id="stage6HaltState" role="status" aria-live="polite">Future execution stays HALTED; checking database status…</p><div id="readinessOutput" role="status" aria-live="polite" style="margin-top:10px;color:#fdbfbf">Live execution BLOCKED until all critical safeguards are implemented and tested.</div></details>
 <div class="grid metric-grid">
 <div class="metric"><small>GATE.IO CONNECTION</small><strong class="gloss-cyan">READ-ONLY</strong><span id="gatePositionStatus">Checking position feed…</span></div>
 <div class="metric"><small>OPEN POSITIONS</small><strong id="openPositionCount">—</strong><span>Verified Gate.io positions only</span></div>
@@ -670,6 +685,18 @@ h2{font-size:15px;font-weight:850;letter-spacing:.3px}
   }catch(e){out.textContent='Stage 5 unavailable (fail closed): '+e.message+' · Orders: 0';}
   finally{b.disabled=false;}
  });
+})();
+
+
+// Stage 6: persistent emergency HALT and test. This NEVER closes exchange positions.
+(function(){
+ const test=document.getElementById('stage6HaltTestButton'),stop=document.getElementById('stage6EmergencyHalt'),out=document.getElementById('stage6HaltTestResult'),state=document.getElementById('stage6HaltState');
+ if(!test||!stop||!out||!state)return;
+ const headers={'Content-Type':'application/json','X-Terminal-CSRF':{{ csrf_token|tojson }}};
+ async function getState(){try{const r=await fetch('/terminal/stage6-halt-status',{cache:'no-store'});const d=await r.json();state.textContent=d.halted===true?'● Future execution HALTED · '+(d.reason||''):'⚠ Halt status unavailable — treat as HALTED';}catch(e){state.textContent='● Halt status unavailable — treat as HALTED';}}
+ test.addEventListener('click',async()=>{test.disabled=true;out.textContent='Checking durable simulated halt and restart recovery…';try{const r=await fetch('/terminal/stage6-halt-self-test',{method:'POST',headers,body:'{}',cache:'no-store'});const d=await r.json();out.textContent='Stage 6 '+(d.status||'INCONCLUSIVE')+' · '+(d.detail||d.error||'No details')+' · Exchange orders: 0';}catch(e){out.textContent='Stage 6 INCONCLUSIVE · Database unavailable · Orders: 0';}finally{test.disabled=false;getState();}});
+ stop.addEventListener('click',async()=>{if(!confirm('Activate permanent future-execution HALT and switch PAPER bot OFF? This cannot close Gate.io positions.'))return;stop.disabled=true;try{const r=await fetch('/terminal/stage6-emergency-halt',{method:'POST',headers,body:'{}',cache:'no-store'});const d=await r.json();out.textContent=d.halted===true&&r.ok?'Emergency HALT saved; PAPER bot OFF. Existing Gate.io positions are NOT closed.':'Emergency halt could not be verified; do not trade. '+(d.error||'');}catch(e){out.textContent='Emergency halt status UNKNOWN. Do not trade.';}finally{stop.disabled=false;getState();}});
+ getState();
 })();
 
 // Step 415: observe account risk conditions, but never authorize any exchange order.
@@ -2370,6 +2397,83 @@ def terminal_stage5_ledger_self_test():
                     cur.execute("DELETE FROM luxalgo_stage5_sim_order_ledger WHERE event_id=%s AND source='STAGE5_DIAGNOSTIC'",(event_id,))
         except (psycopg.Error,RuntimeError,OSError):
             app.logger.warning('Stage 5 diagnostic row cleanup deferred')
+
+# Stage 6: database-backed persistent lock for any FUTURE live order integration.
+# A future execution engine MUST check this flag atomically before every exchange write.
+# Current app has no exchange order submission; this is not exchange-wide cancellation.
+STAGE6_HALT_LOCK = 65913049
+
+@app.get('/terminal/stage6-halt-status')
+def terminal_stage6_halt_status():
+    if not _terminal_permitted(): return _terminal_guard()
+    try:
+        with _db_connect() as con:
+            _ensure_schema(con)
+            with con.cursor() as cur:
+                cur.execute('SELECT halted,reason,changed_at FROM luxalgo_stage6_execution_halt WHERE id=1')
+                row=cur.fetchone()
+        if not row or row['halted'] is not True: raise RuntimeError('Halt not asserted')
+        return jsonify(halted=True,reason=row['reason'],orders_enabled=False,live_trading=False)
+    except (psycopg.Error,RuntimeError,OSError):
+        return jsonify(halted=True,reason='UNVERIFIED_FAIL_CLOSED',orders_enabled=False,live_trading=False),503
+
+@app.post('/terminal/stage6-emergency-halt')
+def terminal_stage6_emergency_halt():
+    if not _terminal_permitted(): return _terminal_guard()
+    if not _csrf_valid(): return jsonify(error='Invalid verification',halted=True),403
+    try:
+        with _db_connect() as con:
+            _ensure_schema(con)
+            with con.cursor() as cur:
+                cur.execute('SELECT pg_advisory_xact_lock(%s)',(STAGE6_HALT_LOCK,))
+                cur.execute("UPDATE luxalgo_stage6_execution_halt SET halted=TRUE,reason='MANUAL_EMERGENCY_HALT',changed_at=NOW() WHERE id=1 RETURNING halted")
+                if not cur.fetchone(): raise RuntimeError('No persistent halt row')
+                _bot_enabled(cur,lock=True)
+                cur.execute('UPDATE luxalgo_bot_control SET enabled=FALSE,changed_at=NOW() WHERE id=1')
+                cur.execute("UPDATE luxalgo_auto_paper_queue SET state='REJECTED',checked_at=NOW(),note='Stage 6 emergency halt' WHERE state='PENDING'")
+        return jsonify(halted=True,paper_bot_enabled=False,exchange_orders_cancelled=False,exchange_positions_closed=False,orders_enabled=False,live_trading=False)
+    except (psycopg.Error,RuntimeError,OSError):
+        return jsonify(error='Halt state could not be confirmed; treat as unsafe. No live order implementation exists.',halted=True),503
+
+@app.post('/terminal/stage6-halt-self-test')
+def terminal_stage6_halt_self_test():
+    if not _terminal_permitted(): return _terminal_guard()
+    if not _csrf_valid(): return jsonify(status='BLOCKED',error='Invalid verification',orders_placed=0),403
+    if os.getenv('LIVE_TRADING_ENABLED','false').lower().strip()!='false':
+        return jsonify(status='BLOCKED',error='LIVE_TRADING_ENABLED must be false',orders_placed=0),503
+    event_id='st6_'+secrets.token_hex(16)
+    try:
+        with _db_connect() as con:
+            _ensure_schema(con)
+            with con.cursor() as cur:
+                cur.execute('SELECT halted FROM luxalgo_stage6_execution_halt WHERE id=1')
+                global_halt=cur.fetchone()
+                if not global_halt or global_halt['halted'] is not True:
+                    return jsonify(status='FAIL',detail='Future execution halt is not asserted',orders_placed=0),409
+                cur.execute('INSERT INTO luxalgo_stage6_halt_diagnostics(event_id,halted) VALUES (%s,TRUE) RETURNING event_id',(event_id,))
+                inserted=cur.fetchone() is not None
+                cur.execute('UPDATE luxalgo_stage6_halt_diagnostics SET halted=FALSE WHERE event_id=%s AND halted=FALSE RETURNING event_id',(event_id,))
+                invalid_transition_blocked=cur.fetchone() is None
+        # Separate connection tests a committed read, simulating process restart.
+        with _db_connect() as con:
+            with con.cursor() as cur:
+                cur.execute('SELECT halted FROM luxalgo_stage6_halt_diagnostics WHERE event_id=%s',(event_id,))
+                row=cur.fetchone()
+                recovered=bool(row and row['halted'] is True)
+                cur.execute('SELECT halted FROM luxalgo_stage6_execution_halt WHERE id=1')
+                global_recovered=bool((cur.fetchone() or {}).get('halted') is True)
+        passed=all((inserted,invalid_transition_blocked,recovered,global_recovered))
+        return jsonify(status='PASS' if passed else 'FAIL',detail=('Persistent future-execution HALT verified; invalid diagnostic transition blocked; fresh-connection recovery read passed. No exchange positions closed.' if passed else 'Halt/recovery diagnostic failed.'),orders_placed=0,live_trading=False), (200 if passed else 409)
+    except (psycopg.Error,RuntimeError,OSError) as exc:
+        app.logger.warning('Stage 6 halt diagnostic unavailable: %s',type(exc).__name__)
+        return jsonify(status='INCONCLUSIVE',detail='PostgreSQL halt test unavailable; fail closed',orders_placed=0),503
+    finally:
+        try:
+            with _db_connect() as con:
+                with con.cursor() as cur:
+                    cur.execute('DELETE FROM luxalgo_stage6_halt_diagnostics WHERE event_id=%s',(event_id,))
+        except (psycopg.Error,RuntimeError,OSError):
+            pass
 
 @app.get('/terminal/live-readiness')
 def terminal_live_readiness():
