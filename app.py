@@ -3307,7 +3307,7 @@ def terminal_stage14_final_paper_test():
         phase='readback_validation'
         expected=sorted((event,side,state,risk) for _,event,side,state,risk in rows)
         actual=sorted((r['event_id'],r['side'],r['state'],r['risk_bps']) for r in persisted)
-        if actual!=expected or not h or h['halted'] is not True or any(risk>50 for _,_,_,risk in rows):
+        if actual!=expected or not h or h['halted'] is not True or any(risk>50 for _,_,_,_,risk in rows):
             return jsonify(status='BLOCKED',error='Durable paper audit/HALT/risk mismatch',exchange_orders=0),503
         detail=('10 synthetic cases: LONG/SHORT open, SL, TP, invalid geometry/price/side; '
                 'duplicate event rejected, <=0.5% fixture risk, PostgreSQL fresh-connection recovery '
