@@ -635,7 +635,7 @@ h2{font-size:15px;font-weight:850;letter-spacing:.3px}
 <section class="panel performance-panel"><div class="panel-heading"><h2>PERFORMANCE ANALYTICS</h2><span class="label-muted">VERIFIED FILLS ONLY</span></div><div class="perf-grid"><div><span>Total Closed Trades</span><strong>—</strong></div><div><span>Winning Trades</span><strong>—</strong></div><div><span>Losing Trades</span><strong>—</strong></div><div><span>Win Rate</span><strong>—</strong></div><div><span>Total Realized P&amp;L</span><strong>—</strong></div><div><span>Unrealized P&amp;L</span><strong>—</strong></div></div><p class="light">Waiting for authenticated position and fill synchronization. No synthetic P&amp;L or win statistics.</p></section></div><section class="panel"><h2>TRADE PLAN · SL · TP1 <span class="tag">READ ONLY</span></h2>
 <div class="controls"><label>Entry reference <input id="entry" type="number" step="any" placeholder="Choose a signal" readonly></label><label>Stop Loss · 1.5 ATR <input id="sl" type="number" step="any" readonly></label><label>TP1 · 2 ATR · 100% exit <input id="tp1" type="number" step="any" readonly></label></div>
 <div id="planResults">Select Plan + Chart beside a signal to calculate illustrative entry, SL and TP1. No orders are placed.</div></section>
-<section class="panel"><div class="panel-heading"><h2>COMPLETED TRADES · EXIT RECORD</h2><span class="label-muted">PENDING ACCOUNT HISTORY INTEGRATION</span></div><div class="tablewrap"><table><thead><tr><th>TIME (UTC)</th><th>PAIR</th><th>DIRECTION</th><th>ENTRY FILL</th><th>EXIT FILL</th><th>NET REALIZED P&amp;L</th><th>RESULT</th></tr></thead><tbody><tr><td colspan="7" class="empty-state">No verified exchange fills have been synchronized. Signal receipts are not executed trades.</td></tr></tbody></table></div></section><section class="panel"><div class="panel-heading"><h2>PAPER TRADE MONITOR <span class="tag">SIMULATION ONLY</span></h2><button class="btn gloss-action" id="paperRefresh" type="button">↻ Check Paper Trades</button></div><p class="light" id="paperStatus" role="status" aria-live="polite">Checks queued simulated orders when the dashboard is open; historical outcomes remain estimates, not fills.</p><div class="tablewrap"><table><thead><tr><th>CREATED (UTC)</th><th>PAIR</th><th>SIDE</th><th>SIM ENTRY</th><th>SIM SL</th><th>SIM TP</th><th>STATE</th><th>EST. P&amp;L (USDT)</th></tr></thead><tbody id="paperBody"><tr><td colspan="8">No simulated positions loaded.</td></tr></tbody></table></div><p class="light">Simulation outcomes assume the reference entry was achievable and exclude fees, slippage and funding. If both SL and TP are touched in one candle, SL is assumed first. Historical-data gaps are not guessed. Simulated P&amp;L is never included in verified real-trade analytics.</p></section><section class="panel"><div class="panel-heading"><h2>EXECUTION SAFETY PREVIEW <span class="tag">DRY RUN ONLY</span></h2><span class="label-muted">NO EXCHANGE ORDERS</span></div><p class="light">Preview illustrative risk and contract-size checks using a hypothetical USDT equity. This does not validate your actual available margin, fee-adjusted fills, current hedge settings, or protective order placement.</p><div class="controls"><label>Trading pair<input id="previewSymbol" value="BTCUSDT" maxlength="29" autocomplete="off"></label><label>Direction<select id="previewSide"><option value="LONG">LONG / BUY</option><option value="SHORT">SHORT / SELL</option></select></label><label>Timeframe<select id="previewTf"><option value="15m">15 minutes</option><option value="5m">5 minutes</option></select></label><label>Hypothetical equity (USDT)<input id="previewEquity" type="number" value="100" min="1" max="10000000" step="any"></label><label>Risk per trade (%)<select id="previewRisk"><option value="0.5">0.5%</option><option value="1">1%</option><option value="1.5">1.5%</option><option value="2">2%</option><option value="2.5">2.5%</option><option value="3" selected>3% (default)</option><option value="3.5">3.5%</option><option value="4">4%</option><option value="4.5">4.5%</option><option value="5">5% (maximum)</option></select></label></div><button class="btn gloss-action" id="previewButton" type="button">Generate Read-Only Risk Preview</button><p id="signalPreviewContext" class="light" aria-live="polite">Manual calculator input; not a trading recommendation.</p><div id="previewResult" role="status" aria-live="polite" style="white-space:pre-wrap;margin-top:12px;background:#0b1a2b;border:1px solid #2b435e;border-radius:8px;padding:14px;font:12px/1.8 ui-monospace,Consolas,monospace">Ready for a simulated preview. Nothing can place or close orders.</div></section><div class="foot">LUXALGO PRO · Private terminal · Market data is public Gate.io data. Scanners are technical watchlists, not LuxAlgo entry signals. No account positions, fills, profit or loss are available until authenticated exchange sync is implemented. LIVE TRADING OFF; no orders are placed.</div></div><script>
+<section class="panel"><div class="panel-heading"><h2>COMPLETED TRADES · EXIT RECORD</h2><span class="label-muted">PENDING ACCOUNT HISTORY INTEGRATION</span></div><div class="tablewrap"><table><thead><tr><th>TIME (UTC)</th><th>PAIR</th><th>DIRECTION</th><th>ENTRY FILL</th><th>EXIT FILL</th><th>NET REALIZED P&amp;L</th><th>RESULT</th></tr></thead><tbody><tr><td colspan="7" class="empty-state">No verified exchange fills have been synchronized. Signal receipts are not executed trades.</td></tr></tbody></table></div></section><section class="panel"><div class="panel-heading"><h2>PAPER TRADE MONITOR <span class="tag">SIMULATION ONLY</span></h2><button class="btn gloss-action" id="paperRefresh" type="button">↻ Check Paper Trades</button></div><p class="light" id="paperStatus" role="status" aria-live="polite">Checks queued simulated orders when the dashboard is open; historical outcomes remain estimates, not fills.</p><div class="tablewrap"><table><thead><tr><th>CREATED (UTC)</th><th>PAIR</th><th>SIDE</th><th>SIM ENTRY</th><th>SIM SL</th><th>SIM TP</th><th>STATE</th><th>LAST PRICE</th><th>UNREALIZED P&amp;L</th><th>EST. CLOSED P&amp;L</th></tr></thead><tbody id="paperBody"><tr><td colspan="10">No simulated positions loaded.</td></tr></tbody></table></div><p id="paperOpenPnlTotal" class="light" role="status" aria-live="polite">Open paper unrealized P&amp;L: not yet available.</p><p class="light">Simulation outcomes assume the reference entry was achievable and exclude fees, slippage and funding. If both SL and TP are touched in one candle, SL is assumed first. Historical-data gaps are not guessed. Simulated P&amp;L is never included in verified real-trade analytics.</p></section><section class="panel"><div class="panel-heading"><h2>EXECUTION SAFETY PREVIEW <span class="tag">DRY RUN ONLY</span></h2><span class="label-muted">NO EXCHANGE ORDERS</span></div><p class="light">Preview illustrative risk and contract-size checks using a hypothetical USDT equity. This does not validate your actual available margin, fee-adjusted fills, current hedge settings, or protective order placement.</p><div class="controls"><label>Trading pair<input id="previewSymbol" value="BTCUSDT" maxlength="29" autocomplete="off"></label><label>Direction<select id="previewSide"><option value="LONG">LONG / BUY</option><option value="SHORT">SHORT / SELL</option></select></label><label>Timeframe<select id="previewTf"><option value="15m">15 minutes</option><option value="5m">5 minutes</option></select></label><label>Hypothetical equity (USDT)<input id="previewEquity" type="number" value="100" min="1" max="10000000" step="any"></label><label>Risk per trade (%)<select id="previewRisk"><option value="0.5">0.5%</option><option value="1">1%</option><option value="1.5">1.5%</option><option value="2">2%</option><option value="2.5">2.5%</option><option value="3" selected>3% (default)</option><option value="3.5">3.5%</option><option value="4">4%</option><option value="4.5">4.5%</option><option value="5">5% (maximum)</option></select></label></div><button class="btn gloss-action" id="previewButton" type="button">Generate Read-Only Risk Preview</button><p id="signalPreviewContext" class="light" aria-live="polite">Manual calculator input; not a trading recommendation.</p><div id="previewResult" role="status" aria-live="polite" style="white-space:pre-wrap;margin-top:12px;background:#0b1a2b;border:1px solid #2b435e;border-radius:8px;padding:14px;font:12px/1.8 ui-monospace,Consolas,monospace">Ready for a simulated preview. Nothing can place or close orders.</div></section><div class="foot">LUXALGO PRO · Private terminal · Market data is public Gate.io data. Scanners are technical watchlists, not LuxAlgo entry signals. No account positions, fills, profit or loss are available until authenticated exchange sync is implemented. LIVE TRADING OFF; no orders are placed.</div></div><script>
 
 // Read-only advanced watchlist: uses completed 5m/15m public candles and validated LuxAlgo receipt records.
 (function(){
@@ -1407,7 +1407,7 @@ loadRadar();loadScanner();setInterval(()=>{if(!document.hidden)loadRadar()},6000
 
 // Stage 3: manual, read-only, completed-candle paper review; no trading API writes.
 (function(){
- const btn=document.getElementById('paperRefresh'), body=document.getElementById('paperBody'), label=document.getElementById('paperStatus');
+ const btn=document.getElementById('paperRefresh'), body=document.getElementById('paperBody'), label=document.getElementById('paperStatus'), total=document.getElementById('paperOpenPnlTotal');
  if(!btn||!body)return;
  async function refresh(){
   btn.disabled=true;label.textContent='Checking completed candles for hypothetical trades…';
@@ -1416,14 +1416,16 @@ loadRadar();loadScanner();setInterval(()=>{if(!document.hidden)loadRadar()},6000
    if(!res.ok)throw Error(data.error||'Paper review unavailable');
    body.replaceChildren();
    const rows=data.trades||[];
-   if(!rows.length){const r=body.insertRow(),c=r.insertCell();c.colSpan=8;c.textContent='No simulated orders stored yet.';}
+   if(!rows.length){const r=body.insertRow(),c=r.insertCell();c.colSpan=10;c.textContent='No simulated orders stored yet.';}
    for(const x of rows){
     const r=body.insertRow();
-    for(const v of [x.created_at,x.symbol,x.side,x.entry,x.stop,x.take,x.state,x.estimated_pnl_usdt===null?'—':x.estimated_pnl_usdt]){
+    for(const v of [x.created_at,x.symbol,x.side,x.entry,x.stop,x.take,x.state,x.state==='OPEN'?(x.mark_price??'—'):'—',x.state==='OPEN'?(x.unrealized_pnl_usdt??'—'):'—',x.state!=='OPEN'?(x.estimated_pnl_usdt??'—'):'—']){
      const c=r.insertCell();c.textContent=String(v===null?'—':v);
     }
    }
    label.textContent=rows.length+' stored simulated intents checked · '+(data.errors||0)+' unverified; no orders or exchange fills.';
+   if(total){const available=rows.filter(x=>x.state==='OPEN' && x.unrealized_pnl_usdt!==null && x.unrealized_pnl_usdt!==undefined).length;
+    total.textContent='OPEN PAPER UNREALIZED P&L (USDT): '+(data.open_unrealized_pnl_usdt===null?'Unavailable / incomplete market data':data.open_unrealized_pnl_usdt)+' · Priced '+available+'/'+rows.filter(x=>x.state==='OPEN').length+' open simulations · Public Gate.io last prices, estimated only; excludes fees, funding and slippage.';}
   }catch(e){label.textContent='Paper review unavailable: '+e.message+' (real trading remains OFF)';}
   finally{btn.disabled=false;}
  }
@@ -4199,6 +4201,48 @@ def _auto_paper_process(max_items=5):
     return completed
 
 
+def _paper_open_marks(orders):
+    """Public GET-only marked hypothetical P&L. Never estimates missing specs."""
+    from decimal import Decimal, InvalidOperation
+    opens = [o for o in orders if o.get('state') == 'OPEN']
+    if not opens:
+        return {}, Decimal('0')
+    try:
+        tickers = _scan_http_json('/api/v4/futures/usdt/tickers')
+        if not isinstance(tickers, list):
+            return {}, None
+        quotes = {str(t.get('contract')): t for t in tickers if isinstance(t,dict)}
+    except (HTTPError,URLError,TimeoutError,ValueError,TypeError,OSError):
+        return {}, None
+    marked = {}; total = Decimal('0'); complete = True
+    multipliers = {}
+    for o in opens:
+        eid = o['event_id']
+        try:
+            sym = o['symbol']
+            if not re.fullmatch(r'[A-Z0-9]{2,24}USDT',sym):
+                raise ValueError('Invalid symbol')
+            contract = sym[:-4]+'_USDT'
+            quote = quotes[contract]
+            price = Decimal(str(quote['last']))
+            entry = Decimal(str(o['entry']))
+            size = Decimal(str(o['size_contracts']))
+            if contract not in multipliers:
+                spec = _scan_http_json('/api/v4/futures/usdt/contracts/'+contract)
+                multipliers[contract] = Decimal(str(spec['quanto_multiplier']))
+            mult = multipliers[contract]
+            if not all(x.is_finite() and x>0 for x in (price,entry,size,mult)):
+                raise ValueError('Invalid market valuation inputs')
+            if o['side'] not in ('LONG','SHORT'):
+                raise ValueError('Invalid direction')
+            pnl = ((price-entry) if o['side']=='LONG' else (entry-price))*size*mult
+            marked[eid] = {'mark_price': str(price),'unrealized_pnl_usdt': str(round(pnl,8))}
+            total += pnl
+        except (HTTPError,URLError,TimeoutError,KeyError,InvalidOperation,ValueError,TypeError,OSError,OverflowError):
+            complete = False
+    return marked, round(total,8) if complete else None
+
+
 @app.get('/terminal/paper-trades')
 def terminal_paper_trades():
     if not _terminal_permitted():return _terminal_guard()
@@ -4245,7 +4289,22 @@ def terminal_paper_trades():
                 output.append(dict(event_id=order['event_id'],created_at=order['created_at'].isoformat(),
                     symbol=order['symbol'],side=order['side'],entry=d.get('reference_entry'),
                     stop=d.get('stop_loss'),take=d.get('take_profit'),state='UNVERIFIABLE',estimated_pnl_usdt=None))
-        response=jsonify(trades=output,errors=errors,mode='HISTORICAL_PAPER_ONLY',orders_placed=0)
+        # Open-only mark-to-market: request-time estimates, never stored as realized P&L.
+        open_source=[]
+        for order in orders:
+            row=next((r for r in output if r['event_id']==order['event_id']),None)
+            if row and row['state']=='OPEN':
+                open_source.append(dict(event_id=order['event_id'],symbol=order['symbol'],
+                    side=order['side'],state='OPEN',entry=row['entry'],
+                    size_contracts=order['details'].get('size_contracts')))
+        marks,total=_paper_open_marks(open_source)
+        for row in output:
+            mark=marks.get(row['event_id'],{})
+            row['mark_price']=mark.get('mark_price')
+            row['unrealized_pnl_usdt']=mark.get('unrealized_pnl_usdt')
+        response=jsonify(trades=output,errors=errors,mode='HISTORICAL_PAPER_ONLY',
+            open_unrealized_pnl_usdt=str(total) if total is not None else None,
+            quote_source='GATE_IO_PUBLIC_LAST_PRICE',orders_placed=0)
         response.headers['Cache-Control']='no-store'
         return response
     except (psycopg.Error,RuntimeError,OSError):
