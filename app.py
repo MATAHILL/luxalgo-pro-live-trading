@@ -182,6 +182,14 @@ CREATE TABLE IF NOT EXISTS luxalgo_stage9_reconcile_diagnostics (
   source TEXT NOT NULL DEFAULT 'STAGE9_FIXTURE_ONLY' CHECK(source='STAGE9_FIXTURE_ONLY'),
   details JSONB NOT NULL DEFAULT '{}'::jsonb
 );
+-- Stage 10 fixture-only protective coverage audit. No exchange-native orders.
+CREATE TABLE IF NOT EXISTS luxalgo_stage10_protection_diagnostics (
+  diagnostic_id TEXT PRIMARY KEY,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  result TEXT NOT NULL CHECK(result IN ('PROTECTED_FIXTURE','BLOCKED')),
+  source TEXT NOT NULL DEFAULT 'STAGE10_FIXTURE_ONLY' CHECK(source='STAGE10_FIXTURE_ONLY'),
+  details JSONB NOT NULL DEFAULT '{}'::jsonb
+);
 CREATE TABLE IF NOT EXISTS luxalgo_dry_run_intents (
  event_id TEXT PRIMARY KEY,
  received_at TIMESTAMPTZ NOT NULL,
@@ -536,7 +544,7 @@ h2{font-size:15px;font-weight:850;letter-spacing:.3px}
 <div class="metric"><small>AVAILABLE FUTURES · USDT</small><strong id="futuresAvailable">—</strong><span>Exchange-reported trading availability</span></div>
 <div class="metric"><small>FUTURES BALANCE · USDT</small><strong id="futuresBalance">—</strong><span>Account balance before unrealized P&amp;L</span></div>
 </div></details>
-<details class="panel" style="margin:12px 0" id="liveReadinessPanel"><summary style="font-weight:850;cursor:pointer;color:#ffcf89">LIVE EXECUTION READINESS · SAFETY CHECK (READ ONLY)</summary><p class="light">This panel checks safeguards only. It cannot start trading or enable Gate.io API writes.</p><button class="btn" type="button" id="readinessRefresh">Check readiness</button><button class="btn gloss-action" type="button" id="guardTestButton" style="margin-left:8px">Test Duplicate Order Guard</button><button class="btn gloss-action" type="button" id="riskCheckButton" style="margin-left:8px">Check Account Risk Limits</button><button class="btn gloss-action" type="button" id="stage2GateTestButton" style="margin-left:8px">Test Stage 2 Risk Gate</button><button class="btn gloss-action" type="button" id="stage3ContractTestButton" style="margin-left:8px">Test Stage 3 Contract Sizing</button><button class="btn gloss-action" type="button" id="stage4ProtectiveTestButton" style="margin-left:8px">Test Stage 4 SL/TP</button><button class="btn gloss-action" type="button" id="stage5LedgerTestButton" style="margin-left:8px">Test Stage 5 Ledger</button><button class="btn gloss-action" type="button" id="stage6HaltTestButton" style="margin-left:8px">Test Stage 6 Halt &amp; Recovery</button><button class="btn gloss-action" type="button" id="stage7AuditButton" style="margin-left:8px">Test Stage 7 Readiness Audit</button><button class="btn gloss-action" type="button" id="stage8AckTestButton" style="margin-left:8px">Test Stage 8 Ack Recovery</button><button class="btn gloss-action" type="button" id="stage9ReconcileTestButton" style="margin-left:8px">Test Stage 9 Reconciliation</button><button class="btn btn-danger" type="button" id="stage6EmergencyHalt" style="margin-left:8px">EMERGENCY HALT · PAPER &amp; FUTURE EXECUTION</button><p class="light" id="riskCheckResult" role="status" aria-live="polite">Read-only risk inspection available. Never authorizes a trade.</p><p class="light" id="guardTestResult">Test only: all candidates are BLOCKED; no exchange orders.</p><p class="light" id="stage2GateTestResult" role="status" aria-live="polite">Stage 2 PostgreSQL concurrency test not yet run.</p><p class="light" id="stage3ContractTestResult" role="status" aria-live="polite">Stage 3 read-only sizing diagnostic not yet run.</p><p class="light" id="stage4ProtectiveTestResult" role="status" aria-live="polite">Stage 4 protective-price validation not yet run. No protective orders exist.</p><p class="light" id="stage5LedgerTestResult" role="status" aria-live="polite">Stage 5 PostgreSQL simulated lifecycle test not yet run. No exchange writes.</p><p class="light" id="stage6HaltTestResult" role="status" aria-live="polite">Stage 6 persistent halt diagnostic not yet run. No exchange writes.</p><p class="light" id="stage7AuditResult" role="status" aria-live="polite">Stage 7 read-only readiness audit not yet run. All exchange execution blocked.</p><p class="light" id="stage8AckTestResult" role="status" aria-live="polite">Stage 8 unknown-acknowledgment quarantine not yet tested. No exchange write.</p><p class="light" id="stage9ReconcileTestResult" role="status" aria-live="polite">Stage 9 fixture-only reconciliation test not yet run. Real Gate.io orders are not reconciled.</p><p class="light" id="stage6HaltState" role="status" aria-live="polite">Future execution stays HALTED; checking database status…</p><div id="readinessOutput" role="status" aria-live="polite" style="margin-top:10px;color:#fdbfbf">Live execution BLOCKED until all critical safeguards are implemented and tested.</div></details>
+<details class="panel" style="margin:12px 0" id="liveReadinessPanel"><summary style="font-weight:850;cursor:pointer;color:#ffcf89">LIVE EXECUTION READINESS · SAFETY CHECK (READ ONLY)</summary><p class="light">This panel checks safeguards only. It cannot start trading or enable Gate.io API writes.</p><button class="btn" type="button" id="readinessRefresh">Check readiness</button><button class="btn gloss-action" type="button" id="guardTestButton" style="margin-left:8px">Test Duplicate Order Guard</button><button class="btn gloss-action" type="button" id="riskCheckButton" style="margin-left:8px">Check Account Risk Limits</button><button class="btn gloss-action" type="button" id="stage2GateTestButton" style="margin-left:8px">Test Stage 2 Risk Gate</button><button class="btn gloss-action" type="button" id="stage3ContractTestButton" style="margin-left:8px">Test Stage 3 Contract Sizing</button><button class="btn gloss-action" type="button" id="stage4ProtectiveTestButton" style="margin-left:8px">Test Stage 4 SL/TP</button><button class="btn gloss-action" type="button" id="stage5LedgerTestButton" style="margin-left:8px">Test Stage 5 Ledger</button><button class="btn gloss-action" type="button" id="stage6HaltTestButton" style="margin-left:8px">Test Stage 6 Halt &amp; Recovery</button><button class="btn gloss-action" type="button" id="stage7AuditButton" style="margin-left:8px">Test Stage 7 Readiness Audit</button><button class="btn gloss-action" type="button" id="stage8AckTestButton" style="margin-left:8px">Test Stage 8 Ack Recovery</button><button class="btn gloss-action" type="button" id="stage9ReconcileTestButton" style="margin-left:8px">Test Stage 9 Reconciliation</button><button class="btn gloss-action" type="button" id="stage10ProtectionTestButton" style="margin-left:8px">Test Stage 10 SL/TP Coverage</button><button class="btn btn-danger" type="button" id="stage6EmergencyHalt" style="margin-left:8px">EMERGENCY HALT · PAPER &amp; FUTURE EXECUTION</button><p class="light" id="riskCheckResult" role="status" aria-live="polite">Read-only risk inspection available. Never authorizes a trade.</p><p class="light" id="guardTestResult">Test only: all candidates are BLOCKED; no exchange orders.</p><p class="light" id="stage2GateTestResult" role="status" aria-live="polite">Stage 2 PostgreSQL concurrency test not yet run.</p><p class="light" id="stage3ContractTestResult" role="status" aria-live="polite">Stage 3 read-only sizing diagnostic not yet run.</p><p class="light" id="stage4ProtectiveTestResult" role="status" aria-live="polite">Stage 4 protective-price validation not yet run. No protective orders exist.</p><p class="light" id="stage5LedgerTestResult" role="status" aria-live="polite">Stage 5 PostgreSQL simulated lifecycle test not yet run. No exchange writes.</p><p class="light" id="stage6HaltTestResult" role="status" aria-live="polite">Stage 6 persistent halt diagnostic not yet run. No exchange writes.</p><p class="light" id="stage7AuditResult" role="status" aria-live="polite">Stage 7 read-only readiness audit not yet run. All exchange execution blocked.</p><p class="light" id="stage8AckTestResult" role="status" aria-live="polite">Stage 8 unknown-acknowledgment quarantine not yet tested. No exchange write.</p><p class="light" id="stage9ReconcileTestResult" role="status" aria-live="polite">Stage 9 fixture-only reconciliation test not yet run. Real Gate.io orders are not reconciled.</p><p class="light" id="stage10ProtectionTestResult" role="status" aria-live="polite">Stage 10 protective-order fixture audit not yet run. No exchange protections verified.</p><p class="light" id="stage6HaltState" role="status" aria-live="polite">Future execution stays HALTED; checking database status…</p><div id="readinessOutput" role="status" aria-live="polite" style="margin-top:10px;color:#fdbfbf">Live execution BLOCKED until all critical safeguards are implemented and tested.</div></details>
 <div class="grid metric-grid">
 <div class="metric"><small>GATE.IO CONNECTION</small><strong class="gloss-cyan">READ-ONLY</strong><span id="gatePositionStatus">Checking position feed…</span></div>
 <div class="metric"><small>OPEN POSITIONS</small><strong id="openPositionCount">—</strong><span>Verified Gate.io positions only</span></div>
@@ -667,6 +675,26 @@ h2{font-size:15px;font-weight:850;letter-spacing:.3px}
       out.textContent='Stage 8 '+String(d.status||'BLOCKED')+' · '+String(d.detail||d.error||'Unavailable')+' · Exchange orders: 0';
       out.style.color=r.ok&&d.status==='PASS'?'#63f0c3':'#ffb6b6';
     }catch(e){out.textContent='Stage 8 BLOCKED · Diagnostic unavailable; no exchange orders.';out.style.color='#ffb6b6';}
+    finally{b.disabled=false;}
+  });
+})();
+
+// Stage 10: isolated protective-coverage fixtures, never exchange order placement.
+(function(){
+  const b=document.getElementById('stage10ProtectionTestButton');
+  const out=document.getElementById('stage10ProtectionTestResult');
+  if(!b||!out)return;
+  b.addEventListener('click',async()=>{
+    b.disabled=true;out.textContent='Testing Stage 10 protective coverage fixtures and persistent HALT…';
+    try{
+      const r=await fetch('/terminal/stage10-protection-test',{
+        method:'POST',credentials:'same-origin',cache:'no-store',
+        headers:{'Content-Type':'application/json','X-Terminal-CSRF':{{ csrf_token|tojson }}},body:'{}'
+      });
+      const d=await r.json();
+      out.textContent='Stage 10 '+String(d.status||'BLOCKED')+' · '+String(d.detail||d.error||'Unavailable')+' · Exchange orders: 0';
+      out.style.color=r.ok&&d.status==='PASS'?'#63f0c3':'#ffb6b6';
+    }catch(e){out.textContent='Stage 10 BLOCKED · Protective coverage diagnostic unavailable; no exchange writes.';out.style.color='#ffb6b6';}
     finally{b.disabled=false;}
   });
 })();
@@ -2754,6 +2782,95 @@ def terminal_stage9_reconciliation_test():
         response.headers['Cache-Control']='private, no-store'
         return response,(200 if passed else 503)
     except (psycopg.Error, RuntimeError, OSError):
+        return jsonify(status='BLOCKED',error='PostgreSQL unavailable; fail closed',exchange_orders=0),503
+
+
+# Stage 10: pure diagnostic fixture classification; no Gate.io protection calls.
+def _stage10_protection_classify(position, protections):
+    try:
+        if not isinstance(position,dict) or not isinstance(protections,list):
+            return 'BLOCKED'
+        side=position['side']
+        qty=Decimal(str(position['filled_contracts']))
+        entry=Decimal(str(position['entry_price']))
+        if side not in ('LONG','SHORT') or not qty.is_finite() or qty<=0 or not entry.is_finite() or entry<=0:
+            return 'BLOCKED'
+        if len(protections)!=2:
+            return 'BLOCKED'
+        by_type={}
+        for order in protections:
+            if not isinstance(order,dict): return 'BLOCKED'
+            typ=order.get('type')
+            if typ not in ('SL','TP') or typ in by_type: return 'BLOCKED'
+            if order.get('state')!='OPEN' or order.get('reduce_only') is not True:
+                return 'BLOCKED'
+            if order.get('position_side')!=side or order.get('close_side')!=('SELL' if side=='LONG' else 'BUY'):
+                return 'BLOCKED'
+            amount=Decimal(str(order['contracts']))
+            price=Decimal(str(order['trigger_price']))
+            if (not amount.is_finite() or amount!=qty or
+                not price.is_finite() or price<=0): return 'BLOCKED'
+            if side=='LONG' and not ((price<entry) if typ=='SL' else (price>entry)):
+                return 'BLOCKED'
+            if side=='SHORT' and not ((price>entry) if typ=='SL' else (price<entry)):
+                return 'BLOCKED'
+            by_type[typ]=order
+        return 'PROTECTED_FIXTURE' if set(by_type)=={'SL','TP'} else 'BLOCKED'
+    except (KeyError, TypeError, ValueError, InvalidOperation):
+        return 'BLOCKED'
+
+
+@app.post('/terminal/stage10-protection-test')
+def terminal_stage10_protection_test():
+    if not _terminal_permitted(): return _terminal_guard()
+    if not _csrf_valid():
+        return jsonify(status='BLOCKED',error='Invalid session verification',exchange_orders=0),403
+    if os.getenv('LIVE_TRADING_ENABLED','false').strip().lower()!='false':
+        return jsonify(status='BLOCKED',error='Live execution must remain disabled',exchange_orders=0),503
+    long={'side':'LONG','filled_contracts':'4','entry_price':'100'}
+    short={'side':'SHORT','filled_contracts':'2','entry_price':'100'}
+    sl={'type':'SL','state':'OPEN','reduce_only':True,'position_side':'LONG','close_side':'SELL','contracts':'4','trigger_price':'95'}
+    tp={'type':'TP','state':'OPEN','reduce_only':True,'position_side':'LONG','close_side':'SELL','contracts':'4','trigger_price':'110'}
+    ssl=dict(sl,position_side='SHORT',close_side='BUY',contracts='2',trigger_price='105')
+    stp=dict(tp,position_side='SHORT',close_side='BUY',contracts='2',trigger_price='90')
+    cases=[
+       ('PROTECTED_FIXTURE',long,[sl,tp]),
+       ('PROTECTED_FIXTURE',short,[ssl,stp]),
+       ('BLOCKED',long,[sl]),
+       ('BLOCKED',long,[sl,dict(tp,contracts='3')]),
+       ('BLOCKED',long,[sl,dict(tp,reduce_only=False)]),
+       ('BLOCKED',long,[sl,dict(tp,close_side='BUY')]),
+       ('BLOCKED',long,[sl,dict(tp,trigger_price='90')]),
+       ('BLOCKED',long,[sl,dict(tp,state='CANCELLED')]),
+       ('BLOCKED',long,[sl,dict(tp,contracts='garbled')]),
+       ('BLOCKED',long,[sl,dict(sl)]),
+       ('BLOCKED',dict(long,filled_contracts='6'),[sl,tp]),
+    ]
+    if not all(_stage10_protection_classify(pos, orders)==wanted for wanted,pos,orders in cases):
+        return jsonify(status='BLOCKED',error='Fixture classification mismatch',exchange_orders=0),503
+    diagnostic_id='STAGE10_TEST_'+secrets.token_hex(16)
+    try:
+        with _db_connect() as con:
+            _ensure_schema(con)
+            with con.cursor() as cur:
+                cur.execute("INSERT INTO luxalgo_stage10_protection_diagnostics(diagnostic_id,result,details) VALUES (%s,'BLOCKED',%s::jsonb)",
+                            (diagnostic_id,json.dumps({'cases':len(cases),'exchange_data':False})))
+        with _db_connect() as con:
+            with con.cursor() as cur:
+                cur.execute('SELECT result,source FROM luxalgo_stage10_protection_diagnostics WHERE diagnostic_id=%s',(diagnostic_id,))
+                saved=cur.fetchone()
+                cur.execute('SELECT halted FROM luxalgo_stage6_execution_halt WHERE id=1')
+                halt=cur.fetchone()
+        passed=bool(saved and saved['result']=='BLOCKED' and saved['source']=='STAGE10_FIXTURE_ONLY'
+                    and halt and halt['halted'] is True)
+        reply=jsonify(status='PASS' if passed else 'BLOCKED',
+            detail=('11 fixture scenarios (LONG/SHORT, missing SL/TP, incorrect side, quantity, triggers, cancelled protection, partial fill and malformed data), fresh PostgreSQL recovery and HALT verified; real Gate.io protective orders NOT checked'
+                    if passed else 'Diagnostic recovery or persistent HALT failed'),
+            cases_checked=len(cases),exchange_orders=0,live_trading=False,orders_enabled=False,
+            real_exchange_protection_verified=False,stage='STAGE10_FIXTURE_ONLY')
+        reply.headers['Cache-Control']='private, no-store'
+        return reply,(200 if passed else 503)
+    except (psycopg.Error,RuntimeError,OSError):
         return jsonify(status='BLOCKED',error='PostgreSQL unavailable; fail closed',exchange_orders=0),503
 
 
