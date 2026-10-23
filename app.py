@@ -747,7 +747,7 @@ h2{font-size:15px;font-weight:850;letter-spacing:.3px}
    for(const z of d.records||[])x.push('• '+z.event_id+' | '+z.symbol+' '+z.side+' '+z.timeframe+' | levels='+z.levels_status+' queue='+z.queue_state+' order='+z.simulated_status+' tracking='+z.tracking_state+' | '+z.reasons.join('; '));
    if(!(d.records||[]).length)x.push('None flagged.');
    x.push('','READ ONLY · No historical records changed · No exchange orders placed.');
-   out.textContent=x.join('\n');
+   out.textContent=x.join('\\n');
   }catch(e){out.textContent='Stage 15 inspection unavailable; no records modified.';}
   finally{b.disabled=false;}
  });
