@@ -518,7 +518,7 @@ h2{font-size:15px;font-weight:850;letter-spacing:.3px}
 <div class="metric"><small>AVAILABLE FUTURES · USDT</small><strong id="futuresAvailable">—</strong><span>Exchange-reported trading availability</span></div>
 <div class="metric"><small>FUTURES BALANCE · USDT</small><strong id="futuresBalance">—</strong><span>Account balance before unrealized P&amp;L</span></div>
 </div></details>
-<details class="panel" style="margin:12px 0" id="liveReadinessPanel"><summary style="font-weight:850;cursor:pointer;color:#ffcf89">LIVE EXECUTION READINESS · SAFETY CHECK (READ ONLY)</summary><p class="light">This panel checks safeguards only. It cannot start trading or enable Gate.io API writes.</p><button class="btn" type="button" id="readinessRefresh">Check readiness</button><button class="btn gloss-action" type="button" id="guardTestButton" style="margin-left:8px">Test Duplicate Order Guard</button><button class="btn gloss-action" type="button" id="riskCheckButton" style="margin-left:8px">Check Account Risk Limits</button><button class="btn gloss-action" type="button" id="stage2GateTestButton" style="margin-left:8px">Test Stage 2 Risk Gate</button><button class="btn gloss-action" type="button" id="stage3ContractTestButton" style="margin-left:8px">Test Stage 3 Contract Sizing</button><button class="btn gloss-action" type="button" id="stage4ProtectiveTestButton" style="margin-left:8px">Test Stage 4 SL/TP</button><button class="btn gloss-action" type="button" id="stage5LedgerTestButton" style="margin-left:8px">Test Stage 5 Ledger</button><button class="btn gloss-action" type="button" id="stage6HaltTestButton" style="margin-left:8px">Test Stage 6 Halt &amp; Recovery</button><button class="btn btn-danger" type="button" id="stage6EmergencyHalt" style="margin-left:8px">EMERGENCY HALT · PAPER &amp; FUTURE EXECUTION</button><p class="light" id="riskCheckResult" role="status" aria-live="polite">Read-only risk inspection available. Never authorizes a trade.</p><p class="light" id="guardTestResult">Test only: all candidates are BLOCKED; no exchange orders.</p><p class="light" id="stage2GateTestResult" role="status" aria-live="polite">Stage 2 PostgreSQL concurrency test not yet run.</p><p class="light" id="stage3ContractTestResult" role="status" aria-live="polite">Stage 3 read-only sizing diagnostic not yet run.</p><p class="light" id="stage4ProtectiveTestResult" role="status" aria-live="polite">Stage 4 protective-price validation not yet run. No protective orders exist.</p><p class="light" id="stage5LedgerTestResult" role="status" aria-live="polite">Stage 5 PostgreSQL simulated lifecycle test not yet run. No exchange writes.</p><p class="light" id="stage6HaltTestResult" role="status" aria-live="polite">Stage 6 persistent halt diagnostic not yet run. No exchange writes.</p><p class="light" id="stage6HaltState" role="status" aria-live="polite">Future execution stays HALTED; checking database status…</p><div id="readinessOutput" role="status" aria-live="polite" style="margin-top:10px;color:#fdbfbf">Live execution BLOCKED until all critical safeguards are implemented and tested.</div></details>
+<details class="panel" style="margin:12px 0" id="liveReadinessPanel"><summary style="font-weight:850;cursor:pointer;color:#ffcf89">LIVE EXECUTION READINESS · SAFETY CHECK (READ ONLY)</summary><p class="light">This panel checks safeguards only. It cannot start trading or enable Gate.io API writes.</p><button class="btn" type="button" id="readinessRefresh">Check readiness</button><button class="btn gloss-action" type="button" id="guardTestButton" style="margin-left:8px">Test Duplicate Order Guard</button><button class="btn gloss-action" type="button" id="riskCheckButton" style="margin-left:8px">Check Account Risk Limits</button><button class="btn gloss-action" type="button" id="stage2GateTestButton" style="margin-left:8px">Test Stage 2 Risk Gate</button><button class="btn gloss-action" type="button" id="stage3ContractTestButton" style="margin-left:8px">Test Stage 3 Contract Sizing</button><button class="btn gloss-action" type="button" id="stage4ProtectiveTestButton" style="margin-left:8px">Test Stage 4 SL/TP</button><button class="btn gloss-action" type="button" id="stage5LedgerTestButton" style="margin-left:8px">Test Stage 5 Ledger</button><button class="btn gloss-action" type="button" id="stage6HaltTestButton" style="margin-left:8px">Test Stage 6 Halt &amp; Recovery</button><button class="btn gloss-action" type="button" id="stage7AuditButton" style="margin-left:8px">Test Stage 7 Readiness Audit</button><button class="btn btn-danger" type="button" id="stage6EmergencyHalt" style="margin-left:8px">EMERGENCY HALT · PAPER &amp; FUTURE EXECUTION</button><p class="light" id="riskCheckResult" role="status" aria-live="polite">Read-only risk inspection available. Never authorizes a trade.</p><p class="light" id="guardTestResult">Test only: all candidates are BLOCKED; no exchange orders.</p><p class="light" id="stage2GateTestResult" role="status" aria-live="polite">Stage 2 PostgreSQL concurrency test not yet run.</p><p class="light" id="stage3ContractTestResult" role="status" aria-live="polite">Stage 3 read-only sizing diagnostic not yet run.</p><p class="light" id="stage4ProtectiveTestResult" role="status" aria-live="polite">Stage 4 protective-price validation not yet run. No protective orders exist.</p><p class="light" id="stage5LedgerTestResult" role="status" aria-live="polite">Stage 5 PostgreSQL simulated lifecycle test not yet run. No exchange writes.</p><p class="light" id="stage6HaltTestResult" role="status" aria-live="polite">Stage 6 persistent halt diagnostic not yet run. No exchange writes.</p><p class="light" id="stage7AuditResult" role="status" aria-live="polite">Stage 7 read-only readiness audit not yet run. All exchange execution blocked.</p><p class="light" id="stage6HaltState" role="status" aria-live="polite">Future execution stays HALTED; checking database status…</p><div id="readinessOutput" role="status" aria-live="polite" style="margin-top:10px;color:#fdbfbf">Live execution BLOCKED until all critical safeguards are implemented and tested.</div></details>
 <div class="grid metric-grid">
 <div class="metric"><small>GATE.IO CONNECTION</small><strong class="gloss-cyan">READ-ONLY</strong><span id="gatePositionStatus">Checking position feed…</span></div>
 <div class="metric"><small>OPEN POSITIONS</small><strong id="openPositionCount">—</strong><span>Verified Gate.io positions only</span></div>
@@ -607,6 +607,32 @@ h2{font-size:15px;font-weight:850;letter-spacing:.3px}
       const title=document.createElement('p');title.textContent='LIVE TRADING '+d.status+' · NO ORDERS ENABLED';title.style.color='#ffa6a6';title.style.fontWeight='bold';o.appendChild(title);
       for(const c of d.checks){const line=document.createElement('div');line.style.margin='6px 0';line.textContent=(c.ready?'✓ ':'✕ ')+c.name+' — '+c.detail;o.appendChild(line);}
     } catch(e){o.textContent='Readiness unavailable; live trading remains BLOCKED.';}finally{b.disabled=false;}
+  });
+})();
+
+
+// Stage 7: inspect safety prerequisites and durable future-execution halt; no order route.
+(function(){
+  const b=document.getElementById('stage7AuditButton');
+  const o=document.getElementById('stage7AuditResult');
+  if(!b||!o)return;
+  b.addEventListener('click',async()=>{
+    b.disabled=true;o.textContent='Reading live-execution blockers and PostgreSQL halt…';
+    try{
+      const r=await fetch('/terminal/stage7-readiness-audit',{cache:'no-store',credentials:'same-origin'});
+      const d=await r.json();
+      o.replaceChildren();
+      const heading=document.createElement('strong');
+      heading.textContent='Stage 7 '+String(d.status||'BLOCKED')+' · '+String(d.summary||'Readiness unavailable')+' · Exchange orders: 0';
+      o.appendChild(heading);
+      for(const check of (Array.isArray(d.checks)?d.checks:[])){
+        const line=document.createElement('div');line.style.margin='5px 0';
+        line.textContent=(check.passed?'✓ ':'✕ ')+String(check.name)+' — '+String(check.detail);
+        o.appendChild(line);
+      }
+      if(!r.ok)o.style.color='#ffb6b6';
+    }catch(e){o.textContent='Stage 7 BLOCKED · Could not confirm readiness. Exchange orders: 0';}
+    finally{b.disabled=false;}
   });
 })();
 
@@ -2474,6 +2500,66 @@ def terminal_stage6_halt_self_test():
                     cur.execute('DELETE FROM luxalgo_stage6_halt_diagnostics WHERE event_id=%s',(event_id,))
         except (psycopg.Error,RuntimeError,OSError):
             pass
+
+# Stage 7: audit-only inventory of missing live-execution protections.
+# Never turns execution on, checks secret permissions, or makes exchange write calls.
+@app.get('/terminal/stage7-readiness-audit')
+def terminal_stage7_readiness_audit():
+    if not _terminal_permitted(): return _terminal_guard()
+    checks = []
+    def check(name, passed, detail):
+        checks.append(dict(name=name, passed=bool(passed), detail=detail))
+
+    env_off = os.getenv('LIVE_TRADING_ENABLED', 'false').strip().lower() == 'false'
+    check('Live execution environment disabled', env_off,
+          'LIVE_TRADING_ENABLED must stay false; no exchange order routes implemented')
+    db_halt_verified = False
+    try:
+        with _db_connect() as con:
+            _ensure_schema(con)
+            with con.cursor() as cur:
+                cur.execute('SELECT halted,reason FROM luxalgo_stage6_execution_halt WHERE id=1')
+                halt_row = cur.fetchone()
+                cur.execute('SELECT to_regclass(%s) AS ledger',('luxalgo_stage5_sim_order_ledger',))
+                ledger_row = cur.fetchone()
+                db_halt_verified = bool(halt_row and halt_row['halted'] is True)
+        check('PostgreSQL future-execution halt', db_halt_verified,
+              'Database confirmed HALTED' if db_halt_verified else 'Halt not verified — fail closed')
+        check('Stage 5 simulated ledger schema', bool(ledger_row and ledger_row['ledger']),
+              'Simulated test ledger exists; not reconciled Gate.io orders')
+    except (psycopg.Error, RuntimeError, OSError):
+        check('PostgreSQL future-execution halt', False,
+              'Database unavailable or unverified — fail closed')
+        check('Stage 5 simulated ledger schema', False,
+              'Cannot verify schema; simulated ledger is never a live order ledger')
+
+    missing = [
+        ('Exchange order submission and acknowledgment',
+         'No tested Gate.io write API, client-order IDs, timeout recovery or acknowledgment validation'),
+        ('Exchange-native protective SL/TP',
+         'Stage 4 validates hypothetical levels only; real protective orders not acknowledged'),
+        ('Verified fills and order reconciliation',
+         'No read-after-write fill matching, partial-fill handling or exchange order lifecycle'),
+        ('Durable live order idempotency',
+         'Stage 5 ledger is for simulations only; no exchange order correlation or recovery'),
+        ('Atomic account-wide risk enforcement',
+         'Stage 2 risk gate is simulated; margin, exposure and position limits are not enforced on orders'),
+        ('Emergency exchange cancellation and position handling',
+         'Stage 6 HALT blocks proposed future execution; does not cancel exchange orders or close positions'),
+        ('Startup reconciliation and operational resilience',
+         'No audited restart reconciliation, deployment uptime/SLA, stale price or order timeout safety tests'),
+    ]
+    for name, detail in missing:
+        check(name, False, detail)
+
+    result = jsonify(status='BLOCKED', safe_to_trade=False, live_trading=False,
+                     orders_enabled=False, orders_placed=0,
+                     passed_prerequisites=sum(bool(c['passed']) for c in checks),
+                     missing_critical=len(missing), checks=checks,
+                     summary='Read-only safety inventory complete; live execution is NOT ready',
+                     stage='STAGE7_READ_ONLY_AUDIT')
+    result.headers['Cache-Control'] = 'private, no-store'
+    return result
 
 @app.get('/terminal/live-readiness')
 def terminal_live_readiness():
