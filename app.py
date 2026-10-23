@@ -164,6 +164,16 @@ CREATE TABLE IF NOT EXISTS luxalgo_stage6_halt_diagnostics (
  halted BOOLEAN NOT NULL DEFAULT TRUE,
  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+-- Stage 8: simulated unknown-acknowledgment quarantine, never wired to Gate.io.
+CREATE TABLE IF NOT EXISTS luxalgo_stage8_ack_diagnostics (
+  client_id TEXT PRIMARY KEY,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  state TEXT NOT NULL CHECK(state IN ('PREPARED','ACK_UNKNOWN','REVIEW_REQUIRED')),
+  source TEXT NOT NULL DEFAULT 'STAGE8_DIAGNOSTIC' CHECK(source='STAGE8_DIAGNOSTIC'),
+  note TEXT NOT NULL DEFAULT 'NO_EXCHANGE_ORDER'
+);
+CREATE INDEX IF NOT EXISTS idx_stage8_diag_state ON luxalgo_stage8_ack_diagnostics(state,updated_at);
 CREATE TABLE IF NOT EXISTS luxalgo_dry_run_intents (
  event_id TEXT PRIMARY KEY,
  received_at TIMESTAMPTZ NOT NULL,
@@ -518,7 +528,7 @@ h2{font-size:15px;font-weight:850;letter-spacing:.3px}
 <div class="metric"><small>AVAILABLE FUTURES · USDT</small><strong id="futuresAvailable">—</strong><span>Exchange-reported trading availability</span></div>
 <div class="metric"><small>FUTURES BALANCE · USDT</small><strong id="futuresBalance">—</strong><span>Account balance before unrealized P&amp;L</span></div>
 </div></details>
-<details class="panel" style="margin:12px 0" id="liveReadinessPanel"><summary style="font-weight:850;cursor:pointer;color:#ffcf89">LIVE EXECUTION READINESS · SAFETY CHECK (READ ONLY)</summary><p class="light">This panel checks safeguards only. It cannot start trading or enable Gate.io API writes.</p><button class="btn" type="button" id="readinessRefresh">Check readiness</button><button class="btn gloss-action" type="button" id="guardTestButton" style="margin-left:8px">Test Duplicate Order Guard</button><button class="btn gloss-action" type="button" id="riskCheckButton" style="margin-left:8px">Check Account Risk Limits</button><button class="btn gloss-action" type="button" id="stage2GateTestButton" style="margin-left:8px">Test Stage 2 Risk Gate</button><button class="btn gloss-action" type="button" id="stage3ContractTestButton" style="margin-left:8px">Test Stage 3 Contract Sizing</button><button class="btn gloss-action" type="button" id="stage4ProtectiveTestButton" style="margin-left:8px">Test Stage 4 SL/TP</button><button class="btn gloss-action" type="button" id="stage5LedgerTestButton" style="margin-left:8px">Test Stage 5 Ledger</button><button class="btn gloss-action" type="button" id="stage6HaltTestButton" style="margin-left:8px">Test Stage 6 Halt &amp; Recovery</button><button class="btn gloss-action" type="button" id="stage7AuditButton" style="margin-left:8px">Test Stage 7 Readiness Audit</button><button class="btn btn-danger" type="button" id="stage6EmergencyHalt" style="margin-left:8px">EMERGENCY HALT · PAPER &amp; FUTURE EXECUTION</button><p class="light" id="riskCheckResult" role="status" aria-live="polite">Read-only risk inspection available. Never authorizes a trade.</p><p class="light" id="guardTestResult">Test only: all candidates are BLOCKED; no exchange orders.</p><p class="light" id="stage2GateTestResult" role="status" aria-live="polite">Stage 2 PostgreSQL concurrency test not yet run.</p><p class="light" id="stage3ContractTestResult" role="status" aria-live="polite">Stage 3 read-only sizing diagnostic not yet run.</p><p class="light" id="stage4ProtectiveTestResult" role="status" aria-live="polite">Stage 4 protective-price validation not yet run. No protective orders exist.</p><p class="light" id="stage5LedgerTestResult" role="status" aria-live="polite">Stage 5 PostgreSQL simulated lifecycle test not yet run. No exchange writes.</p><p class="light" id="stage6HaltTestResult" role="status" aria-live="polite">Stage 6 persistent halt diagnostic not yet run. No exchange writes.</p><p class="light" id="stage7AuditResult" role="status" aria-live="polite">Stage 7 read-only readiness audit not yet run. All exchange execution blocked.</p><p class="light" id="stage6HaltState" role="status" aria-live="polite">Future execution stays HALTED; checking database status…</p><div id="readinessOutput" role="status" aria-live="polite" style="margin-top:10px;color:#fdbfbf">Live execution BLOCKED until all critical safeguards are implemented and tested.</div></details>
+<details class="panel" style="margin:12px 0" id="liveReadinessPanel"><summary style="font-weight:850;cursor:pointer;color:#ffcf89">LIVE EXECUTION READINESS · SAFETY CHECK (READ ONLY)</summary><p class="light">This panel checks safeguards only. It cannot start trading or enable Gate.io API writes.</p><button class="btn" type="button" id="readinessRefresh">Check readiness</button><button class="btn gloss-action" type="button" id="guardTestButton" style="margin-left:8px">Test Duplicate Order Guard</button><button class="btn gloss-action" type="button" id="riskCheckButton" style="margin-left:8px">Check Account Risk Limits</button><button class="btn gloss-action" type="button" id="stage2GateTestButton" style="margin-left:8px">Test Stage 2 Risk Gate</button><button class="btn gloss-action" type="button" id="stage3ContractTestButton" style="margin-left:8px">Test Stage 3 Contract Sizing</button><button class="btn gloss-action" type="button" id="stage4ProtectiveTestButton" style="margin-left:8px">Test Stage 4 SL/TP</button><button class="btn gloss-action" type="button" id="stage5LedgerTestButton" style="margin-left:8px">Test Stage 5 Ledger</button><button class="btn gloss-action" type="button" id="stage6HaltTestButton" style="margin-left:8px">Test Stage 6 Halt &amp; Recovery</button><button class="btn gloss-action" type="button" id="stage7AuditButton" style="margin-left:8px">Test Stage 7 Readiness Audit</button><button class="btn gloss-action" type="button" id="stage8AckTestButton" style="margin-left:8px">Test Stage 8 Ack Recovery</button><button class="btn btn-danger" type="button" id="stage6EmergencyHalt" style="margin-left:8px">EMERGENCY HALT · PAPER &amp; FUTURE EXECUTION</button><p class="light" id="riskCheckResult" role="status" aria-live="polite">Read-only risk inspection available. Never authorizes a trade.</p><p class="light" id="guardTestResult">Test only: all candidates are BLOCKED; no exchange orders.</p><p class="light" id="stage2GateTestResult" role="status" aria-live="polite">Stage 2 PostgreSQL concurrency test not yet run.</p><p class="light" id="stage3ContractTestResult" role="status" aria-live="polite">Stage 3 read-only sizing diagnostic not yet run.</p><p class="light" id="stage4ProtectiveTestResult" role="status" aria-live="polite">Stage 4 protective-price validation not yet run. No protective orders exist.</p><p class="light" id="stage5LedgerTestResult" role="status" aria-live="polite">Stage 5 PostgreSQL simulated lifecycle test not yet run. No exchange writes.</p><p class="light" id="stage6HaltTestResult" role="status" aria-live="polite">Stage 6 persistent halt diagnostic not yet run. No exchange writes.</p><p class="light" id="stage7AuditResult" role="status" aria-live="polite">Stage 7 read-only readiness audit not yet run. All exchange execution blocked.</p><p class="light" id="stage8AckTestResult" role="status" aria-live="polite">Stage 8 unknown-acknowledgment quarantine not yet tested. No exchange write.</p><p class="light" id="stage6HaltState" role="status" aria-live="polite">Future execution stays HALTED; checking database status…</p><div id="readinessOutput" role="status" aria-live="polite" style="margin-top:10px;color:#fdbfbf">Live execution BLOCKED until all critical safeguards are implemented and tested.</div></details>
 <div class="grid metric-grid">
 <div class="metric"><small>GATE.IO CONNECTION</small><strong class="gloss-cyan">READ-ONLY</strong><span id="gatePositionStatus">Checking position feed…</span></div>
 <div class="metric"><small>OPEN POSITIONS</small><strong id="openPositionCount">—</strong><span>Verified Gate.io positions only</span></div>
@@ -632,6 +642,23 @@ h2{font-size:15px;font-weight:850;letter-spacing:.3px}
       }
       if(!r.ok)o.style.color='#ffb6b6';
     }catch(e){o.textContent='Stage 7 BLOCKED · Could not confirm readiness. Exchange orders: 0';}
+    finally{b.disabled=false;}
+  });
+})();
+
+// Stage 8: durable client-ID / ambiguous acknowledgment simulation only.
+(function(){
+  const b=document.getElementById('stage8AckTestButton');
+  const out=document.getElementById('stage8AckTestResult');
+  if(!b||!out)return;
+  b.addEventListener('click',async()=>{
+    b.disabled=true;out.textContent='Testing Stage 8 PostgreSQL simulated acknowledgment recovery…';
+    try{
+      const r=await fetch('/terminal/stage8-ack-recovery-test',{method:'POST',credentials:'same-origin',cache:'no-store',headers:{'Content-Type':'application/json'},body:'{}'});
+      const d=await r.json();
+      out.textContent='Stage 8 '+String(d.status||'BLOCKED')+' · '+String(d.detail||d.error||'Unavailable')+' · Exchange orders: 0';
+      out.style.color=r.ok&&d.status==='PASS'?'#63f0c3':'#ffb6b6';
+    }catch(e){out.textContent='Stage 8 BLOCKED · Diagnostic unavailable; no exchange orders.';out.style.color='#ffb6b6';}
     finally{b.disabled=false;}
   });
 })();
@@ -2560,6 +2587,71 @@ def terminal_stage7_readiness_audit():
                      stage='STAGE7_READ_ONLY_AUDIT')
     result.headers['Cache-Control'] = 'private, no-store'
     return result
+
+# Stage 8: TEST-ONLY uncertain acknowledgment and durable correlation exercise.
+# No network calls, no live client-order IDs, no permission elevation.
+@app.post('/terminal/stage8-ack-recovery-test')
+def terminal_stage8_ack_recovery_test():
+    if not _terminal_permitted(): return _terminal_guard()
+    if os.getenv('LIVE_TRADING_ENABLED','false').strip().lower() != 'false':
+        return jsonify(status='BLOCKED',error='LIVE_TRADING_ENABLED must remain false',orders_placed=0),503
+    diagnostic_id = 'STAGE8_TEST_' + secrets.token_hex(16)
+    try:
+        # First connection: persist one unique client reference, reject a replay,
+        # and quarantine a hypothetical lost acknowledgment for manual review.
+        with _db_connect() as con:
+            _ensure_schema(con)
+            with con.cursor() as cur:
+                cur.execute("""INSERT INTO luxalgo_stage8_ack_diagnostics(client_id,state)
+                               VALUES (%s,'PREPARED') ON CONFLICT(client_id) DO NOTHING
+                               RETURNING client_id""", (diagnostic_id,))
+                inserted = cur.fetchone() is not None
+                cur.execute("""INSERT INTO luxalgo_stage8_ack_diagnostics(client_id,state)
+                               VALUES (%s,'PREPARED') ON CONFLICT(client_id) DO NOTHING
+                               RETURNING client_id""", (diagnostic_id,))
+                duplicate_rejected = cur.fetchone() is None
+                cur.execute("""UPDATE luxalgo_stage8_ack_diagnostics
+                               SET state='ACK_UNKNOWN',updated_at=NOW()
+                               WHERE client_id=%s AND state='PREPARED' RETURNING state""",
+                            (diagnostic_id,))
+                marked_unknown = cur.fetchone() is not None
+                # A retry is NEVER assumed safe while acknowledgment is uncertain.
+                cur.execute("""UPDATE luxalgo_stage8_ack_diagnostics
+                               SET state='PREPARED',updated_at=NOW()
+                               WHERE client_id=%s AND state='PREPARED' RETURNING state""",
+                            (diagnostic_id,))
+                unsafe_retry_blocked = cur.fetchone() is None
+                cur.execute("""UPDATE luxalgo_stage8_ack_diagnostics
+                               SET state='REVIEW_REQUIRED',updated_at=NOW()
+                               WHERE client_id=%s AND state='ACK_UNKNOWN' RETURNING state""",
+                            (diagnostic_id,))
+                quarantined = cur.fetchone() is not None
+        # Open a fresh connection to verify restart-style durable recovery.
+        with _db_connect() as con:
+            with con.cursor() as cur:
+                cur.execute('SELECT state,source FROM luxalgo_stage8_ack_diagnostics WHERE client_id=%s',
+                            (diagnostic_id,))
+                recovered = cur.fetchone()
+                cur.execute('SELECT halted FROM luxalgo_stage6_execution_halt WHERE id=1')
+                halt = cur.fetchone()
+        passed = all((inserted,duplicate_rejected,marked_unknown,
+                      unsafe_retry_blocked,quarantined,
+                      bool(recovered and recovered['state']=='REVIEW_REQUIRED' and
+                           recovered['source']=='STAGE8_DIAGNOSTIC'),
+                      bool(halt and halt['halted'] is True)))
+        detail=('Unique diagnostic client ID, duplicate replay rejection, '
+                'uncertain-ack quarantine, retry prohibition, fresh-connection '
+                'recovery and persistent HALT verified' if passed else
+                'One or more durable safety checks did not pass; fail closed')
+        response=jsonify(status='PASS' if passed else 'BLOCKED',detail=detail,
+                         stage='STAGE8_SIMULATION_ONLY',exchange_orders=0,
+                         live_trading=False,orders_enabled=False,
+                         exchange_acknowledgment_verified=False)
+        response.headers['Cache-Control']='private, no-store'
+        return response, (200 if passed else 503)
+    except (psycopg.Error,RuntimeError,OSError):
+        return jsonify(status='BLOCKED',error='Database diagnostic unavailable; fail closed',
+                       exchange_orders=0,orders_enabled=False),503
 
 @app.get('/terminal/live-readiness')
 def terminal_live_readiness():
