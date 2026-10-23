@@ -2362,7 +2362,7 @@ def _completed_gate_candles_after(symbol, tf, after):
         raise ValueError('Historical interval exceeds conservative candle retrieval window')
     contract = symbol[:-4] + '_USDT'
     url = ('https://api.gateio.ws/api/v4/futures/usdt/candlesticks?' +
-           urlencode({'contract':contract,'interval':tf,'from':max(0,start-seconds), 'to':now, 'limit':1000}))
+           urlencode({'contract':contract,'interval':tf,'from':max(0,start-seconds), 'to':now}))
     req=Request(url,headers={'Accept':'application/json','User-Agent':'LuxAlgoPRO-PaperMonitor/1.0'},method='GET')
     with urlopen(req,timeout=10) as res:
         raw=json.loads(res.read(450000))
