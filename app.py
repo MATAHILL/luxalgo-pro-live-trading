@@ -139,6 +139,16 @@ CREATE TABLE IF NOT EXISTS luxalgo_risk_gate_simulations (
   details JSONB NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_luxalgo_risk_gate_sim_expiry ON luxalgo_risk_gate_simulations(expires_at);
+-- Stage 5 simulated-only lifecycle ledger. This is NOT an exchange order ledger.
+CREATE TABLE IF NOT EXISTS luxalgo_stage5_sim_order_ledger (
+  event_id TEXT PRIMARY KEY,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  state TEXT NOT NULL CHECK(state IN ('RESERVED','SIMULATED_ACK','CLOSED','BLOCKED')),
+  source TEXT NOT NULL DEFAULT 'STAGE5_DIAGNOSTIC' CHECK(source='STAGE5_DIAGNOSTIC'),
+  detail JSONB NOT NULL DEFAULT '{}'::jsonb
+);
+CREATE INDEX IF NOT EXISTS idx_stage5_sim_ledger_state ON luxalgo_stage5_sim_order_ledger(state,updated_at);
 CREATE TABLE IF NOT EXISTS luxalgo_dry_run_intents (
  event_id TEXT PRIMARY KEY,
  received_at TIMESTAMPTZ NOT NULL,
@@ -493,7 +503,7 @@ h2{font-size:15px;font-weight:850;letter-spacing:.3px}
 <div class="metric"><small>AVAILABLE FUTURES · USDT</small><strong id="futuresAvailable">—</strong><span>Exchange-reported trading availability</span></div>
 <div class="metric"><small>FUTURES BALANCE · USDT</small><strong id="futuresBalance">—</strong><span>Account balance before unrealized P&amp;L</span></div>
 </div></details>
-<details class="panel" style="margin:12px 0" id="liveReadinessPanel"><summary style="font-weight:850;cursor:pointer;color:#ffcf89">LIVE EXECUTION READINESS · SAFETY CHECK (READ ONLY)</summary><p class="light">This panel checks safeguards only. It cannot start trading or enable Gate.io API writes.</p><button class="btn" type="button" id="readinessRefresh">Check readiness</button><button class="btn gloss-action" type="button" id="guardTestButton" style="margin-left:8px">Test Duplicate Order Guard</button><button class="btn gloss-action" type="button" id="riskCheckButton" style="margin-left:8px">Check Account Risk Limits</button><button class="btn gloss-action" type="button" id="stage2GateTestButton" style="margin-left:8px">Test Stage 2 Risk Gate</button><button class="btn gloss-action" type="button" id="stage3ContractTestButton" style="margin-left:8px">Test Stage 3 Contract Sizing</button><button class="btn gloss-action" type="button" id="stage4ProtectiveTestButton" style="margin-left:8px">Test Stage 4 SL/TP</button><p class="light" id="riskCheckResult" role="status" aria-live="polite">Read-only risk inspection available. Never authorizes a trade.</p><p class="light" id="guardTestResult">Test only: all candidates are BLOCKED; no exchange orders.</p><p class="light" id="stage2GateTestResult" role="status" aria-live="polite">Stage 2 PostgreSQL concurrency test not yet run.</p><p class="light" id="stage3ContractTestResult" role="status" aria-live="polite">Stage 3 read-only sizing diagnostic not yet run.</p><p class="light" id="stage4ProtectiveTestResult" role="status" aria-live="polite">Stage 4 protective-price validation not yet run. No protective orders exist.</p><div id="readinessOutput" role="status" aria-live="polite" style="margin-top:10px;color:#fdbfbf">Live execution BLOCKED until all critical safeguards are implemented and tested.</div></details>
+<details class="panel" style="margin:12px 0" id="liveReadinessPanel"><summary style="font-weight:850;cursor:pointer;color:#ffcf89">LIVE EXECUTION READINESS · SAFETY CHECK (READ ONLY)</summary><p class="light">This panel checks safeguards only. It cannot start trading or enable Gate.io API writes.</p><button class="btn" type="button" id="readinessRefresh">Check readiness</button><button class="btn gloss-action" type="button" id="guardTestButton" style="margin-left:8px">Test Duplicate Order Guard</button><button class="btn gloss-action" type="button" id="riskCheckButton" style="margin-left:8px">Check Account Risk Limits</button><button class="btn gloss-action" type="button" id="stage2GateTestButton" style="margin-left:8px">Test Stage 2 Risk Gate</button><button class="btn gloss-action" type="button" id="stage3ContractTestButton" style="margin-left:8px">Test Stage 3 Contract Sizing</button><button class="btn gloss-action" type="button" id="stage4ProtectiveTestButton" style="margin-left:8px">Test Stage 4 SL/TP</button><button class="btn gloss-action" type="button" id="stage5LedgerTestButton" style="margin-left:8px">Test Stage 5 Ledger</button><p class="light" id="riskCheckResult" role="status" aria-live="polite">Read-only risk inspection available. Never authorizes a trade.</p><p class="light" id="guardTestResult">Test only: all candidates are BLOCKED; no exchange orders.</p><p class="light" id="stage2GateTestResult" role="status" aria-live="polite">Stage 2 PostgreSQL concurrency test not yet run.</p><p class="light" id="stage3ContractTestResult" role="status" aria-live="polite">Stage 3 read-only sizing diagnostic not yet run.</p><p class="light" id="stage4ProtectiveTestResult" role="status" aria-live="polite">Stage 4 protective-price validation not yet run. No protective orders exist.</p><p class="light" id="stage5LedgerTestResult" role="status" aria-live="polite">Stage 5 PostgreSQL simulated lifecycle test not yet run. No exchange writes.</p><div id="readinessOutput" role="status" aria-live="polite" style="margin-top:10px;color:#fdbfbf">Live execution BLOCKED until all critical safeguards are implemented and tested.</div></details>
 <div class="grid metric-grid">
 <div class="metric"><small>GATE.IO CONNECTION</small><strong class="gloss-cyan">READ-ONLY</strong><span id="gatePositionStatus">Checking position feed…</span></div>
 <div class="metric"><small>OPEN POSITIONS</small><strong id="openPositionCount">—</strong><span>Verified Gate.io positions only</span></div>
@@ -643,6 +653,21 @@ h2{font-size:15px;font-weight:850;letter-spacing:.3px}
    const d=await r.json();
    out.textContent='Stage 4 '+(d.status||'UNAVAILABLE')+' · '+(d.detail||d.error||'No details')+' · Exchange orders: 0';
   }catch(e){out.textContent='Stage 4 unavailable (fail closed): '+e.message+' · Orders: 0';}
+  finally{b.disabled=false;}
+ });
+})();
+
+// Stage 5: simulated-only database order-lifecycle and recovery diagnostic.
+(function(){
+ const b=document.getElementById('stage5LedgerTestButton'),out=document.getElementById('stage5LedgerTestResult');
+ if(!b||!out)return;
+ b.addEventListener('click',async()=>{
+  b.disabled=true;out.textContent='Testing PostgreSQL lifecycle, replay rejection, and simulated recovery…';
+  try{
+   const r=await fetch('/terminal/stage5-ledger-self-test',{method:'POST',headers:{'Content-Type':'application/json','X-Terminal-CSRF':{{ csrf_token|tojson }}},body:'{}',cache:'no-store'});
+   const d=await r.json();
+   out.textContent='Stage 5 '+(d.status||'UNAVAILABLE')+' · '+(d.detail||d.error||'No details')+' · Exchange orders: 0';
+  }catch(e){out.textContent='Stage 5 unavailable (fail closed): '+e.message+' · Orders: 0';}
   finally{b.disabled=false;}
  });
 })();
@@ -2290,6 +2315,61 @@ def terminal_stage4_protection_self_test():
     except (ValueError,HTTPError,URLError,TimeoutError,OSError,TypeError,InvalidOperation,OverflowError) as ex:
         app.logger.warning('Stage 4 protection diagnostic inconclusive: %s',type(ex).__name__)
         return jsonify(status='INCONCLUSIVE',detail='Public contract metadata/precision unavailable; no exchange orders',orders_placed=0),503
+
+# Stage 5: PostgreSQL simulated-only lifecycle diagnostic. No network requests to Gate.io.
+@app.post('/terminal/stage5-ledger-self-test')
+def terminal_stage5_ledger_self_test():
+    if not _terminal_permitted():
+        return _terminal_guard()
+    if not _csrf_valid():
+        return jsonify(status='BLOCKED',error='Invalid session verification',orders_placed=0),403
+    if os.getenv('LIVE_TRADING_ENABLED','false').strip().lower() != 'false':
+        return jsonify(status='BLOCKED',error='Live trading must remain disabled',orders_placed=0),503
+    event_id='st5_'+secrets.token_hex(20)
+    try:
+        with _db_connect() as con:
+            _ensure_schema(con)
+            with con.cursor() as cur:
+                # Identity-based idempotency: only one lifecycle per simulated event ID.
+                cur.execute("INSERT INTO luxalgo_stage5_sim_order_ledger(event_id,state,detail) VALUES (%s,'RESERVED',%s::jsonb) ON CONFLICT(event_id) DO NOTHING RETURNING event_id",
+                            (event_id,json.dumps({'test':True,'exchange_order':False})))
+                inserted=cur.fetchone() is not None
+                cur.execute("INSERT INTO luxalgo_stage5_sim_order_ledger(event_id,state,detail) VALUES (%s,'RESERVED',%s::jsonb) ON CONFLICT(event_id) DO NOTHING RETURNING event_id",
+                            (event_id,json.dumps({'test':True})))
+                replay_blocked=cur.fetchone() is None
+                # Compare-and-swap state transitions prevent repeated ACK and invalid closure.
+                cur.execute("UPDATE luxalgo_stage5_sim_order_ledger SET state='SIMULATED_ACK',updated_at=NOW() WHERE event_id=%s AND state='RESERVED' RETURNING event_id",(event_id,))
+                acked=cur.fetchone() is not None
+                cur.execute("UPDATE luxalgo_stage5_sim_order_ledger SET state='SIMULATED_ACK',updated_at=NOW() WHERE event_id=%s AND state='RESERVED' RETURNING event_id",(event_id,))
+                double_ack_blocked=cur.fetchone() is None
+                # A second DB read simulates a restart recovery scan; it is NOT exchange reconciliation.
+                cur.execute("SELECT event_id,state FROM luxalgo_stage5_sim_order_ledger WHERE event_id=%s",(event_id,))
+                recovered=cur.fetchone()
+                recovered_ok=bool(recovered and recovered['state']=='SIMULATED_ACK')
+                cur.execute("UPDATE luxalgo_stage5_sim_order_ledger SET state='CLOSED',updated_at=NOW() WHERE event_id=%s AND state='SIMULATED_ACK' RETURNING event_id",(event_id,))
+                closed=cur.fetchone() is not None
+                cur.execute("UPDATE luxalgo_stage5_sim_order_ledger SET state='SIMULATED_ACK',updated_at=NOW() WHERE event_id=%s AND state='RESERVED' RETURNING event_id",(event_id,))
+                stale_transition_blocked=cur.fetchone() is None
+        passed=all((inserted,replay_blocked,acked,double_ack_blocked,recovered_ok,closed,stale_transition_blocked))
+        return jsonify(status='PASS' if passed else 'FAIL',
+            detail=('Unique simulated event, duplicate replay rejected, compare-and-swap transitions and database recovery read verified.'
+                    if passed else 'Simulation state mismatch; inspect server logs.'),
+            checks={'inserted':inserted,'duplicate_rejected':replay_blocked,
+                    'acknowledged':acked,'double_ack_blocked':double_ack_blocked,
+                    'recoverable_from_database':recovered_ok,'closed':closed,
+                    'stale_transition_blocked':stale_transition_blocked},
+            simulated_only=True,live_trading=False,orders_enabled=False,orders_placed=0), (200 if passed else 409)
+    except (psycopg.Error,RuntimeError,OSError,ValueError) as exc:
+        app.logger.warning('Stage 5 simulated ledger test failed closed: %s',type(exc).__name__)
+        return jsonify(status='INCONCLUSIVE',detail='Database lifecycle diagnostic unavailable; no exchange orders',orders_placed=0),503
+    finally:
+        # Delete only this diagnostic record; preserve all user signals and paper trades.
+        try:
+            with _db_connect() as con:
+                with con.cursor() as cur:
+                    cur.execute("DELETE FROM luxalgo_stage5_sim_order_ledger WHERE event_id=%s AND source='STAGE5_DIAGNOSTIC'",(event_id,))
+        except (psycopg.Error,RuntimeError,OSError):
+            app.logger.warning('Stage 5 diagnostic row cleanup deferred')
 
 @app.get('/terminal/live-readiness')
 def terminal_live_readiness():
