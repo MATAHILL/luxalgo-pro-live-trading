@@ -220,6 +220,19 @@ CREATE TABLE IF NOT EXISTS luxalgo_stage13_recovery_diagnostics (
   status TEXT NOT NULL CHECK(status='DIAGNOSTIC_ONLY'),
   source TEXT NOT NULL DEFAULT 'STAGE13_FAILURE_FIXTURES' CHECK(source='STAGE13_FAILURE_FIXTURES')
 );
+-- Stage 14 final synthetic integration audit. This is isolated diagnostic data,
+-- never a real webhook receipt, bot position, Gate.io order or fill.
+CREATE TABLE IF NOT EXISTS luxalgo_stage14_final_diagnostics (
+  run_id TEXT NOT NULL,
+  event_id TEXT NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  side TEXT NOT NULL CHECK(side IN ('LONG','SHORT')),
+  state TEXT NOT NULL CHECK(state IN ('PAPER_OPEN','PAPER_TP','PAPER_SL')),
+  risk_bps INTEGER NOT NULL CHECK(risk_bps BETWEEN 1 AND 50),
+  source TEXT NOT NULL DEFAULT 'STAGE14_SYNTHETIC_ONLY' CHECK(source='STAGE14_SYNTHETIC_ONLY'),
+  PRIMARY KEY(run_id,event_id)
+);
+CREATE INDEX IF NOT EXISTS idx_stage14_run ON luxalgo_stage14_final_diagnostics(run_id);
 CREATE TABLE IF NOT EXISTS luxalgo_dry_run_intents (
  event_id TEXT PRIMARY KEY,
  received_at TIMESTAMPTZ NOT NULL,
@@ -559,12 +572,18 @@ h2{font-size:15px;font-weight:850;letter-spacing:.3px}
 
 /* Advanced scanner is a separate, read-only market intelligence panel. */
 .advanced-panel{border-color:#37779b}.adv-controls{display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin:10px 0}.adv-table{overflow-x:auto;max-height:480px;overflow-y:auto}.adv-table table{min-width:1030px}.adv-table th{position:sticky;top:0;background:#193955}.adv-summary{color:#b1d3e9;font-size:12px}.adv-signal{font-weight:850}.adv-signal.long{color:#60e9b6}.adv-signal.short{color:#ff8ca3}.adv-reason{font-size:11px;color:#f6cb92}.adv-blocked{color:#ffc994}
+/* Paper-bot state indicator beside paper-simulation title. Never represents live trading. */
+.bot-status-line{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.bot-state-indicator{font-size:12px;font-weight:900;letter-spacing:.25px;padding:3px 10px;border-radius:999px;border:1px solid #64748b;background:#273447;color:#ccd7e3;white-space:nowrap}
+.bot-state-indicator.on{color:#d6ffe9;border-color:#29d982;background:#0a6145;box-shadow:0 0 10px #25e68c66}
+.bot-state-indicator.off{color:#ffe7e9;border-color:#f66a79;background:#812d3b;box-shadow:0 0 10px #f03b5766}
+.bot-state-indicator.unknown{color:#f5dfb0;border-color:#997a38;background:#494027}
 </style></head><body><div class="wrap"><header class="terminal-header"><div class="terminal-brand"><h1>LUXALGO PRO · TRADING TERMINAL</h1><p>Gate.io USDT Perpetual · LuxAlgo 5m / 15m · Coded by · SUBHASISH</p>
 <div class="profile-greeting"><div class="profile-avatar" id="avatarDisplay"><span>SD</span></div>
-<div><div class="profile-name">Hello SUBHASISH</div><label class="profile-change" for="profileImageInput" tabindex="0">Change Photo</label><input type="file" id="profileImageInput" accept="image/png,image/jpeg,image/webp" hidden></div></div></div><section class="news-slot" aria-label="Latest crypto news"><div class="news-heading"><span>● CRYPTO NEWS</span><span style="display:flex;align-items:center;gap:7px"><span id="newsFeedStatus">Loading headlines…</span><button type="button" id="newsRefresh" aria-label="Refresh crypto news" title="Refresh crypto news">↻</button></span></div><div class="news-viewport" id="newsViewport"><div class="news-stack" id="newsStack"><span class="news-empty">Retrieving publisher headlines…</span></div></div></section><div class="profile-right"><div class="tag trading-status">● LIVE TRADING OFF</div>
+<div><div class="profile-name">Hello SUBHASISH</div><label class="profile-change" for="profileImageInput" tabindex="0">Change Photo</label><input type="file" id="profileImageInput" accept="image/png,image/jpeg,image/webp" hidden></div></div></div><section class="news-slot" aria-label="Latest crypto news"><div class="news-heading"><span>● CRYPTO NEWS</span><span style="display:flex;align-items:center;gap:7px"><span id="newsFeedStatus">Loading headlines…</span><button type="button" id="newsRefresh" aria-label="Refresh crypto news" title="Refresh crypto news">↻</button></span></div><div class="news-viewport" id="newsViewport"><div class="news-stack" id="newsStack"><span class="news-empty">Retrieving publisher headlines…</span></div></div></section><div class="profile-right">
 <form method="post" action="/logout"><input type="hidden" name="csrf_token" value="{{ csrf_token|e }}"><button class="glossy-logout" type="submit">⇥ LOGOUT</button></form><span id="signalLiveSync" role="status" aria-live="polite" style="font-size:11px;color:#9de7ff">● Signals auto-sync: connecting…</span></div></header>
  <section class="bot-control-panel" aria-label="Remote bot control">
- <div><strong id="botControlLabel">BOT OFF · PAPER SIMULATION PAUSED</strong><p id="botControlDetail">New LuxAlgo signals remain logged. No live orders are possible.</p></div>
+ <div><div class="bot-status-line"><strong id="botControlLabel">BOT OFF · PAPER SIMULATION PAUSED</strong><span id="botStateIndicator" class="bot-state-indicator unknown" role="status" aria-live="polite">● CHECKING</span></div><p id="botControlDetail">New LuxAlgo signals remain logged. No live orders are possible.</p></div>
  <div class="bot-control-actions"><button class="btn" id="botTurnOn" type="button">▶ BOT ON</button><button class="btn" id="botTurnOff" type="button">■ BOT OFF</button></div>
 </section>
 <details class="futures-liquidity" id="futuresLiquidityDetails">
@@ -574,7 +593,7 @@ h2{font-size:15px;font-weight:850;letter-spacing:.3px}
 <div class="metric"><small>AVAILABLE FUTURES · USDT</small><strong id="futuresAvailable">—</strong><span>Exchange-reported trading availability</span></div>
 <div class="metric"><small>FUTURES BALANCE · USDT</small><strong id="futuresBalance">—</strong><span>Account balance before unrealized P&amp;L</span></div>
 </div></details>
-<details class="panel" style="margin:12px 0" id="liveReadinessPanel"><summary style="font-weight:850;cursor:pointer;color:#ffcf89">LIVE EXECUTION READINESS · SAFETY CHECK (READ ONLY)</summary><p class="light">This panel checks safeguards only. It cannot start trading or enable Gate.io API writes.</p><button class="btn" type="button" id="readinessRefresh">Check readiness</button><button class="btn gloss-action" type="button" id="guardTestButton" style="margin-left:8px">Test Duplicate Order Guard</button><button class="btn gloss-action" type="button" id="riskCheckButton" style="margin-left:8px">Check Account Risk Limits</button><button class="btn gloss-action" type="button" id="stage2GateTestButton" style="margin-left:8px">Test Stage 2 Risk Gate</button><button class="btn gloss-action" type="button" id="stage3ContractTestButton" style="margin-left:8px">Test Stage 3 Contract Sizing</button><button class="btn gloss-action" type="button" id="stage4ProtectiveTestButton" style="margin-left:8px">Test Stage 4 SL/TP</button><button class="btn gloss-action" type="button" id="stage5LedgerTestButton" style="margin-left:8px">Test Stage 5 Ledger</button><button class="btn gloss-action" type="button" id="stage6HaltTestButton" style="margin-left:8px">Test Stage 6 Halt &amp; Recovery</button><button class="btn gloss-action" type="button" id="stage7AuditButton" style="margin-left:8px">Test Stage 7 Readiness Audit</button><button class="btn gloss-action" type="button" id="stage8AckTestButton" style="margin-left:8px">Test Stage 8 Ack Recovery</button><button class="btn gloss-action" type="button" id="stage9ReconcileTestButton" style="margin-left:8px">Test Stage 9 Reconciliation</button><button class="btn gloss-action" type="button" id="stage10ProtectionTestButton" style="margin-left:8px">Test Stage 10 SL/TP Coverage</button><button class="btn gloss-action" type="button" id="stage11RiskTestButton" style="margin-left:8px">Test Stage 11 Atomic Risk</button><button class="btn gloss-action" type="button" id="stage12ReadOnlyTestButton" style="margin-left:8px">Test Stage 12 Gate.io Read-Only</button><button class="btn gloss-action" type="button" id="stage13RecoveryTestButton" style="margin-left:8px">Test Stage 13 Recovery &amp; Failures</button><button class="btn btn-danger" type="button" id="stage6EmergencyHalt" style="margin-left:8px">EMERGENCY HALT · PAPER &amp; FUTURE EXECUTION</button><p class="light" id="riskCheckResult" role="status" aria-live="polite">Read-only risk inspection available. Never authorizes a trade.</p><p class="light" id="guardTestResult">Test only: all candidates are BLOCKED; no exchange orders.</p><p class="light" id="stage2GateTestResult" role="status" aria-live="polite">Stage 2 PostgreSQL concurrency test not yet run.</p><p class="light" id="stage3ContractTestResult" role="status" aria-live="polite">Stage 3 read-only sizing diagnostic not yet run.</p><p class="light" id="stage4ProtectiveTestResult" role="status" aria-live="polite">Stage 4 protective-price validation not yet run. No protective orders exist.</p><p class="light" id="stage5LedgerTestResult" role="status" aria-live="polite">Stage 5 PostgreSQL simulated lifecycle test not yet run. No exchange writes.</p><p class="light" id="stage6HaltTestResult" role="status" aria-live="polite">Stage 6 persistent halt diagnostic not yet run. No exchange writes.</p><p class="light" id="stage7AuditResult" role="status" aria-live="polite">Stage 7 read-only readiness audit not yet run. All exchange execution blocked.</p><p class="light" id="stage8AckTestResult" role="status" aria-live="polite">Stage 8 unknown-acknowledgment quarantine not yet tested. No exchange write.</p><p class="light" id="stage9ReconcileTestResult" role="status" aria-live="polite">Stage 9 fixture-only reconciliation test not yet run. Real Gate.io orders are not reconciled.</p><p class="light" id="stage10ProtectionTestResult" role="status" aria-live="polite">Stage 10 protective-order fixture audit not yet run. No exchange protections verified.</p><p class="light" id="stage11RiskTestResult" role="status" aria-live="polite">Stage 11 account-wide risk fixture not yet tested. Exchange orders disabled.</p><p class="light" id="stage12ReadOnlyTestResult" role="status" aria-live="polite">Stage 12 read-only exchange snapshot not yet run. Live order reconciliation is NOT implemented.</p><p class="light" id="stage13RecoveryTestResult" role="status" aria-live="polite">Stage 13 restart/failure diagnostic not yet run. No exchange writes.</p><p class="light" id="stage6HaltState" role="status" aria-live="polite">Future execution stays HALTED; checking database status…</p><div id="readinessOutput" role="status" aria-live="polite" style="margin-top:10px;color:#fdbfbf">Live execution BLOCKED until all critical safeguards are implemented and tested.</div></details>
+<details class="panel" style="margin:12px 0" id="liveReadinessPanel"><summary style="font-weight:850;cursor:pointer;color:#ffcf89">LIVE EXECUTION READINESS · SAFETY CHECK (READ ONLY)</summary><p class="light">This panel checks safeguards only. It cannot start trading or enable Gate.io API writes.</p><button class="btn" type="button" id="readinessRefresh">Check readiness</button><button class="btn gloss-action" type="button" id="guardTestButton" style="margin-left:8px">Test Duplicate Order Guard</button><button class="btn gloss-action" type="button" id="riskCheckButton" style="margin-left:8px">Check Account Risk Limits</button><button class="btn gloss-action" type="button" id="stage2GateTestButton" style="margin-left:8px">Test Stage 2 Risk Gate</button><button class="btn gloss-action" type="button" id="stage3ContractTestButton" style="margin-left:8px">Test Stage 3 Contract Sizing</button><button class="btn gloss-action" type="button" id="stage4ProtectiveTestButton" style="margin-left:8px">Test Stage 4 SL/TP</button><button class="btn gloss-action" type="button" id="stage5LedgerTestButton" style="margin-left:8px">Test Stage 5 Ledger</button><button class="btn gloss-action" type="button" id="stage6HaltTestButton" style="margin-left:8px">Test Stage 6 Halt &amp; Recovery</button><button class="btn gloss-action" type="button" id="stage7AuditButton" style="margin-left:8px">Test Stage 7 Readiness Audit</button><button class="btn gloss-action" type="button" id="stage8AckTestButton" style="margin-left:8px">Test Stage 8 Ack Recovery</button><button class="btn gloss-action" type="button" id="stage9ReconcileTestButton" style="margin-left:8px">Test Stage 9 Reconciliation</button><button class="btn gloss-action" type="button" id="stage10ProtectionTestButton" style="margin-left:8px">Test Stage 10 SL/TP Coverage</button><button class="btn gloss-action" type="button" id="stage11RiskTestButton" style="margin-left:8px">Test Stage 11 Atomic Risk</button><button class="btn gloss-action" type="button" id="stage12ReadOnlyTestButton" style="margin-left:8px">Test Stage 12 Gate.io Read-Only</button><button class="btn gloss-action" type="button" id="stage13RecoveryTestButton" style="margin-left:8px">Test Stage 13 Recovery &amp; Failures</button><button class="btn gloss-action" type="button" id="stage14FinalTestButton" style="margin-left:8px">Test Stage 14 Final Paper Audit</button><button class="btn btn-danger" type="button" id="stage6EmergencyHalt" style="margin-left:8px">EMERGENCY HALT · PAPER &amp; FUTURE EXECUTION</button><p class="light" id="riskCheckResult" role="status" aria-live="polite">Read-only risk inspection available. Never authorizes a trade.</p><p class="light" id="guardTestResult">Test only: all candidates are BLOCKED; no exchange orders.</p><p class="light" id="stage2GateTestResult" role="status" aria-live="polite">Stage 2 PostgreSQL concurrency test not yet run.</p><p class="light" id="stage3ContractTestResult" role="status" aria-live="polite">Stage 3 read-only sizing diagnostic not yet run.</p><p class="light" id="stage4ProtectiveTestResult" role="status" aria-live="polite">Stage 4 protective-price validation not yet run. No protective orders exist.</p><p class="light" id="stage5LedgerTestResult" role="status" aria-live="polite">Stage 5 PostgreSQL simulated lifecycle test not yet run. No exchange writes.</p><p class="light" id="stage6HaltTestResult" role="status" aria-live="polite">Stage 6 persistent halt diagnostic not yet run. No exchange writes.</p><p class="light" id="stage7AuditResult" role="status" aria-live="polite">Stage 7 read-only readiness audit not yet run. All exchange execution blocked.</p><p class="light" id="stage8AckTestResult" role="status" aria-live="polite">Stage 8 unknown-acknowledgment quarantine not yet tested. No exchange write.</p><p class="light" id="stage9ReconcileTestResult" role="status" aria-live="polite">Stage 9 fixture-only reconciliation test not yet run. Real Gate.io orders are not reconciled.</p><p class="light" id="stage10ProtectionTestResult" role="status" aria-live="polite">Stage 10 protective-order fixture audit not yet run. No exchange protections verified.</p><p class="light" id="stage11RiskTestResult" role="status" aria-live="polite">Stage 11 account-wide risk fixture not yet tested. Exchange orders disabled.</p><p class="light" id="stage12ReadOnlyTestResult" role="status" aria-live="polite">Stage 12 read-only exchange snapshot not yet run. Live order reconciliation is NOT implemented.</p><p class="light" id="stage13RecoveryTestResult" role="status" aria-live="polite">Stage 13 restart/failure diagnostic not yet run. No exchange writes.</p><p class="light" id="stage14FinalTestResult" role="status" aria-live="polite">Stage 14 final simulated paper-trading audit not yet run. Live execution remains blocked.</p><p class="light" id="stage6HaltState" role="status" aria-live="polite">Future execution stays HALTED; checking database status…</p><div id="readinessOutput" role="status" aria-live="polite" style="margin-top:10px;color:#fdbfbf">Live execution BLOCKED until all critical safeguards are implemented and tested.</div></details>
 <div class="grid metric-grid">
 <div class="metric"><small>GATE.IO CONNECTION</small><strong class="gloss-cyan">READ-ONLY</strong><span id="gatePositionStatus">Checking position feed…</span></div>
 <div class="metric"><small>OPEN POSITIONS</small><strong id="openPositionCount">—</strong><span>Verified Gate.io positions only</span></div>
@@ -710,6 +729,24 @@ h2{font-size:15px;font-weight:850;letter-spacing:.3px}
 })();
 
 
+
+// Stage 14: FINAL isolated paper-workflow audit; does not submit a trade.
+(function(){
+ const b=document.getElementById('stage14FinalTestButton'),out=document.getElementById('stage14FinalTestResult');
+ if(!b||!out)return;
+ b.addEventListener('click',async()=>{
+  b.disabled=true;out.textContent='Running isolated PostgreSQL paper workflow and safety audit…';
+  try{
+   const r=await fetch('/terminal/stage14-final-paper-test',{
+    method:'POST',credentials:'same-origin',cache:'no-store',
+    headers:{'Content-Type':'application/json','X-Terminal-CSRF':{{ csrf_token|tojson }}},body:'{}'});
+   const d=await r.json();
+   out.textContent='Stage 14 '+String(d.status||'BLOCKED')+' · '+String(d.detail||d.error||'Unavailable')+' · Exchange orders: 0';
+   out.style.color=r.ok&&d.status==='PASS'?'#63f0c3':'#ffb6b6';
+  }catch(e){out.textContent='Stage 14 BLOCKED · Diagnostic unavailable. Exchange orders: 0';out.style.color='#ffb6b6';}
+  finally{b.disabled=false;}
+ });
+})();
 
 // Stage 13: isolated operational failure fixtures; no live exchange submission.
 (function(){
@@ -924,9 +961,9 @@ h2{font-size:15px;font-weight:850;letter-spacing:.3px}
 // Remote control: persisted in PostgreSQL, never enables exchange trading.
 (function(){
  const label=document.getElementById('botControlLabel'),detail=document.getElementById('botControlDetail');
- const on=document.getElementById('botTurnOn'),off=document.getElementById('botTurnOff');
- function render(enabled){on.classList.toggle('next-action',!enabled);off.classList.toggle('next-action',enabled);label.textContent=enabled?'BOT ON · AUTO PAPER SIMULATION':'BOT OFF · PAPER SIMULATION PAUSED';label.style.color=enabled?'#6cf3ba':'#ffc47c';detail.textContent=enabled?'Fresh LuxAlgo signals can create simulated intents. LIVE TRADING IS STILL OFF.':'New signals are logged but no new simulated entries are created. Existing paper history remains.';on.disabled=enabled;off.disabled=!enabled;}
- async function refresh(){try{const r=await fetch('/terminal/bot-control',{cache:'no-store'});const d=await r.json();if(!r.ok)throw Error();render(d.bot_enabled);}catch(e){render(false);detail.textContent='Cannot verify saved bot state: treat as OFF.';on.disabled=true;}}
+ const on=document.getElementById('botTurnOn'),off=document.getElementById('botTurnOff'),indicator=document.getElementById('botStateIndicator');
+ function render(enabled){if(indicator){indicator.className='bot-state-indicator '+(enabled?'on':'off');indicator.textContent=enabled?'● BOT ON':'● BOT OFF';}on.classList.toggle('next-action',!enabled);off.classList.toggle('next-action',enabled);label.textContent=enabled?'BOT ON · AUTO PAPER SIMULATION':'BOT OFF · PAPER SIMULATION PAUSED';label.style.color=enabled?'#6cf3ba':'#ffc47c';detail.textContent=enabled?'Fresh LuxAlgo signals can create simulated intents. LIVE TRADING IS STILL OFF.':'New signals are logged but no new simulated entries are created. Existing paper history remains.';on.disabled=enabled;off.disabled=!enabled;}
+ async function refresh(){try{const r=await fetch('/terminal/bot-control',{cache:'no-store'});const d=await r.json();if(!r.ok)throw Error();render(d.bot_enabled);}catch(e){render(false);if(indicator){indicator.className='bot-state-indicator unknown';indicator.textContent='● STATUS UNKNOWN · SAFE OFF';}detail.textContent='Cannot verify saved bot state: treat as OFF.';on.disabled=true;}}
  async function change(enabled){on.disabled=true;off.disabled=true;try{const r=await fetch('/terminal/bot-control',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({enabled}),cache:'no-store'});const d=await r.json();if(!r.ok)throw Error(d.error||'Update rejected');render(d.bot_enabled);}catch(e){detail.textContent='Cannot change bot state: '+e.message;await refresh();}}
  on.addEventListener('click',()=>change(true));off.addEventListener('click',()=>change(false));refresh();setInterval(()=>{if(!document.hidden)refresh();},30000);
 })();
@@ -3195,6 +3232,91 @@ def terminal_stage13_recovery_test():
         return response,200
     except (psycopg.Error,RuntimeError,OSError,ValueError,TypeError):
         return jsonify(status='BLOCKED',error='PostgreSQL recovery unavailable; fail closed',exchange_orders=0),503
+
+# Stage 14: final, isolated end-to-end *synthetic* paper workflow.
+# Production webhook receipts, paper positions and exchange endpoints are untouched.
+def _stage14_paper_case(side, entry, stop, take_profit, observed):
+    try:
+        if side not in ('LONG','SHORT'):
+            return 'BLOCKED_INVALID_SIDE'
+        values=[Decimal(str(x)) for x in (entry,stop,take_profit,observed)]
+        if any(not x.is_finite() or x<=0 for x in values):
+            return 'BLOCKED_INVALID_PRICE'
+        e,s,t,p=values
+        if side=='LONG' and not(s<e<t) or side=='SHORT' and not(t<e<s):
+            return 'BLOCKED_INVALID_LEVELS'
+        # Conservative tie resolution when observing one sampled price only.
+        if side=='LONG':
+            return 'PAPER_SL' if p<=s else 'PAPER_TP' if p>=t else 'PAPER_OPEN'
+        return 'PAPER_SL' if p>=s else 'PAPER_TP' if p<=t else 'PAPER_OPEN'
+    except (InvalidOperation,TypeError,ValueError):
+        return 'BLOCKED_INVALID_PRICE'
+
+@app.post('/terminal/stage14-final-paper-test')
+def terminal_stage14_final_paper_test():
+    if not _terminal_permitted(): return _terminal_guard()
+    if not _csrf_valid():
+        return jsonify(status='BLOCKED',error='Session verification failed',exchange_orders=0),403
+    if os.getenv('LIVE_TRADING_ENABLED','false').strip().lower()!='false':
+        return jsonify(status='BLOCKED',error='Live trading configuration must remain OFF',exchange_orders=0),503
+    cases=[
+        ('LONG',100,97,106,100,'PAPER_OPEN'),
+        ('LONG',100,97,106,107,'PAPER_TP'),
+        ('LONG',100,97,106,96,'PAPER_SL'),
+        ('SHORT',100,103,94,93,'PAPER_TP'),
+        ('SHORT',100,103,94,104,'PAPER_SL'),
+        ('SHORT',100,103,94,100,'PAPER_OPEN'),
+        ('LONG',100,102,106,105,'BLOCKED_INVALID_LEVELS'),
+        ('SHORT',100,97,94,95,'BLOCKED_INVALID_LEVELS'),
+        ('LONG',100,97,106,float('nan'),'BLOCKED_INVALID_PRICE'),
+        ('SIDEWAYS',100,97,106,100,'BLOCKED_INVALID_SIDE'),
+    ]
+    if any(_stage14_paper_case(*c[:5])!=c[5] for c in cases):
+        return jsonify(status='BLOCKED',error='Paper-workflow fixture mismatch',exchange_orders=0),503
+    run_id='st14_'+secrets.token_hex(16)
+    rows=[(run_id,'case_'+str(i),side,_stage14_paper_case(side,e,s,t,p),50)
+          for i,(side,e,s,t,p,expected) in enumerate(cases) if expected.startswith('PAPER_')]
+    try:
+        with _db_connect() as con:
+            _ensure_schema(con)
+            with con.cursor() as cur:
+                cur.execute('SELECT halted FROM luxalgo_stage6_execution_halt WHERE id=1')
+                h=cur.fetchone()
+                if not h or h['halted'] is not True:
+                    return jsonify(status='BLOCKED',error='Persistent future-execution HALT not active',exchange_orders=0),503
+                # Only Stage14 diagnostic rows; no real signal or order tables updated.
+                for record in rows:
+                    cur.execute('''INSERT INTO luxalgo_stage14_final_diagnostics
+                        (run_id,event_id,side,state,risk_bps) VALUES (%s,%s,%s,%s,%s)''',record)
+                # Duplicate event must be rejected by the durable unique key.
+                cur.execute('''INSERT INTO luxalgo_stage14_final_diagnostics
+                    (run_id,event_id,side,state,risk_bps) VALUES (%s,%s,%s,%s,%s)
+                    ON CONFLICT (run_id,event_id) DO NOTHING RETURNING event_id''',rows[0])
+                if cur.fetchone() is not None:
+                    return jsonify(status='BLOCKED',error='Duplicate event not rejected',exchange_orders=0),503
+        with _db_connect() as con:
+            with con.cursor() as cur:
+                cur.execute('''SELECT event_id,side,state,risk_bps FROM luxalgo_stage14_final_diagnostics
+                               WHERE run_id=%s ORDER BY event_id''',(run_id,))
+                persisted=cur.fetchall()
+                cur.execute('SELECT halted FROM luxalgo_stage6_execution_halt WHERE id=1')
+                h=cur.fetchone()
+        expected=sorted((event,side,state,risk) for _,event,side,state,risk in rows)
+        actual=sorted((r['event_id'],r['side'],r['state'],r['risk_bps']) for r in persisted)
+        if actual!=expected or not h or h['halted'] is not True or any(risk>50 for _,_,_,risk in rows):
+            return jsonify(status='BLOCKED',error='Durable paper audit/HALT/risk mismatch',exchange_orders=0),503
+        detail=('10 synthetic cases: LONG/SHORT open, SL, TP, invalid geometry/price/side; '
+                'duplicate event rejected, <=0.5% fixture risk, PostgreSQL fresh-connection recovery '
+                'and persistent HALT verified. Live execution readiness remains BLOCKED. '
+                'No TradingView delivery, real fill, protective order, true uptime or exchange recovery tested')
+        response=jsonify(status='PASS',stage='STAGE14_FINAL_SYNTHETIC_PAPER_AUDIT',
+                         fixture_count=len(cases),persisted_cases=len(rows),duplicate_rejected=True,
+                         database_recovered=True,halted=True,live_execution_ready=False,
+                         real_end_to_end_tested=False,exchange_orders=0,live_trading=False,detail=detail)
+        response.headers['Cache-Control']='private, no-store'
+        return response,200
+    except (psycopg.Error,RuntimeError,OSError,ValueError,TypeError):
+        return jsonify(status='BLOCKED',error='Database or safety audit unavailable; fail closed',exchange_orders=0),503
 
 @app.get('/terminal/live-readiness')
 def terminal_live_readiness():
