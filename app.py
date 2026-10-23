@@ -481,8 +481,8 @@ h2{font-size:15px;font-weight:850;letter-spacing:.3px}
 </style></head><body><div class="wrap"><header class="terminal-header"><div class="terminal-brand"><h1>LUXALGO PRO · TRADING TERMINAL</h1><p>Gate.io USDT Perpetual · LuxAlgo 5m / 15m · Coded by · SUBHASISH</p>
 <div class="profile-greeting"><div class="profile-avatar" id="avatarDisplay"><span>SD</span></div>
 <div><div class="profile-name">Hello SUBHASISH</div><label class="profile-change" for="profileImageInput" tabindex="0">Change Photo</label><input type="file" id="profileImageInput" accept="image/png,image/jpeg,image/webp" hidden></div></div></div><section class="news-slot" aria-label="Latest crypto news"><div class="news-heading"><span>● CRYPTO NEWS</span><span style="display:flex;align-items:center;gap:7px"><span id="newsFeedStatus">Loading headlines…</span><button type="button" id="newsRefresh" aria-label="Refresh crypto news" title="Refresh crypto news">↻</button></span></div><div class="news-viewport" id="newsViewport"><div class="news-stack" id="newsStack"><span class="news-empty">Retrieving publisher headlines…</span></div></div></section><div class="profile-right"><div class="tag trading-status">● LIVE TRADING OFF</div>
-<form method="post" action="/logout"><input type="hidden" name="csrf_token" value="{{ csrf_token|e }}"><button class="glossy-logout" type="submit">⇥ LOGOUT</button></form></div></header>
-<section class="bot-control-panel" aria-label="Remote bot control">
+<form method="post" action="/logout"><input type="hidden" name="csrf_token" value="{{ csrf_token|e }}"><button class="glossy-logout" type="submit">⇥ LOGOUT</button></form><span id="signalLiveSync" role="status" aria-live="polite" style="font-size:11px;color:#9de7ff">● Signals auto-sync: connecting…</span></div></header>
+ <section class="bot-control-panel" aria-label="Remote bot control">
  <div><strong id="botControlLabel">BOT OFF · PAPER SIMULATION PAUSED</strong><p id="botControlDetail">New LuxAlgo signals remain logged. No live orders are possible.</p></div>
  <div class="bot-control-actions"><button class="btn" id="botTurnOn" type="button">▶ BOT ON</button><button class="btn" id="botTurnOff" type="button">■ BOT OFF</button></div>
 </section>
@@ -1112,6 +1112,43 @@ loadRadar();loadScanner();setInterval(()=>{if(!document.hidden)loadRadar()},6000
  setInterval(()=>{if(!document.hidden && !btn.disabled)refresh();},30000);
  refresh();
 })();
+
+// Auto-update LuxAlgo signal receipts without manual page refresh.
+// Lightweight database cursor check; full reload only after a NEW stored receipt.
+(function(){
+ 'use strict';
+ const status=document.getElementById('signalLiveSync');
+ let lastSeen={{ latest_receipt_id|tojson }};
+ let inFlight=false;
+ let failures=0;
+ async function check(){
+  if(inFlight||document.hidden)return;
+  inFlight=true;
+  try{
+   const response=await fetch('/terminal/receipt-cursor',{
+    method:'GET',cache:'no-store',credentials:'same-origin',
+    headers:{'Accept':'application/json'}
+   });
+   if(!response.ok)throw Error('HTTP '+response.status);
+   const data=await response.json();
+   if(!Number.isSafeInteger(data.latest_id)||data.latest_id<0)throw Error('Invalid cursor');
+   failures=0;
+   if(data.latest_id>lastSeen){
+    status.textContent='● New LuxAlgo signal received — updating…';
+    lastSeen=data.latest_id;
+    window.location.reload();
+    return;
+   }
+   status.textContent='● Signals auto-sync: ON';
+  }catch(e){
+   failures++;
+   status.textContent='● Signal sync unavailable — retrying';
+  }finally{inFlight=false;}
+ }
+ document.addEventListener('visibilitychange',()=>{if(!document.hidden)check();});
+ check();
+ setInterval(()=>{if(failures<3||!document.hidden)check();},4000);
+})();
 </script></body></html>'''
 
 
@@ -1320,17 +1357,39 @@ def terminal_avatar_post():
     except (psycopg.Error,RuntimeError,OSError):return jsonify(error='Photo storage unavailable'),503
 
 
+@app.get('/terminal/receipt-cursor')
+def terminal_receipt_cursor():
+    """Authenticated, low-cost cursor for near-real-time signal UI refresh."""
+    if not _terminal_permitted():
+        return _terminal_guard()
+    try:
+        with _db_connect() as con:
+            with con.cursor() as cur:
+                cur.execute('SELECT COALESCE(MAX(id), 0) AS latest_id FROM luxalgo_signal_receipts')
+                latest = int(cur.fetchone()['latest_id'])
+        response = jsonify(latest_id=latest, orders_enabled=False)
+        response.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate'
+        response.headers['X-Content-Type-Options'] = 'nosniff'
+        return response
+    except (psycopg.Error, RuntimeError, OSError):
+        return jsonify(error='Signal receipt cursor temporarily unavailable'), 503
+
+
 @app.get('/')
 def home():
     if not _terminal_permitted():
         return _terminal_guard()
     try:
         count, records = _db_recent()
+        with _db_connect() as con:
+            with con.cursor() as cur:
+                cur.execute('SELECT COALESCE(MAX(id), 0) AS latest_id FROM luxalgo_signal_receipts')
+                latest_receipt_id = int(cur.fetchone()['latest_id'])
     except (psycopg.Error, RuntimeError, OSError):
         app.logger.exception('Persistent signal storage unavailable')
         return Response('Persistent signal database temporarily unavailable. No trading is active.', status=503)
     response = Response(render_template_string(PAGE, configured=len(expected_webhook_token()) >= 24,
-                                               count=count, records=records,csrf_token=session.get('csrf_token','')), mimetype='text/html')
+                                               count=count, records=records,latest_receipt_id=latest_receipt_id,csrf_token=session.get('csrf_token','')), mimetype='text/html')
     response.headers['Cache-Control'] = 'no-store'
     response.headers['X-Frame-Options'] = 'DENY'
     response.headers['X-Content-Type-Options'] = 'nosniff'
