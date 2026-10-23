@@ -212,6 +212,14 @@ CREATE TABLE IF NOT EXISTS luxalgo_stage12_readonly_snapshots (
   assessment TEXT NOT NULL CHECK(assessment IN ('EMPTY_SNAPSHOT','OBSERVED_UNRECONCILED')),
   source TEXT NOT NULL DEFAULT 'STAGE12_GATE_READONLY' CHECK(source='STAGE12_GATE_READONLY')
 );
+-- Stage 13: operational-resilience diagnostic audit. No exchange order lifecycle.
+CREATE TABLE IF NOT EXISTS luxalgo_stage13_recovery_diagnostics (
+  diagnostic_id TEXT PRIMARY KEY,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  observed_at TIMESTAMPTZ NOT NULL,
+  status TEXT NOT NULL CHECK(status='DIAGNOSTIC_ONLY'),
+  source TEXT NOT NULL DEFAULT 'STAGE13_FAILURE_FIXTURES' CHECK(source='STAGE13_FAILURE_FIXTURES')
+);
 CREATE TABLE IF NOT EXISTS luxalgo_dry_run_intents (
  event_id TEXT PRIMARY KEY,
  received_at TIMESTAMPTZ NOT NULL,
@@ -566,7 +574,7 @@ h2{font-size:15px;font-weight:850;letter-spacing:.3px}
 <div class="metric"><small>AVAILABLE FUTURES · USDT</small><strong id="futuresAvailable">—</strong><span>Exchange-reported trading availability</span></div>
 <div class="metric"><small>FUTURES BALANCE · USDT</small><strong id="futuresBalance">—</strong><span>Account balance before unrealized P&amp;L</span></div>
 </div></details>
-<details class="panel" style="margin:12px 0" id="liveReadinessPanel"><summary style="font-weight:850;cursor:pointer;color:#ffcf89">LIVE EXECUTION READINESS · SAFETY CHECK (READ ONLY)</summary><p class="light">This panel checks safeguards only. It cannot start trading or enable Gate.io API writes.</p><button class="btn" type="button" id="readinessRefresh">Check readiness</button><button class="btn gloss-action" type="button" id="guardTestButton" style="margin-left:8px">Test Duplicate Order Guard</button><button class="btn gloss-action" type="button" id="riskCheckButton" style="margin-left:8px">Check Account Risk Limits</button><button class="btn gloss-action" type="button" id="stage2GateTestButton" style="margin-left:8px">Test Stage 2 Risk Gate</button><button class="btn gloss-action" type="button" id="stage3ContractTestButton" style="margin-left:8px">Test Stage 3 Contract Sizing</button><button class="btn gloss-action" type="button" id="stage4ProtectiveTestButton" style="margin-left:8px">Test Stage 4 SL/TP</button><button class="btn gloss-action" type="button" id="stage5LedgerTestButton" style="margin-left:8px">Test Stage 5 Ledger</button><button class="btn gloss-action" type="button" id="stage6HaltTestButton" style="margin-left:8px">Test Stage 6 Halt &amp; Recovery</button><button class="btn gloss-action" type="button" id="stage7AuditButton" style="margin-left:8px">Test Stage 7 Readiness Audit</button><button class="btn gloss-action" type="button" id="stage8AckTestButton" style="margin-left:8px">Test Stage 8 Ack Recovery</button><button class="btn gloss-action" type="button" id="stage9ReconcileTestButton" style="margin-left:8px">Test Stage 9 Reconciliation</button><button class="btn gloss-action" type="button" id="stage10ProtectionTestButton" style="margin-left:8px">Test Stage 10 SL/TP Coverage</button><button class="btn gloss-action" type="button" id="stage11RiskTestButton" style="margin-left:8px">Test Stage 11 Atomic Risk</button><button class="btn gloss-action" type="button" id="stage12ReadOnlyTestButton" style="margin-left:8px">Test Stage 12 Gate.io Read-Only</button><button class="btn btn-danger" type="button" id="stage6EmergencyHalt" style="margin-left:8px">EMERGENCY HALT · PAPER &amp; FUTURE EXECUTION</button><p class="light" id="riskCheckResult" role="status" aria-live="polite">Read-only risk inspection available. Never authorizes a trade.</p><p class="light" id="guardTestResult">Test only: all candidates are BLOCKED; no exchange orders.</p><p class="light" id="stage2GateTestResult" role="status" aria-live="polite">Stage 2 PostgreSQL concurrency test not yet run.</p><p class="light" id="stage3ContractTestResult" role="status" aria-live="polite">Stage 3 read-only sizing diagnostic not yet run.</p><p class="light" id="stage4ProtectiveTestResult" role="status" aria-live="polite">Stage 4 protective-price validation not yet run. No protective orders exist.</p><p class="light" id="stage5LedgerTestResult" role="status" aria-live="polite">Stage 5 PostgreSQL simulated lifecycle test not yet run. No exchange writes.</p><p class="light" id="stage6HaltTestResult" role="status" aria-live="polite">Stage 6 persistent halt diagnostic not yet run. No exchange writes.</p><p class="light" id="stage7AuditResult" role="status" aria-live="polite">Stage 7 read-only readiness audit not yet run. All exchange execution blocked.</p><p class="light" id="stage8AckTestResult" role="status" aria-live="polite">Stage 8 unknown-acknowledgment quarantine not yet tested. No exchange write.</p><p class="light" id="stage9ReconcileTestResult" role="status" aria-live="polite">Stage 9 fixture-only reconciliation test not yet run. Real Gate.io orders are not reconciled.</p><p class="light" id="stage10ProtectionTestResult" role="status" aria-live="polite">Stage 10 protective-order fixture audit not yet run. No exchange protections verified.</p><p class="light" id="stage11RiskTestResult" role="status" aria-live="polite">Stage 11 account-wide risk fixture not yet tested. Exchange orders disabled.</p><p class="light" id="stage12ReadOnlyTestResult" role="status" aria-live="polite">Stage 12 read-only exchange snapshot not yet run. Live order reconciliation is NOT implemented.</p><p class="light" id="stage6HaltState" role="status" aria-live="polite">Future execution stays HALTED; checking database status…</p><div id="readinessOutput" role="status" aria-live="polite" style="margin-top:10px;color:#fdbfbf">Live execution BLOCKED until all critical safeguards are implemented and tested.</div></details>
+<details class="panel" style="margin:12px 0" id="liveReadinessPanel"><summary style="font-weight:850;cursor:pointer;color:#ffcf89">LIVE EXECUTION READINESS · SAFETY CHECK (READ ONLY)</summary><p class="light">This panel checks safeguards only. It cannot start trading or enable Gate.io API writes.</p><button class="btn" type="button" id="readinessRefresh">Check readiness</button><button class="btn gloss-action" type="button" id="guardTestButton" style="margin-left:8px">Test Duplicate Order Guard</button><button class="btn gloss-action" type="button" id="riskCheckButton" style="margin-left:8px">Check Account Risk Limits</button><button class="btn gloss-action" type="button" id="stage2GateTestButton" style="margin-left:8px">Test Stage 2 Risk Gate</button><button class="btn gloss-action" type="button" id="stage3ContractTestButton" style="margin-left:8px">Test Stage 3 Contract Sizing</button><button class="btn gloss-action" type="button" id="stage4ProtectiveTestButton" style="margin-left:8px">Test Stage 4 SL/TP</button><button class="btn gloss-action" type="button" id="stage5LedgerTestButton" style="margin-left:8px">Test Stage 5 Ledger</button><button class="btn gloss-action" type="button" id="stage6HaltTestButton" style="margin-left:8px">Test Stage 6 Halt &amp; Recovery</button><button class="btn gloss-action" type="button" id="stage7AuditButton" style="margin-left:8px">Test Stage 7 Readiness Audit</button><button class="btn gloss-action" type="button" id="stage8AckTestButton" style="margin-left:8px">Test Stage 8 Ack Recovery</button><button class="btn gloss-action" type="button" id="stage9ReconcileTestButton" style="margin-left:8px">Test Stage 9 Reconciliation</button><button class="btn gloss-action" type="button" id="stage10ProtectionTestButton" style="margin-left:8px">Test Stage 10 SL/TP Coverage</button><button class="btn gloss-action" type="button" id="stage11RiskTestButton" style="margin-left:8px">Test Stage 11 Atomic Risk</button><button class="btn gloss-action" type="button" id="stage12ReadOnlyTestButton" style="margin-left:8px">Test Stage 12 Gate.io Read-Only</button><button class="btn gloss-action" type="button" id="stage13RecoveryTestButton" style="margin-left:8px">Test Stage 13 Recovery &amp; Failures</button><button class="btn btn-danger" type="button" id="stage6EmergencyHalt" style="margin-left:8px">EMERGENCY HALT · PAPER &amp; FUTURE EXECUTION</button><p class="light" id="riskCheckResult" role="status" aria-live="polite">Read-only risk inspection available. Never authorizes a trade.</p><p class="light" id="guardTestResult">Test only: all candidates are BLOCKED; no exchange orders.</p><p class="light" id="stage2GateTestResult" role="status" aria-live="polite">Stage 2 PostgreSQL concurrency test not yet run.</p><p class="light" id="stage3ContractTestResult" role="status" aria-live="polite">Stage 3 read-only sizing diagnostic not yet run.</p><p class="light" id="stage4ProtectiveTestResult" role="status" aria-live="polite">Stage 4 protective-price validation not yet run. No protective orders exist.</p><p class="light" id="stage5LedgerTestResult" role="status" aria-live="polite">Stage 5 PostgreSQL simulated lifecycle test not yet run. No exchange writes.</p><p class="light" id="stage6HaltTestResult" role="status" aria-live="polite">Stage 6 persistent halt diagnostic not yet run. No exchange writes.</p><p class="light" id="stage7AuditResult" role="status" aria-live="polite">Stage 7 read-only readiness audit not yet run. All exchange execution blocked.</p><p class="light" id="stage8AckTestResult" role="status" aria-live="polite">Stage 8 unknown-acknowledgment quarantine not yet tested. No exchange write.</p><p class="light" id="stage9ReconcileTestResult" role="status" aria-live="polite">Stage 9 fixture-only reconciliation test not yet run. Real Gate.io orders are not reconciled.</p><p class="light" id="stage10ProtectionTestResult" role="status" aria-live="polite">Stage 10 protective-order fixture audit not yet run. No exchange protections verified.</p><p class="light" id="stage11RiskTestResult" role="status" aria-live="polite">Stage 11 account-wide risk fixture not yet tested. Exchange orders disabled.</p><p class="light" id="stage12ReadOnlyTestResult" role="status" aria-live="polite">Stage 12 read-only exchange snapshot not yet run. Live order reconciliation is NOT implemented.</p><p class="light" id="stage13RecoveryTestResult" role="status" aria-live="polite">Stage 13 restart/failure diagnostic not yet run. No exchange writes.</p><p class="light" id="stage6HaltState" role="status" aria-live="polite">Future execution stays HALTED; checking database status…</p><div id="readinessOutput" role="status" aria-live="polite" style="margin-top:10px;color:#fdbfbf">Live execution BLOCKED until all critical safeguards are implemented and tested.</div></details>
 <div class="grid metric-grid">
 <div class="metric"><small>GATE.IO CONNECTION</small><strong class="gloss-cyan">READ-ONLY</strong><span id="gatePositionStatus">Checking position feed…</span></div>
 <div class="metric"><small>OPEN POSITIONS</small><strong id="openPositionCount">—</strong><span>Verified Gate.io positions only</span></div>
@@ -701,6 +709,25 @@ h2{font-size:15px;font-weight:850;letter-spacing:.3px}
   });
 })();
 
+
+
+// Stage 13: isolated operational failure fixtures; no live exchange submission.
+(function(){
+ const b=document.getElementById('stage13RecoveryTestButton'),out=document.getElementById('stage13RecoveryTestResult');
+ if(!b||!out)return;
+ b.addEventListener('click',async()=>{
+  b.disabled=true;out.textContent='Checking persistent HALT, recovery and API/stale-data failure fixtures…';
+  try{
+   const r=await fetch('/terminal/stage13-recovery-test',{
+    method:'POST',credentials:'same-origin',cache:'no-store',
+    headers:{'Content-Type':'application/json','X-Terminal-CSRF':{{ csrf_token|tojson }}},body:'{}'});
+   const d=await r.json();
+   out.textContent='Stage 13 '+String(d.status||'BLOCKED')+' · '+String(d.detail||d.error||'Unavailable')+' · Exchange orders: 0';
+   out.style.color=r.ok&&d.status==='PASS'?'#63f0c3':'#ffb6b6';
+  }catch(e){out.textContent='Stage 13 BLOCKED · Database/recovery audit unavailable; no exchange orders.';out.style.color='#ffb6b6';}
+  finally{b.disabled=false;}
+ });
+})();
 
 // Stage 12: explicitly user-triggered authenticated Gate.io GET-only snapshot.
 (function(){
@@ -3095,6 +3122,79 @@ def terminal_stage12_gate_readonly_test():
     except (psycopg.Error,RuntimeError,HTTPError,URLError,TimeoutError,ValueError,TypeError,KeyError,OSError,json.JSONDecodeError) as exc:
         app.logger.warning('Stage 12 read-only snapshot blocked: %s',type(exc).__name__)
         return jsonify(status='BLOCKED',error='Gate.io or PostgreSQL read-only snapshot unavailable/incomplete; fail closed',exchange_orders=0),503
+
+
+# Stage 13: recovery and failure-handling DIAGNOSTICS ONLY. Nothing here submits
+# an exchange request. This is not a live uptime/chaos or order-recovery test.
+def _stage13_decide_snapshot(age_seconds, api_ok, db_ok, halt_on):
+    # Strict type validation avoids accepting bools/NaN as valid ages.
+    if type(age_seconds) not in (int,float) or not math.isfinite(age_seconds) or age_seconds<0:
+        return 'BLOCKED_INVALID_AGE'
+    if type(api_ok) is not bool or type(db_ok) is not bool or type(halt_on) is not bool:
+        return 'BLOCKED_MALFORMED_STATUS'
+    if not halt_on:
+        return 'BLOCKED_HALT_NOT_SET'
+    if not db_ok:
+        return 'BLOCKED_DATABASE'
+    if not api_ok:
+        return 'BLOCKED_API'
+    if age_seconds>90:
+        return 'BLOCKED_STALE_DATA'
+    return 'OBSERVABLE_ONLY'
+
+@app.post('/terminal/stage13-recovery-test')
+def terminal_stage13_recovery_test():
+    if not _terminal_permitted(): return _terminal_guard()
+    if not _csrf_valid():
+        return jsonify(status='BLOCKED',error='Session verification failed',exchange_orders=0),403
+    if os.getenv('LIVE_TRADING_ENABLED','false').strip().lower()!='false':
+        return jsonify(status='BLOCKED',error='Live execution must remain disabled',exchange_orders=0),503
+    fixtures=[
+      (0,True,True,True,'OBSERVABLE_ONLY'),
+      (91,True,True,True,'BLOCKED_STALE_DATA'),
+      (0,False,True,True,'BLOCKED_API'),
+      (0,True,False,True,'BLOCKED_DATABASE'),
+      (0,True,True,False,'BLOCKED_HALT_NOT_SET'),
+      (float('nan'),True,True,True,'BLOCKED_INVALID_AGE'),
+      (0,'true',True,True,'BLOCKED_MALFORMED_STATUS'),
+    ]
+    if any(_stage13_decide_snapshot(*case[:4])!=case[4] for case in fixtures):
+        return jsonify(status='BLOCKED',error='Failure fixture classification mismatch',exchange_orders=0),503
+    diagnostic_id='st13_'+secrets.token_hex(16)
+    try:
+        with _db_connect() as con:
+            _ensure_schema(con)
+            with con.cursor() as cur:
+                cur.execute('SELECT halted FROM luxalgo_stage6_execution_halt WHERE id=1')
+                halt=cur.fetchone()
+                if not halt or halt['halted'] is not True:
+                    return jsonify(status='BLOCKED',error='Future-execution HALT not confirmed',exchange_orders=0),503
+                cur.execute("INSERT INTO luxalgo_stage13_recovery_diagnostics(diagnostic_id,observed_at,status) VALUES (%s,NOW(),'DIAGNOSTIC_ONLY')",(diagnostic_id,))
+        # A NEW database connection exercises durable read-after-reconnect only.
+        with _db_connect() as con:
+            with con.cursor() as cur:
+                cur.execute('SELECT observed_at, status FROM luxalgo_stage13_recovery_diagnostics WHERE diagnostic_id=%s',(diagnostic_id,))
+                saved=cur.fetchone()
+                cur.execute('SELECT halted FROM luxalgo_stage6_execution_halt WHERE id=1')
+                halt=cur.fetchone()
+                cur.execute("SELECT COUNT(*) AS n FROM luxalgo_stage8_ack_diagnostics WHERE state='ACK_UNKNOWN'")
+                unknown=cur.fetchone()['n']
+        if not saved or saved['status']!='DIAGNOSTIC_ONLY' or not halt or halt['halted'] is not True:
+            return jsonify(status='BLOCKED',error='Database recovery/HALT mismatch',exchange_orders=0),503
+        age=(datetime.now(timezone.utc)-saved['observed_at']).total_seconds()
+        if _stage13_decide_snapshot(max(0,age),True,True,True)!='OBSERVABLE_ONLY':
+            return jsonify(status='BLOCKED',error='Recovered diagnostic timestamp stale',exchange_orders=0),503
+        detail=('7 failure fixtures (fresh/stale data, API outage, database outage, HALT OFF, malformed status/age) passed; '
+                'new PostgreSQL connection recovered diagnostic, persistent HALT confirmed; '
+                f'{unknown} simulated unknown-ack rows observed, NOT retransmitted. '
+                'No real process restart, uptime window, exchange outage or order recovery tested')
+        response=jsonify(status='PASS',stage='STAGE13_OPERATIONAL_FAILURE_FIXTURES',
+                         fixture_count=len(fixtures),durable_readback=True,persistent_halt=True,
+                         real_restart_tested=False,exchange_orders=0,live_trading=False,detail=detail)
+        response.headers['Cache-Control']='private, no-store'
+        return response,200
+    except (psycopg.Error,RuntimeError,OSError,ValueError,TypeError):
+        return jsonify(status='BLOCKED',error='PostgreSQL recovery unavailable; fail closed',exchange_orders=0),503
 
 @app.get('/terminal/live-readiness')
 def terminal_live_readiness():
