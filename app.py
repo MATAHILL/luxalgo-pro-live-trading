@@ -190,6 +190,17 @@ CREATE TABLE IF NOT EXISTS luxalgo_stage10_protection_diagnostics (
   source TEXT NOT NULL DEFAULT 'STAGE10_FIXTURE_ONLY' CHECK(source='STAGE10_FIXTURE_ONLY'),
   details JSONB NOT NULL DEFAULT '{}'::jsonb
 );
+-- Stage 11 isolated atomic risk simulation: never used by exchange execution.
+CREATE TABLE IF NOT EXISTS luxalgo_stage11_risk_diagnostics (
+ run_id TEXT NOT NULL,
+ event_id TEXT NOT NULL,
+ created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+ risk_usdt NUMERIC NOT NULL CHECK(risk_usdt>0),
+ margin_usdt NUMERIC NOT NULL CHECK(margin_usdt>0),
+ source TEXT NOT NULL DEFAULT 'STAGE11_FIXTURE_ONLY' CHECK(source='STAGE11_FIXTURE_ONLY'),
+ PRIMARY KEY(run_id,event_id)
+);
+CREATE INDEX IF NOT EXISTS idx_stage11_run ON luxalgo_stage11_risk_diagnostics(run_id);
 CREATE TABLE IF NOT EXISTS luxalgo_dry_run_intents (
  event_id TEXT PRIMARY KEY,
  received_at TIMESTAMPTZ NOT NULL,
@@ -544,7 +555,7 @@ h2{font-size:15px;font-weight:850;letter-spacing:.3px}
 <div class="metric"><small>AVAILABLE FUTURES · USDT</small><strong id="futuresAvailable">—</strong><span>Exchange-reported trading availability</span></div>
 <div class="metric"><small>FUTURES BALANCE · USDT</small><strong id="futuresBalance">—</strong><span>Account balance before unrealized P&amp;L</span></div>
 </div></details>
-<details class="panel" style="margin:12px 0" id="liveReadinessPanel"><summary style="font-weight:850;cursor:pointer;color:#ffcf89">LIVE EXECUTION READINESS · SAFETY CHECK (READ ONLY)</summary><p class="light">This panel checks safeguards only. It cannot start trading or enable Gate.io API writes.</p><button class="btn" type="button" id="readinessRefresh">Check readiness</button><button class="btn gloss-action" type="button" id="guardTestButton" style="margin-left:8px">Test Duplicate Order Guard</button><button class="btn gloss-action" type="button" id="riskCheckButton" style="margin-left:8px">Check Account Risk Limits</button><button class="btn gloss-action" type="button" id="stage2GateTestButton" style="margin-left:8px">Test Stage 2 Risk Gate</button><button class="btn gloss-action" type="button" id="stage3ContractTestButton" style="margin-left:8px">Test Stage 3 Contract Sizing</button><button class="btn gloss-action" type="button" id="stage4ProtectiveTestButton" style="margin-left:8px">Test Stage 4 SL/TP</button><button class="btn gloss-action" type="button" id="stage5LedgerTestButton" style="margin-left:8px">Test Stage 5 Ledger</button><button class="btn gloss-action" type="button" id="stage6HaltTestButton" style="margin-left:8px">Test Stage 6 Halt &amp; Recovery</button><button class="btn gloss-action" type="button" id="stage7AuditButton" style="margin-left:8px">Test Stage 7 Readiness Audit</button><button class="btn gloss-action" type="button" id="stage8AckTestButton" style="margin-left:8px">Test Stage 8 Ack Recovery</button><button class="btn gloss-action" type="button" id="stage9ReconcileTestButton" style="margin-left:8px">Test Stage 9 Reconciliation</button><button class="btn gloss-action" type="button" id="stage10ProtectionTestButton" style="margin-left:8px">Test Stage 10 SL/TP Coverage</button><button class="btn btn-danger" type="button" id="stage6EmergencyHalt" style="margin-left:8px">EMERGENCY HALT · PAPER &amp; FUTURE EXECUTION</button><p class="light" id="riskCheckResult" role="status" aria-live="polite">Read-only risk inspection available. Never authorizes a trade.</p><p class="light" id="guardTestResult">Test only: all candidates are BLOCKED; no exchange orders.</p><p class="light" id="stage2GateTestResult" role="status" aria-live="polite">Stage 2 PostgreSQL concurrency test not yet run.</p><p class="light" id="stage3ContractTestResult" role="status" aria-live="polite">Stage 3 read-only sizing diagnostic not yet run.</p><p class="light" id="stage4ProtectiveTestResult" role="status" aria-live="polite">Stage 4 protective-price validation not yet run. No protective orders exist.</p><p class="light" id="stage5LedgerTestResult" role="status" aria-live="polite">Stage 5 PostgreSQL simulated lifecycle test not yet run. No exchange writes.</p><p class="light" id="stage6HaltTestResult" role="status" aria-live="polite">Stage 6 persistent halt diagnostic not yet run. No exchange writes.</p><p class="light" id="stage7AuditResult" role="status" aria-live="polite">Stage 7 read-only readiness audit not yet run. All exchange execution blocked.</p><p class="light" id="stage8AckTestResult" role="status" aria-live="polite">Stage 8 unknown-acknowledgment quarantine not yet tested. No exchange write.</p><p class="light" id="stage9ReconcileTestResult" role="status" aria-live="polite">Stage 9 fixture-only reconciliation test not yet run. Real Gate.io orders are not reconciled.</p><p class="light" id="stage10ProtectionTestResult" role="status" aria-live="polite">Stage 10 protective-order fixture audit not yet run. No exchange protections verified.</p><p class="light" id="stage6HaltState" role="status" aria-live="polite">Future execution stays HALTED; checking database status…</p><div id="readinessOutput" role="status" aria-live="polite" style="margin-top:10px;color:#fdbfbf">Live execution BLOCKED until all critical safeguards are implemented and tested.</div></details>
+<details class="panel" style="margin:12px 0" id="liveReadinessPanel"><summary style="font-weight:850;cursor:pointer;color:#ffcf89">LIVE EXECUTION READINESS · SAFETY CHECK (READ ONLY)</summary><p class="light">This panel checks safeguards only. It cannot start trading or enable Gate.io API writes.</p><button class="btn" type="button" id="readinessRefresh">Check readiness</button><button class="btn gloss-action" type="button" id="guardTestButton" style="margin-left:8px">Test Duplicate Order Guard</button><button class="btn gloss-action" type="button" id="riskCheckButton" style="margin-left:8px">Check Account Risk Limits</button><button class="btn gloss-action" type="button" id="stage2GateTestButton" style="margin-left:8px">Test Stage 2 Risk Gate</button><button class="btn gloss-action" type="button" id="stage3ContractTestButton" style="margin-left:8px">Test Stage 3 Contract Sizing</button><button class="btn gloss-action" type="button" id="stage4ProtectiveTestButton" style="margin-left:8px">Test Stage 4 SL/TP</button><button class="btn gloss-action" type="button" id="stage5LedgerTestButton" style="margin-left:8px">Test Stage 5 Ledger</button><button class="btn gloss-action" type="button" id="stage6HaltTestButton" style="margin-left:8px">Test Stage 6 Halt &amp; Recovery</button><button class="btn gloss-action" type="button" id="stage7AuditButton" style="margin-left:8px">Test Stage 7 Readiness Audit</button><button class="btn gloss-action" type="button" id="stage8AckTestButton" style="margin-left:8px">Test Stage 8 Ack Recovery</button><button class="btn gloss-action" type="button" id="stage9ReconcileTestButton" style="margin-left:8px">Test Stage 9 Reconciliation</button><button class="btn gloss-action" type="button" id="stage10ProtectionTestButton" style="margin-left:8px">Test Stage 10 SL/TP Coverage</button><button class="btn gloss-action" type="button" id="stage11RiskTestButton" style="margin-left:8px">Test Stage 11 Atomic Risk</button><button class="btn btn-danger" type="button" id="stage6EmergencyHalt" style="margin-left:8px">EMERGENCY HALT · PAPER &amp; FUTURE EXECUTION</button><p class="light" id="riskCheckResult" role="status" aria-live="polite">Read-only risk inspection available. Never authorizes a trade.</p><p class="light" id="guardTestResult">Test only: all candidates are BLOCKED; no exchange orders.</p><p class="light" id="stage2GateTestResult" role="status" aria-live="polite">Stage 2 PostgreSQL concurrency test not yet run.</p><p class="light" id="stage3ContractTestResult" role="status" aria-live="polite">Stage 3 read-only sizing diagnostic not yet run.</p><p class="light" id="stage4ProtectiveTestResult" role="status" aria-live="polite">Stage 4 protective-price validation not yet run. No protective orders exist.</p><p class="light" id="stage5LedgerTestResult" role="status" aria-live="polite">Stage 5 PostgreSQL simulated lifecycle test not yet run. No exchange writes.</p><p class="light" id="stage6HaltTestResult" role="status" aria-live="polite">Stage 6 persistent halt diagnostic not yet run. No exchange writes.</p><p class="light" id="stage7AuditResult" role="status" aria-live="polite">Stage 7 read-only readiness audit not yet run. All exchange execution blocked.</p><p class="light" id="stage8AckTestResult" role="status" aria-live="polite">Stage 8 unknown-acknowledgment quarantine not yet tested. No exchange write.</p><p class="light" id="stage9ReconcileTestResult" role="status" aria-live="polite">Stage 9 fixture-only reconciliation test not yet run. Real Gate.io orders are not reconciled.</p><p class="light" id="stage10ProtectionTestResult" role="status" aria-live="polite">Stage 10 protective-order fixture audit not yet run. No exchange protections verified.</p><p class="light" id="stage11RiskTestResult" role="status" aria-live="polite">Stage 11 account-wide risk fixture not yet tested. Exchange orders disabled.</p><p class="light" id="stage6HaltState" role="status" aria-live="polite">Future execution stays HALTED; checking database status…</p><div id="readinessOutput" role="status" aria-live="polite" style="margin-top:10px;color:#fdbfbf">Live execution BLOCKED until all critical safeguards are implemented and tested.</div></details>
 <div class="grid metric-grid">
 <div class="metric"><small>GATE.IO CONNECTION</small><strong class="gloss-cyan">READ-ONLY</strong><span id="gatePositionStatus">Checking position feed…</span></div>
 <div class="metric"><small>OPEN POSITIONS</small><strong id="openPositionCount">—</strong><span>Verified Gate.io positions only</span></div>
@@ -677,6 +688,21 @@ h2{font-size:15px;font-weight:850;letter-spacing:.3px}
     }catch(e){out.textContent='Stage 8 BLOCKED · Diagnostic unavailable; no exchange orders.';out.style.color='#ffb6b6';}
     finally{b.disabled=false;}
   });
+})();
+
+// Stage 11 diagnostic: six simultaneous simulated reservations under a DB-wide run lock.
+(function(){
+ const b=document.getElementById('stage11RiskTestButton'), out=document.getElementById('stage11RiskTestResult');
+ if(!b||!out)return;
+ b.addEventListener('click',async()=>{
+  b.disabled=true;out.textContent='Testing concurrent simulated risk reservations in PostgreSQL…';
+  try{
+   const r=await fetch('/terminal/stage11-atomic-risk-test',{method:'POST',credentials:'same-origin',cache:'no-store',headers:{'Content-Type':'application/json','X-Terminal-CSRF':{{ csrf_token|tojson }}},body:'{}'});
+   const d=await r.json();out.textContent='Stage 11 '+String(d.status||'BLOCKED')+' · '+String(d.detail||d.error||'Unavailable')+' · Exchange orders: 0';
+   out.style.color=r.ok&&d.status==='PASS'?'#63f0c3':'#ffb6b6';
+  }catch(e){out.textContent='Stage 11 BLOCKED · Diagnostic unavailable; no exchange orders.';out.style.color='#ffb6b6';}
+  finally{b.disabled=false;}
+ });
 })();
 
 // Stage 10: isolated protective-coverage fixtures, never exchange order placement.
@@ -2872,6 +2898,85 @@ def terminal_stage10_protection_test():
         return reply,(200 if passed else 503)
     except (psycopg.Error,RuntimeError,OSError):
         return jsonify(status='BLOCKED',error='PostgreSQL unavailable; fail closed',exchange_orders=0),503
+
+
+# Stage 11: account-wide risk limits for isolated diagnostic fixtures ONLY.
+# No signal handler or Gate.io route consumes these records.
+def _stage11_reserve_fixture(run_id, event_id, equity, available_margin, risk, margin):
+    try:
+        values=[Decimal(str(v)) for v in (equity,available_margin,risk,margin)]
+        eq,available,risk_value,margin_value=values
+        if any(not v.is_finite() for v in values) or eq<=0 or available<=0 or risk_value<=0 or margin_value<=0:
+            return 'INVALID'
+        # Fail closed: <=0.5% per trade, <=2.5% aggregate, <=5 positions.
+        if risk_value>eq*Decimal('0.005'):
+            return 'PER_TRADE_LIMIT'
+        with _db_connect() as con:
+            with con.cursor() as cur:
+                # Lock per run across different app processes, NOT an in-memory threading lock.
+                cur.execute('SELECT pg_advisory_xact_lock(hashtext(%s))',('STAGE11:'+run_id,))
+                cur.execute('SELECT halted FROM luxalgo_stage6_execution_halt WHERE id=1')
+                halted=cur.fetchone()
+                if not halted or halted['halted'] is not True:
+                    return 'HALT_NOT_CONFIRMED'
+                cur.execute('SELECT COUNT(*) AS n,COALESCE(SUM(risk_usdt),0) AS risk,COALESCE(SUM(margin_usdt),0) AS margin FROM luxalgo_stage11_risk_diagnostics WHERE run_id=%s',(run_id,))
+                totals=cur.fetchone()
+                if totals['n']>=5: return 'MAX_POSITIONS'
+                if totals['risk']+risk_value>eq*Decimal('0.025'): return 'TOTAL_RISK'
+                if totals['margin']+margin_value>available: return 'INSUFFICIENT_MARGIN'
+                cur.execute('INSERT INTO luxalgo_stage11_risk_diagnostics(run_id,event_id,risk_usdt,margin_usdt) VALUES (%s,%s,%s,%s) ON CONFLICT DO NOTHING RETURNING event_id',
+                            (run_id,event_id,risk_value,margin_value))
+                return 'RESERVED_FIXTURE' if cur.fetchone() else 'DUPLICATE'
+    except (InvalidOperation,ValueError,TypeError):
+        return 'INVALID'
+
+
+@app.post('/terminal/stage11-atomic-risk-test')
+def terminal_stage11_atomic_risk_test():
+    if not _terminal_permitted(): return _terminal_guard()
+    if not _csrf_valid(): return jsonify(status='BLOCKED',error='Invalid session verification',exchange_orders=0),403
+    if os.getenv('LIVE_TRADING_ENABLED','false').strip().lower()!='false':
+        return jsonify(status='BLOCKED',error='Live execution must remain disabled',exchange_orders=0),503
+    run_id='st11_'+secrets.token_hex(16)
+    try:
+        with _db_connect() as con:
+            _ensure_schema(con)
+            with con.cursor() as cur:
+                cur.execute('SELECT halted FROM luxalgo_stage6_execution_halt WHERE id=1')
+                halt=cur.fetchone()
+                if not halt or halt['halted'] is not True:
+                    return jsonify(status='BLOCKED',error='Persistent HALT not confirmed',exchange_orders=0),503
+        # Thread pool forces competition between distinct DB transactions.
+        with ThreadPoolExecutor(max_workers=6) as pool:
+            outcomes=list(pool.map(lambda i:_stage11_reserve_fixture(run_id,'event_'+str(i),'1000','100','5','20'),range(6)))
+        duplicate_run=run_id+'_duplicate'
+        duplicate_first=_stage11_reserve_fixture(duplicate_run,'same','1000','100','5','20')
+        duplicates=_stage11_reserve_fixture(duplicate_run,'same','1000','100','5','20')
+        invalid=_stage11_reserve_fixture(run_id,'invalid','1000','100','NaN','20')
+        per_trade=_stage11_reserve_fixture(run_id,'too_risky','1000','100','5.01','1')
+        # Dedicated runs isolate margin/aggregate rejection cases without touching bot data.
+        margin_run=run_id+'_margin'
+        margin_first=_stage11_reserve_fixture(margin_run,'one','1000','10','5','9')
+        margin_block=_stage11_reserve_fixture(margin_run,'two','1000','10','5','2')
+        with _db_connect() as con:
+            with con.cursor() as cur:
+                cur.execute('SELECT COUNT(*) AS n,COALESCE(SUM(risk_usdt),0) AS risk,COALESCE(SUM(margin_usdt),0) AS margin FROM luxalgo_stage11_risk_diagnostics WHERE run_id=%s',(run_id,))
+                recovered=cur.fetchone()
+                cur.execute('SELECT halted FROM luxalgo_stage6_execution_halt WHERE id=1')
+                halted=cur.fetchone()
+        passed=(outcomes.count('RESERVED_FIXTURE')==5 and outcomes.count('MAX_POSITIONS')==1
+                and duplicate_first=='RESERVED_FIXTURE' and duplicates=='DUPLICATE' and invalid=='INVALID' and per_trade=='PER_TRADE_LIMIT'
+                and margin_first=='RESERVED_FIXTURE' and margin_block=='INSUFFICIENT_MARGIN'
+                and recovered and recovered['n']==5 and recovered['risk']==Decimal('25')
+                and recovered['margin']==Decimal('100') and halted and halted['halted'] is True)
+        result=jsonify(status='PASS' if passed else 'BLOCKED',exchange_orders=0,live_trading=False,
+            stage='STAGE11_FIXTURE_ONLY',reserved=outcomes.count('RESERVED_FIXTURE'),
+            detail=('Six concurrent reservations: five admitted, sixth rejected; 0.5% per-trade and 2.5% aggregate cap, duplicate, malformed input, margin rejection, fresh-connection recovery and persistent HALT verified; NOT exchange-wide risk enforcement'
+                    if passed else 'Risk simulation results inconsistent; no orders placed'))
+        result.headers['Cache-Control']='private, no-store'
+        return result,(200 if passed else 503)
+    except (psycopg.Error,RuntimeError,OSError):
+        return jsonify(status='BLOCKED',error='Database unavailable; fail closed',exchange_orders=0),503
 
 
 @app.get('/terminal/live-readiness')
