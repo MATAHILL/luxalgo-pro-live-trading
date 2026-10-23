@@ -127,6 +127,17 @@ CREATE TABLE IF NOT EXISTS luxalgo_signal_levels (
  take_profit NUMERIC,
  reason TEXT NOT NULL DEFAULT ''
 );
+-- DRY RUN reservation sandbox. Never consumed by an exchange order route.
+CREATE TABLE IF NOT EXISTS luxalgo_risk_gate_simulations (
+  event_id TEXT PRIMARY KEY,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  expires_at TIMESTAMPTZ NOT NULL,
+  state TEXT NOT NULL CHECK(state IN ('SIMULATED','EXPIRED')),
+  risk_usdt NUMERIC NOT NULL,
+  leverage NUMERIC NOT NULL,
+  details JSONB NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_luxalgo_risk_gate_sim_expiry ON luxalgo_risk_gate_simulations(expires_at);
 CREATE TABLE IF NOT EXISTS luxalgo_dry_run_intents (
  event_id TEXT PRIMARY KEY,
  received_at TIMESTAMPTZ NOT NULL,
@@ -1871,6 +1882,84 @@ def terminal_live_candidate_preview():
     response.headers['Cache-Control'] = 'private, no-store'
     return response, (200 if result['status'] == 'DRY_RUN_ONLY' else 422)
 
+
+# STAGE 2: serialized, persistent DRY-RUN risk gate. Never creates exchange orders.
+# Tests concurrency and duplicate rejection with PostgreSQL transaction locks.
+SIM_RISK_LOCK = 65913043
+
+def _risk_gate_inputs(payload):
+    from decimal import Decimal, InvalidOperation
+    if not isinstance(payload, dict):
+        raise ValueError('JSON object required')
+    event_id = str(payload.get('event_id', '')).strip()
+    if not re.fullmatch(r'[a-zA-Z0-9_-]{8,80}', event_id):
+        raise ValueError('Invalid event_id')
+    def decimal_field(name):
+        value = payload.get(name)
+        if value is None or isinstance(value, bool):
+            raise ValueError('Missing or invalid '+name)
+        try: number = Decimal(str(value))
+        except (InvalidOperation, ValueError, TypeError): raise ValueError('Invalid '+name)
+        if not number.is_finite() or number <= 0:
+            raise ValueError('Invalid '+name)
+        return number
+    risk = decimal_field('risk_percent')
+    leverage = decimal_field('leverage')
+    equity = decimal_field('hypothetical_equity_usdt')
+    if risk > Decimal('3'):
+        raise ValueError('Risk exceeds 3% sandbox ceiling')
+    if leverage > Decimal('5'):
+        raise ValueError('Leverage exceeds 5x sandbox ceiling')
+    if equity > Decimal('1000000000'):
+        raise ValueError('Hypothetical equity too high')
+    return event_id, risk, leverage, equity
+
+@app.post('/terminal/risk-gate-simulation')
+def terminal_risk_gate_simulation():
+    if not _terminal_permitted():
+        return _terminal_guard()
+    origin = request.headers.get('Origin')
+    if origin:
+        target = urlsplit(os.getenv('PUBLIC_BASE_URL','').strip().rstrip('/') or ('https://' + request.host))
+        given = urlsplit(origin)
+        if (target.scheme != 'https' or not target.netloc or target.path or target.query or target.fragment
+                or given.scheme != 'https' or given.netloc != target.netloc or given.path or given.query or given.fragment):
+            return jsonify(status='BLOCKED',reason='Origin mismatch',orders_placed=0),403
+    if os.getenv('LIVE_TRADING_ENABLED','false').strip().lower() != 'false':
+        return jsonify(status='BLOCKED',reason='This test requires LIVE_TRADING_ENABLED=false',orders_placed=0),503
+    try:
+        event_id, risk, leverage, equity = _risk_gate_inputs(request.get_json(silent=True))
+    except ValueError as exc:
+        return jsonify(status='BLOCKED',reason=str(exc),orders_placed=0),422
+    from decimal import Decimal
+    try:
+        with _db_connect() as con:
+            _ensure_schema(con)
+            with con.cursor() as cur:
+                cur.execute('SELECT pg_advisory_xact_lock(%s)', (SIM_RISK_LOCK,))
+                cur.execute("UPDATE luxalgo_risk_gate_simulations SET state='EXPIRED' WHERE state='SIMULATED' AND expires_at<=NOW()")
+                cur.execute('SELECT state FROM luxalgo_risk_gate_simulations WHERE event_id=%s', (event_id,))
+                if cur.fetchone() is not None:
+                    outcome='DUPLICATE_BLOCKED'
+                else:
+                    cur.execute("SELECT COUNT(*) AS n FROM luxalgo_risk_gate_simulations WHERE state='SIMULATED' AND expires_at>NOW()")
+                    if cur.fetchone()['n'] >= 1:
+                        outcome='ACCOUNT_SLOT_BLOCKED'
+                    else:
+                        budget = equity * risk / Decimal('100')
+                        cur.execute('''INSERT INTO luxalgo_risk_gate_simulations
+                          (event_id,expires_at,state,risk_usdt,leverage,details)
+                          VALUES (%s,NOW()+INTERVAL '15 minutes','SIMULATED',%s,%s,%s::jsonb)''',
+                          (event_id,budget,leverage,json.dumps({'hypothetical_equity_usdt':str(equity), 'risk_percent':str(risk), 'simulation_only':True})))
+                        outcome='SIMULATED_ONLY'
+        res=jsonify(status=outcome,live_trading=False,orders_enabled=False,orders_placed=0,
+                    verified_equity=False,exchange_position_checked=False,
+                    note='Sandbox gate only. NOT a live risk lock or proof of safe exchange execution.')
+        res.headers['Cache-Control']='private, no-store'
+        return res, (200 if outcome=='SIMULATED_ONLY' else 409)
+    except (psycopg.Error, RuntimeError, OSError):
+        app.logger.exception('Risk gate simulation storage unavailable')
+        return jsonify(status='BLOCKED',reason='Database unavailable',orders_placed=0),503
 
 @app.get('/terminal/live-readiness')
 def terminal_live_readiness():
