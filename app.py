@@ -493,7 +493,7 @@ h2{font-size:15px;font-weight:850;letter-spacing:.3px}
 <div class="metric"><small>AVAILABLE FUTURES · USDT</small><strong id="futuresAvailable">—</strong><span>Exchange-reported trading availability</span></div>
 <div class="metric"><small>FUTURES BALANCE · USDT</small><strong id="futuresBalance">—</strong><span>Account balance before unrealized P&amp;L</span></div>
 </div></details>
-<details class="panel" style="margin:12px 0" id="liveReadinessPanel"><summary style="font-weight:850;cursor:pointer;color:#ffcf89">LIVE EXECUTION READINESS · SAFETY CHECK (READ ONLY)</summary><p class="light">This panel checks safeguards only. It cannot start trading or enable Gate.io API writes.</p><button class="btn" type="button" id="readinessRefresh">Check readiness</button><button class="btn gloss-action" type="button" id="guardTestButton" style="margin-left:8px">Test Duplicate Order Guard</button><button class="btn gloss-action" type="button" id="riskCheckButton" style="margin-left:8px">Check Account Risk Limits</button><button class="btn gloss-action" type="button" id="stage2GateTestButton" style="margin-left:8px">Test Stage 2 Risk Gate</button><button class="btn gloss-action" type="button" id="stage3ContractTestButton" style="margin-left:8px">Test Stage 3 Contract Sizing</button><p class="light" id="riskCheckResult" role="status" aria-live="polite">Read-only risk inspection available. Never authorizes a trade.</p><p class="light" id="guardTestResult">Test only: all candidates are BLOCKED; no exchange orders.</p><p class="light" id="stage2GateTestResult" role="status" aria-live="polite">Stage 2 PostgreSQL concurrency test not yet run.</p><p class="light" id="stage3ContractTestResult" role="status" aria-live="polite">Stage 3 read-only sizing diagnostic not yet run.</p><div id="readinessOutput" role="status" aria-live="polite" style="margin-top:10px;color:#fdbfbf">Live execution BLOCKED until all critical safeguards are implemented and tested.</div></details>
+<details class="panel" style="margin:12px 0" id="liveReadinessPanel"><summary style="font-weight:850;cursor:pointer;color:#ffcf89">LIVE EXECUTION READINESS · SAFETY CHECK (READ ONLY)</summary><p class="light">This panel checks safeguards only. It cannot start trading or enable Gate.io API writes.</p><button class="btn" type="button" id="readinessRefresh">Check readiness</button><button class="btn gloss-action" type="button" id="guardTestButton" style="margin-left:8px">Test Duplicate Order Guard</button><button class="btn gloss-action" type="button" id="riskCheckButton" style="margin-left:8px">Check Account Risk Limits</button><button class="btn gloss-action" type="button" id="stage2GateTestButton" style="margin-left:8px">Test Stage 2 Risk Gate</button><button class="btn gloss-action" type="button" id="stage3ContractTestButton" style="margin-left:8px">Test Stage 3 Contract Sizing</button><button class="btn gloss-action" type="button" id="stage4ProtectiveTestButton" style="margin-left:8px">Test Stage 4 SL/TP</button><p class="light" id="riskCheckResult" role="status" aria-live="polite">Read-only risk inspection available. Never authorizes a trade.</p><p class="light" id="guardTestResult">Test only: all candidates are BLOCKED; no exchange orders.</p><p class="light" id="stage2GateTestResult" role="status" aria-live="polite">Stage 2 PostgreSQL concurrency test not yet run.</p><p class="light" id="stage3ContractTestResult" role="status" aria-live="polite">Stage 3 read-only sizing diagnostic not yet run.</p><p class="light" id="stage4ProtectiveTestResult" role="status" aria-live="polite">Stage 4 protective-price validation not yet run. No protective orders exist.</p><div id="readinessOutput" role="status" aria-live="polite" style="margin-top:10px;color:#fdbfbf">Live execution BLOCKED until all critical safeguards are implemented and tested.</div></details>
 <div class="grid metric-grid">
 <div class="metric"><small>GATE.IO CONNECTION</small><strong class="gloss-cyan">READ-ONLY</strong><span id="gatePositionStatus">Checking position feed…</span></div>
 <div class="metric"><small>OPEN POSITIONS</small><strong id="openPositionCount">—</strong><span>Verified Gate.io positions only</span></div>
@@ -628,6 +628,21 @@ h2{font-size:15px;font-weight:850;letter-spacing:.3px}
    const d=await r.json();
    out.textContent='Stage 3 '+(d.status||'UNAVAILABLE')+' · '+(d.detail||d.error||'No details')+' · Exchange orders: 0';
   }catch(e){out.textContent='Stage 3 test unavailable (fail closed): '+e.message+' · Orders: 0';}
+  finally{b.disabled=false;}
+ });
+})();
+
+// Stage 4: fail-closed price and side verification; no order submissions.
+(function(){
+ const b=document.getElementById('stage4ProtectiveTestButton'),out=document.getElementById('stage4ProtectiveTestResult');
+ if(!b||!out)return;
+ b.addEventListener('click',async()=>{
+  b.disabled=true;out.textContent='Checking read-only SL/TP prices and LONG/SHORT closing sides…';
+  try{
+   const r=await fetch('/terminal/stage4-protection-self-test',{method:'POST',headers:{'Content-Type':'application/json','X-Terminal-CSRF':{{ csrf_token|tojson }}},body:'{}',cache:'no-store'});
+   const d=await r.json();
+   out.textContent='Stage 4 '+(d.status||'UNAVAILABLE')+' · '+(d.detail||d.error||'No details')+' · Exchange orders: 0';
+  }catch(e){out.textContent='Stage 4 unavailable (fail closed): '+e.message+' · Orders: 0';}
   finally{b.disabled=false;}
  });
 })();
@@ -2137,6 +2152,85 @@ def terminal_stage3_contract_self_test():
     except (ValueError,HTTPError,URLError,TimeoutError,OSError,KeyError,TypeError,OverflowError,InvalidOperation) as ex:
         app.logger.warning('Stage 3 public contract sizing self-test inconclusive: %s',type(ex).__name__)
         return jsonify(status='INCONCLUSIVE',detail='Public contract specifications or illustrative sizing unavailable; no orders placed',orders_placed=0),503
+
+# Stage 4 protection validation is a strictly offline/read-only diagnostic.
+# This does NOT create, register, or acknowledge exchange-side SL/TP orders.
+def _stage4_validate_protection(spec, side, entry, stop, take_profit, contracts):
+    if not isinstance(spec, dict) or spec.get('name') != 'BTC_USDT' or spec.get('type') != 'direct':
+        raise ValueError('Unsupported contract')
+    if spec.get('in_delisting') or spec.get('enable_decimal'):
+        raise ValueError('Contract not supported by this diagnostic')
+    def positive(x):
+        try: d=Decimal(str(x))
+        except (InvalidOperation,TypeError,ValueError): raise ValueError('Invalid numeric input')
+        if not d.is_finite() or d <= 0: raise ValueError('Nonpositive/nonfinite input')
+        return d
+    tick=positive(spec.get('order_price_round'))
+    maximum=positive(spec.get('order_size_max'))
+    minimum=positive(spec.get('order_size_min'))
+    ep, sl, tp=positive(entry),positive(stop),positive(take_profit)
+    qty=positive(contracts)
+    if qty != qty.to_integral_value() or qty < minimum or qty > maximum:
+        raise ValueError('Invalid integer contract count')
+    # Non-multiples are rejected instead of silently rounding protection away.
+    if any(price / tick != (price / tick).to_integral_value() for price in (ep,sl,tp)):
+        raise ValueError('Price not aligned with public tick size')
+    if side=='LONG':
+        if not sl < ep < tp: raise ValueError('Invalid LONG protection geometry')
+        closing_side='SELL'
+    elif side=='SHORT':
+        if not tp < ep < sl: raise ValueError('Invalid SHORT protection geometry')
+        closing_side='BUY'
+    else:
+        raise ValueError('Unsupported position direction')
+    # Do not create a Gate.io order payload: actual fields/position mode require
+    # separate API integration testing and acknowledgement/reconciliation.
+    return dict(position_side=side,closing_side=closing_side,contracts=int(qty),
+                tick_size=str(tick),entry=str(ep),stop_loss=str(sl),take_profit=str(tp),
+                exchange_orders_placed=0,exchange_protection_acknowledged=False)
+
+@app.post('/terminal/stage4-protection-self-test')
+def terminal_stage4_protection_self_test():
+    if not _terminal_permitted(): return _terminal_guard()
+    if not _csrf_valid():
+        return jsonify(status='BLOCKED',error='Invalid session verification',orders_placed=0),403
+    if os.getenv('LIVE_TRADING_ENABLED','false').strip().lower()!='false':
+        return jsonify(status='BLOCKED',error='Live trading must remain OFF',orders_placed=0),503
+    try:
+        req=Request('https://api.gateio.ws/api/v4/futures/usdt/contracts/BTC_USDT',
+                    headers={'Accept':'application/json','User-Agent':'LuxAlgo-PRO-Stage4-ReadOnly/1.0'},method='GET')
+        with urlopen(req,timeout=8) as r:
+            if getattr(r,'status',200)!=200: raise ValueError('Public metadata HTTP error')
+            spec=json.loads(r.read(65536))
+        tick=Decimal(str(spec.get('order_price_round')))
+        if not tick.is_finite() or tick<=0: raise ValueError('Invalid tick')
+        # Synthetic prices aligned to actual public tick metadata; no live quote used.
+        entry=tick*1000000
+        stop_long=entry-tick*100
+        tp_long=entry+tick*150
+        if stop_long<=0: raise ValueError('Synthetic price too small')
+        long_result=_stage4_validate_protection(spec,'LONG',entry,stop_long,tp_long,1)
+        short_result=_stage4_validate_protection(spec,'SHORT',entry,tp_long,stop_long,1)
+        invalid_cases=(
+            ('LONG',entry,tp_long,stop_long,1),
+            ('SHORT',entry,stop_long,tp_long,1),
+            ('LONG',entry,entry,tp_long,1),
+            ('LONG',entry,stop_long,tp_long+tick/2,1),
+            ('INVALID',entry,stop_long,tp_long,1),
+            ('LONG',entry,stop_long,tp_long,'NaN'),
+        )
+        rejected=0
+        for args in invalid_cases:
+            try: _stage4_validate_protection(spec,*args)
+            except ValueError: rejected+=1
+        passed=(long_result['closing_side']=='SELL' and short_result['closing_side']=='BUY' and rejected==len(invalid_cases))
+        return jsonify(status='PASS' if passed else 'FAIL',
+          detail=('Public BTC_USDT tick metadata, LONG/SHORT SL/TP geometry, closing sides and 6 invalid cases checked. Exchange-side protection NOT placed or verified.' if passed else 'Protection diagnostic mismatch'),
+          long=long_result,short=short_result,invalid_inputs_rejected=rejected,
+          orders_placed=0,orders_enabled=False,live_trading=False,exchange_sl_tp_acknowledged=False), (200 if passed else 409)
+    except (ValueError,HTTPError,URLError,TimeoutError,OSError,TypeError,InvalidOperation,OverflowError) as ex:
+        app.logger.warning('Stage 4 protection diagnostic inconclusive: %s',type(ex).__name__)
+        return jsonify(status='INCONCLUSIVE',detail='Public contract metadata/precision unavailable; no exchange orders',orders_placed=0),503
 
 @app.get('/terminal/live-readiness')
 def terminal_live_readiness():
