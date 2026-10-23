@@ -307,7 +307,7 @@ h2{font-size:15px;font-weight:850;letter-spacing:.3px}
 .terminal-brand{min-width:0}.trading-status{white-space:nowrap;align-self:start;text-align:right}
 .news-slot{min-width:0;border:1px solid #365d82;border-radius:9px;background:#07192c;padding:8px 12px;overflow:hidden}
 .news-heading{display:flex;justify-content:space-between;gap:8px;color:#ffd584;font-size:10px;font-weight:800;letter-spacing:.6px;margin-bottom:5px}
-#newsFeedStatus{color:#99b5cd;font-size:10px;font-weight:500;white-space:nowrap}
+#newsRefresh{border:1px solid #4383a8;border-radius:5px;background:#153650;color:#d5f6ff;cursor:pointer;font-size:14px;line-height:17px;padding:1px 6px}#newsRefresh:disabled{opacity:.45;cursor:wait}#newsFeedStatus{color:#99b5cd;font-size:10px;font-weight:500;white-space:nowrap}
 .news-viewport{height:42px;overflow:hidden;position:relative;mask-image:linear-gradient(transparent 0%,#000 13%,#000 88%,transparent 100%)}
 .news-stack{display:flex;flex-direction:column;will-change:transform}
 .news-item{height:42px;min-height:42px;display:flex;flex-direction:column;justify-content:center;gap:2px;overflow:hidden}
@@ -329,8 +329,8 @@ h2{font-size:15px;font-weight:850;letter-spacing:.3px}
 .bottom-grid>section:first-child{min-width:0}
 .bottom-grid>section:first-child .tablewrap{overflow-x:auto}
 .bottom-grid>section:first-child table{min-width:790px;table-layout:auto}
-.bottom-grid>section:first-child th:last-child,.bottom-grid>section:first-child td:last-child{min-width:352px;width:44%;white-space:nowrap}
-.bottom-grid>section:first-child td:last-child .btn{display:inline-block;vertical-align:middle;white-space:nowrap;padding:5px 6px;margin:0 2px 0 0;font-size:10px;line-height:1.4;border-radius:5px;letter-spacing:0}
+.bottom-grid>section:first-child th:last-child,.bottom-grid>section:first-child td:last-child{min-width:352px;width:44%;white-space:normal}
+.bottom-grid>section:first-child td:last-child .btn{display:inline-block;vertical-align:middle;white-space:nowrap;padding:5px 5px;margin:2px 2px 2px 0;font-size:10px;line-height:1.4;border-radius:5px;letter-spacing:0}
 .performance-panel{min-width:0}
 .performance-panel .panel-heading{flex-wrap:wrap}
 .performance-panel .perf-grid{gap:6px}
@@ -468,7 +468,7 @@ h2{font-size:15px;font-weight:850;letter-spacing:.3px}
 .advanced-panel{border-color:#37779b}.adv-controls{display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin:10px 0}.adv-table{overflow-x:auto;max-height:480px;overflow-y:auto}.adv-table table{min-width:1030px}.adv-table th{position:sticky;top:0;background:#193955}.adv-summary{color:#b1d3e9;font-size:12px}.adv-signal{font-weight:850}.adv-signal.long{color:#60e9b6}.adv-signal.short{color:#ff8ca3}.adv-reason{font-size:11px;color:#f6cb92}.adv-blocked{color:#ffc994}
 </style></head><body><div class="wrap"><header class="terminal-header"><div class="terminal-brand"><h1>LUXALGO PRO · TRADING TERMINAL</h1><p>Gate.io USDT Perpetual · LuxAlgo 5m / 15m · Coded by · SUBHASISH</p>
 <div class="profile-greeting"><div class="profile-avatar" id="avatarDisplay"><span>SD</span></div>
-<div><div class="profile-name">Hello SUBHASISH</div><label class="profile-change" for="profileImageInput" tabindex="0">Change Photo</label><input type="file" id="profileImageInput" accept="image/png,image/jpeg,image/webp" hidden></div></div></div><section class="news-slot" aria-label="Latest crypto news"><div class="news-heading"><span>● CRYPTO NEWS</span><span id="newsFeedStatus">Loading headlines…</span></div><div class="news-viewport" id="newsViewport"><div class="news-stack" id="newsStack"><span class="news-empty">Retrieving publisher headlines…</span></div></div></section><div class="profile-right"><div class="tag trading-status">● LIVE TRADING OFF</div>
+<div><div class="profile-name">Hello SUBHASISH</div><label class="profile-change" for="profileImageInput" tabindex="0">Change Photo</label><input type="file" id="profileImageInput" accept="image/png,image/jpeg,image/webp" hidden></div></div></div><section class="news-slot" aria-label="Latest crypto news"><div class="news-heading"><span>● CRYPTO NEWS</span><span style="display:flex;align-items:center;gap:7px"><span id="newsFeedStatus">Loading headlines…</span><button type="button" id="newsRefresh" aria-label="Refresh crypto news" title="Refresh crypto news">↻</button></span></div><div class="news-viewport" id="newsViewport"><div class="news-stack" id="newsStack"><span class="news-empty">Retrieving publisher headlines…</span></div></div></section><div class="profile-right"><div class="tag trading-status">● LIVE TRADING OFF</div>
 <form method="post" action="/logout"><input type="hidden" name="csrf_token" value="{{ csrf_token|e }}"><button class="glossy-logout" type="submit">⇥ LOGOUT</button></form></div></header>
 <section class="bot-control-panel" aria-label="Remote bot control">
  <div><strong id="botControlLabel">BOT OFF · PAPER SIMULATION PAUSED</strong><p id="botControlDetail">New LuxAlgo signals remain logged. No live orders are possible.</p></div>
@@ -519,7 +519,7 @@ h2{font-size:15px;font-weight:850;letter-spacing:.3px}
 <div class="adv-table"><table><thead><tr><th>PAIR</th><th>DIRECTION</th><th>TIMEFRAME</th><th>LUXALGO</th><th>ENTRY REF.</th><th>SL1</th><th>TP1</th><th>R:R</th><th>3% RISK / SIZE</th><th>STATUS / REASON</th></tr></thead><tbody id="advancedScanBody"><tr><td colspan="10" class="light">Waiting for scan results.</td></tr></tbody></table></div>
 <p class="light">Technical watchlist is NOT a LuxAlgo signal or recommendation. No fresh verified SL1/TP1 = NO TRADE. Capital figures are account-read-only; sizes are indicative BASE-asset quantities, not validated Gate.io contract quantities. Live execution remains BLOCKED.</p>
 </section>
-<div class="bottom-grid"><section class="panel"><h2>RECENT LUXALGO SIGNALS · 5m / 15m</h2><div class="tablewrap"><table><thead><tr><th>Received (IST)</th><th>Token</th><th>Signal</th><th>Timeframe</th><th>Status</th><th>Entry / SL / TP Plan</th></tr></thead><tbody>{% for r in records %}<tr><td>{{r.time_ist|e}}</td><td>{{r.symbol|e}}</td><td>{{r.side|e}}</td><td>{{r.tf|e}}</td><td>Received · Not executed</td><td><button class="btn plan" data-symbol="{{r.symbol|e}}" data-side="{{r.side|e}}" data-tf="{{r.tf|e}}">Plan + Chart</button> <button class="btn signal-risk" type="button" data-received="{{r.time|e}}" data-symbol="{{r.symbol|e}}" data-side="{{r.side|e}}" data-tf="{{r.tf|e}}">Signal Risk Check</button> <button class="btn execution-check" type="button" data-event-id="{{r.event_id|e}}">Execution Precheck</button> <button class="btn simulate-order" type="button" data-event-id="{{r.event_id|e}}">Simulate Order</button> <button class="btn delete-recent-signal" type="button" data-event-id="{{r.event_id|e}}">Delete</button></td></tr>{% else %}<tr><td colspan="6">No signals stored in the database yet.</td></tr>{% endfor %}</tbody></table></div><p id="executionCheckStatus" class="light" role="status" aria-live="polite">Execution engine foundation: protected prechecks only; exchange orders disabled.</p><p id="simulatedOrderStatus" class="light" role="status" aria-live="polite">Stage 2: explicit simulated order requests only; no actual exchange positions or protective orders.</p><p class="light">Signals are received events, not fills. Signal receipts and dry-run intent IDs are saved in PostgreSQL. Duplicate signals may not create separate dry-run intents.</p></section>
+<div class="bottom-grid"><section class="panel"><h2>RECENT LUXALGO SIGNALS · 5m / 15m</h2><div class="tablewrap"><table><thead><tr><th>Received (IST)</th><th>Token</th><th>Signal</th><th>Timeframe</th><th>Status</th><th>Entry / SL / TP Plan</th></tr></thead><tbody>{% for r in records %}<tr><td>{{r.time_ist|e}}</td><td>{{r.symbol|e}}</td><td>{{r.side|e}}</td><td>{{r.tf|e}}</td><td>Received · Not executed</td><td><button class="btn plan" data-symbol="{{r.symbol|e}}" data-side="{{r.side|e}}" data-tf="{{r.tf|e}}">Plan + Chart</button> <button class="btn signal-risk" type="button" data-received="{{r.time|e}}" data-symbol="{{r.symbol|e}}" data-side="{{r.side|e}}" data-tf="{{r.tf|e}}">Signal Risk Check</button> <button class="btn execution-check" type="button" data-event-id="{{r.event_id|e}}">Execution Precheck</button> <button class="btn simulate-order" type="button" data-event-id="{{r.event_id|e}}">Simulate Order</button> <button class="btn call-status" type="button" data-event-id="{{r.event_id|e}}" title="Review signal market outcome (not a real exchange trade)">↻ Call Status</button> <button class="btn delete-recent-signal" type="button" data-event-id="{{r.event_id|e}}">Delete</button></td></tr>{% else %}<tr><td colspan="6">No signals stored in the database yet.</td></tr>{% endfor %}</tbody></table></div><p id="callStatusDetail" class="light" role="status" aria-live="polite">Call status checks public completed candles, not exchange fills.</p><p id="executionCheckStatus" class="light" role="status" aria-live="polite">Execution engine foundation: protected prechecks only; exchange orders disabled.</p><p id="simulatedOrderStatus" class="light" role="status" aria-live="polite">Stage 2: explicit simulated order requests only; no actual exchange positions or protective orders.</p><p class="light">Signals are received events, not fills. Signal receipts and dry-run intent IDs are saved in PostgreSQL. Duplicate signals may not create separate dry-run intents.</p></section>
 <section class="panel performance-panel"><div class="panel-heading"><h2>PERFORMANCE ANALYTICS</h2><span class="label-muted">VERIFIED FILLS ONLY</span></div><div class="perf-grid"><div><span>Total Closed Trades</span><strong>—</strong></div><div><span>Winning Trades</span><strong>—</strong></div><div><span>Losing Trades</span><strong>—</strong></div><div><span>Win Rate</span><strong>—</strong></div><div><span>Total Realized P&amp;L</span><strong>—</strong></div><div><span>Unrealized P&amp;L</span><strong>—</strong></div></div><p class="light">Waiting for authenticated position and fill synchronization. No synthetic P&amp;L or win statistics.</p></section></div><section class="panel"><h2>TRADE PLAN · SL · TP1 <span class="tag">READ ONLY</span></h2>
 <div class="controls"><label>Entry reference <input id="entry" type="number" step="any" placeholder="Choose a signal" readonly></label><label>Stop Loss · 1.5 ATR <input id="sl" type="number" step="any" readonly></label><label>TP1 · 2 ATR · 100% exit <input id="tp1" type="number" step="any" readonly></label></div>
 <div id="planResults">Select Plan + Chart beside a signal to calculate illustrative entry, SL and TP1. No orders are placed.</div></section>
@@ -965,12 +965,38 @@ document.getElementById('radarRefresh').addEventListener('click',loadRadar);docu
 loadRadar();loadScanner();setInterval(()=>{if(!document.hidden)loadRadar()},60000);setInterval(()=>{if(!document.hidden)loadScanner()},15000);
 })();
 
+// Read-only market-outcome badges, scoped to existing signal buttons.
+(function(){
+ const detail=document.getElementById('callStatusDetail');
+ const buttons=Array.from(document.querySelectorAll('button.call-status'));
+ async function update(button){
+  if(button.disabled)return;
+  button.disabled=true;
+  button.textContent='↻ Checking';
+  try{
+   const res=await fetch('/terminal/call-status/'+encodeURIComponent(button.dataset.eventId),{cache:'no-store'});
+   const obj=await res.json();if(!res.ok)throw Error(obj.error||'Review failed');
+   const state=obj.state||'UNVERIFIABLE';
+   button.textContent=state==='LIVE'?'● LIVE':state==='TP HIT'?'✓ TP HIT':state==='SL HIT'?'✕ SL HIT':state==='AWAITING ENTRY'?'◷ ENTRY':state==='AWAITING DATA'?'◷ DATA':'? UNVERIFIABLE';
+   button.style.color=state==='TP HIT'?'#57f6bd':state==='SL HIT'?'#ff829e':state==='LIVE'?'#9feaff':'#ffd28a';
+   button.title=obj.detail||state;
+   detail.textContent=(obj.symbol||'Signal')+' · '+state+' · '+(obj.detail||'')+' · Public candles only, not an exchange fill.';
+  }catch(e){button.textContent='? UNAVAILABLE';detail.textContent='Call status check unavailable: '+e.message;}
+  finally{button.disabled=false;}
+ }
+ buttons.forEach(b=>b.addEventListener('click',()=>update(b)));
+ // Check a few recent signals at load; user can refresh any individual row.
+ buttons.slice(0,3).forEach((b,i)=>setTimeout(()=>update(b),i*900));
+ setInterval(()=>{if(!document.hidden)buttons.slice(0,3).forEach((b,i)=>setTimeout(()=>update(b),i*900))},120000);
+})();
+
 // News is display-only; has no access to trading functions or signals.
 (function(){
  'use strict';
  const viewport=document.getElementById('newsViewport');
  const stack=document.getElementById('newsStack');
  const status=document.getElementById('newsFeedStatus');
+ const refreshButton=document.getElementById('newsRefresh');
  const meta=x=>String(x||'').slice(0,90);
  const linkSafe=u=>{try{const x=new URL(u);return x.protocol==='https:'?x.href:null}catch(e){return null}};
  function render(items,updated){
@@ -986,15 +1012,19 @@ loadRadar();loadScanner();setInterval(()=>{if(!document.hidden)loadRadar()},6000
    if(valid.length>1){valid.forEach(add);stack.style.setProperty('--news-duration',String(Math.max(36,valid.length*6))+'s');stack.classList.add('news-animated');}
    status.textContent=String(valid.length)+' headlines · direct publisher links';
  }
- async function load(){
+ async function load(force=false){
+   if(refreshButton)refreshButton.disabled=true;
+   status.textContent=force?'Refreshing headlines…':'Updating headlines…';
    try{
      const ctl=new AbortController();const t=setTimeout(()=>ctl.abort(),9500);
      let res;
-     try{res=await fetch('/terminal/news',{cache:'no-store',signal:ctl.signal})}finally{clearTimeout(t)}
+     try{res=await fetch('/terminal/news'+(force?'?refresh=1':''),{cache:'no-store',signal:ctl.signal})}finally{clearTimeout(t)}
      if(!res.ok)throw Error('News unavailable');
      const data=await res.json();render(data.items||[],data.fetched_at);
    }catch(e){status.textContent='News temporarily unavailable';if(!stack.querySelector('.news-item'))stack.textContent='News unavailable · trading terminal unaffected';}
+   finally{if(refreshButton)refreshButton.disabled=false;}
  }
+ if(refreshButton)refreshButton.addEventListener('click',()=>load(true));
  load();setInterval(()=>{if(!document.hidden)load()},300000);
 })();
 
@@ -1084,7 +1114,9 @@ def terminal_news():
     now=time.time()
     with _news_lock:
         cached=dict(_news_cache)
-    if cached['expires_at']>now:
+    force=request.args.get('refresh')=='1'
+    # Manual refresh bypasses the 10-minute cache but is throttled to once/minute.
+    if cached['expires_at']>now and (not force or now-cached.get('fetched_at',0)<60):
         response=jsonify(items=cached['items'],fetched_at=cached['fetched_at'],status='cached')
         response.headers['Cache-Control']='private, no-store'
         return response
@@ -2352,6 +2384,52 @@ def _completed_gate_candles_after(symbol, tf, after):
                      any(b[0]-a[0]!=seconds for a,b in zip(out,out[1:]))):
         raise ValueError('Candle history has gaps; outcome cannot be established')
     return out
+
+
+# Read-only per-signal market outcome. Never implies a filled exchange order.
+@app.get('/terminal/call-status/<event_id>')
+def terminal_call_status(event_id):
+    if not _terminal_permitted(): return _terminal_guard()
+    if not re.fullmatch(r'[a-f0-9]{20}',event_id):
+        return jsonify(error='Invalid signal ID'),400
+    try:
+        with _db_connect() as con:
+            _ensure_schema(con)
+            with con.cursor() as cur:
+                cur.execute("""SELECT r.received_at,r.symbol,r.side,r.timeframe,l.status,l.entry_price,l.stop_loss,l.take_profit
+                   FROM luxalgo_signal_receipts r LEFT JOIN luxalgo_signal_levels l ON l.event_id=r.event_id
+                   WHERE r.event_id=%s ORDER BY r.id ASC LIMIT 1""",(event_id,))
+                sig=cur.fetchone()
+        if not sig: return jsonify(error='Signal not found'),404
+        info=dict(event_id=event_id,symbol=sig['symbol'],side=sig['side'],timeframe=sig['timeframe'],orders_placed=0,source='PUBLIC_COMPLETED_CANDLES',is_exchange_fill=False)
+        if sig['status']!='VALID' or any(sig[k] is None for k in ('entry_price','stop_loss','take_profit')):
+            return jsonify(**info,state='UNVERIFIABLE',detail='Original signal lacks validated entry / SL / TP levels')
+        entry=float(sig['entry_price']); sl=float(sig['stop_loss']);tp=float(sig['take_profit'])
+        side=sig['side']
+        if not ((side=='LONG' and sl<entry<tp) or (side=='SHORT' and tp<entry<sl)):
+            return jsonify(**info,state='UNVERIFIABLE',detail='Invalid signal risk levels')
+        candles=_completed_gate_candles_after(sig['symbol'],sig['timeframe'],sig['received_at'])
+        if not candles:return jsonify(**info,state='AWAITING DATA',detail='Waiting for first fully completed candle after signal')
+        entered=False
+        for stamp,hi,lo in candles:
+            just_entered=False
+            if not entered:
+                if not lo<=entry<=hi:continue
+                entered=True
+                just_entered=True
+            sh=lo<=sl if side=='LONG' else hi>=sl
+            th=hi>=tp if side=='LONG' else lo<=tp
+            # On the entry candle, intrabar ordering is unknown.
+            if just_entered and (sh or th):
+                return jsonify(**info,state='UNVERIFIABLE',detail='Entry and exit level touched in same candle; price sequence unknown')
+            if sh and th:
+                return jsonify(**info,state='UNVERIFIABLE',detail='SL and TP touched in the same candle; order unknown')
+            if sh:return jsonify(**info,state='SL HIT',detail='SL price touched in completed market candle',candle=stamp)
+            if th:return jsonify(**info,state='TP HIT',detail='TP price touched in completed market candle',candle=stamp)
+        return jsonify(**info,state='LIVE' if entered else 'AWAITING ENTRY',detail=('Entry price touched; no exit level touched in reviewed candles' if entered else 'No completed reviewed candle touched entry'))
+    except (HTTPError,URLError,TimeoutError,ValueError,KeyError,TypeError,OverflowError,psycopg.Error,RuntimeError,OSError) as exc:
+        app.logger.warning('Read-only call status unavailable for %s: %s',event_id,type(exc).__name__)
+        return jsonify(state='UNVERIFIABLE',detail='Reliable completed market history currently unavailable',orders_placed=0,is_exchange_fill=False),200
 
 
 def _paper_trade_snapshot(order):
