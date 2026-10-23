@@ -1391,7 +1391,7 @@ def _parse_luxalgo_webhook_body(raw):
 
 
 def _webhook_format_error(raw):
-    """Safe diagnostics: expose only structural category, NEVER payload/token."""
+    """Report JSON syntax location only. Never log the body, secret, or fragments."""
     if not raw:
         return 'empty_body'
     if len(raw) > 16000:
@@ -1402,15 +1402,30 @@ def _webhook_format_error(raw):
         return 'invalid_encoding'
     if not value:
         return 'empty_body'
-    if value[0] == '"':
-        return 'quoted_or_escaped_json_not_decodable'
-    if value[0] != '{':
-        return 'unexpected_body_wrapper'
-    try:
-        json.loads(value)
-    except ValueError:
-        return 'malformed_json'
-    return 'json_value_not_object'
+    # Try valid outer-string and literal quoted wrappers, matching the parser.
+    for _ in range(3):
+        try:
+            obj = json.loads(value)
+        except json.JSONDecodeError as error:
+            # If the complete object has been enclosed by raw quotes,
+            # inspect the interior before reporting an error position.
+            if (value.startswith('"') and value.endswith('"') and
+                    value[1:-1].strip().startswith('{')):
+                value = value[1:-1].strip()
+                continue
+            # Error type and location are safe; message content is not logged.
+            safe_type = ('control_char' if 'Invalid control character' in error.msg
+                         else 'json_syntax')
+            return f'{safe_type}_line{error.lineno}_col{error.colno}_pos{error.pos}'
+        except (ValueError, TypeError):
+            return 'json_decode_failure'
+        if isinstance(obj, dict):
+            return 'unexpected_parse_failure'
+        if isinstance(obj, str):
+            value = obj.strip()
+            continue
+        return 'json_value_not_object'
+    return 'wrapper_not_decodable'
 
 
 @app.post('/webhook')
