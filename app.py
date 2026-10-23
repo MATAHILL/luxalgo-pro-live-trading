@@ -13,6 +13,7 @@ import re
 import time
 import math
 import secrets
+from decimal import Decimal, InvalidOperation, ROUND_FLOOR
 import base64
 from collections import deque
 from hashlib import sha256
@@ -492,7 +493,7 @@ h2{font-size:15px;font-weight:850;letter-spacing:.3px}
 <div class="metric"><small>AVAILABLE FUTURES · USDT</small><strong id="futuresAvailable">—</strong><span>Exchange-reported trading availability</span></div>
 <div class="metric"><small>FUTURES BALANCE · USDT</small><strong id="futuresBalance">—</strong><span>Account balance before unrealized P&amp;L</span></div>
 </div></details>
-<details class="panel" style="margin:12px 0" id="liveReadinessPanel"><summary style="font-weight:850;cursor:pointer;color:#ffcf89">LIVE EXECUTION READINESS · SAFETY CHECK (READ ONLY)</summary><p class="light">This panel checks safeguards only. It cannot start trading or enable Gate.io API writes.</p><button class="btn" type="button" id="readinessRefresh">Check readiness</button><button class="btn gloss-action" type="button" id="guardTestButton" style="margin-left:8px">Test Duplicate Order Guard</button><button class="btn gloss-action" type="button" id="riskCheckButton" style="margin-left:8px">Check Account Risk Limits</button><button class="btn gloss-action" type="button" id="stage2GateTestButton" style="margin-left:8px">Test Stage 2 Risk Gate</button><p class="light" id="riskCheckResult" role="status" aria-live="polite">Read-only risk inspection available. Never authorizes a trade.</p><p class="light" id="guardTestResult">Test only: all candidates are BLOCKED; no exchange orders.</p><p class="light" id="stage2GateTestResult" role="status" aria-live="polite">Stage 2 PostgreSQL concurrency test not yet run.</p><div id="readinessOutput" role="status" aria-live="polite" style="margin-top:10px;color:#fdbfbf">Live execution BLOCKED until all critical safeguards are implemented and tested.</div></details>
+<details class="panel" style="margin:12px 0" id="liveReadinessPanel"><summary style="font-weight:850;cursor:pointer;color:#ffcf89">LIVE EXECUTION READINESS · SAFETY CHECK (READ ONLY)</summary><p class="light">This panel checks safeguards only. It cannot start trading or enable Gate.io API writes.</p><button class="btn" type="button" id="readinessRefresh">Check readiness</button><button class="btn gloss-action" type="button" id="guardTestButton" style="margin-left:8px">Test Duplicate Order Guard</button><button class="btn gloss-action" type="button" id="riskCheckButton" style="margin-left:8px">Check Account Risk Limits</button><button class="btn gloss-action" type="button" id="stage2GateTestButton" style="margin-left:8px">Test Stage 2 Risk Gate</button><button class="btn gloss-action" type="button" id="stage3ContractTestButton" style="margin-left:8px">Test Stage 3 Contract Sizing</button><p class="light" id="riskCheckResult" role="status" aria-live="polite">Read-only risk inspection available. Never authorizes a trade.</p><p class="light" id="guardTestResult">Test only: all candidates are BLOCKED; no exchange orders.</p><p class="light" id="stage2GateTestResult" role="status" aria-live="polite">Stage 2 PostgreSQL concurrency test not yet run.</p><p class="light" id="stage3ContractTestResult" role="status" aria-live="polite">Stage 3 read-only sizing diagnostic not yet run.</p><div id="readinessOutput" role="status" aria-live="polite" style="margin-top:10px;color:#fdbfbf">Live execution BLOCKED until all critical safeguards are implemented and tested.</div></details>
 <div class="grid metric-grid">
 <div class="metric"><small>GATE.IO CONNECTION</small><strong class="gloss-cyan">READ-ONLY</strong><span id="gatePositionStatus">Checking position feed…</span></div>
 <div class="metric"><small>OPEN POSITIONS</small><strong id="openPositionCount">—</strong><span>Verified Gate.io positions only</span></div>
@@ -612,6 +613,21 @@ h2{font-size:15px;font-weight:850;letter-spacing:.3px}
    const d=await r.json();
    out.textContent='Stage 2 '+(d.status||'UNAVAILABLE')+' · '+(d.detail||d.error||'No details')+' · Exchange orders: 0';
   }catch(e){out.textContent='Stage 2 test unavailable (fail closed): '+e.message+' · Orders: 0';}
+  finally{b.disabled=false;}
+ });
+})();
+
+// Stage 3 read-only public contract metadata + deterministic sizing diagnostic.
+(function(){
+ const b=document.getElementById('stage3ContractTestButton'),out=document.getElementById('stage3ContractTestResult');
+ if(!b||!out)return;
+ b.addEventListener('click',async()=>{
+  b.disabled=true;out.textContent='Validating Gate.io public BTC contract metadata and illustrative 5x risk sizing…';
+  try{
+   const r=await fetch('/terminal/stage3-contract-self-test',{method:'POST',headers:{'Content-Type':'application/json','X-Terminal-CSRF':{{ csrf_token|tojson }}},body:'{}',cache:'no-store'});
+   const d=await r.json();
+   out.textContent='Stage 3 '+(d.status||'UNAVAILABLE')+' · '+(d.detail||d.error||'No details')+' · Exchange orders: 0';
+  }catch(e){out.textContent='Stage 3 test unavailable (fail closed): '+e.message+' · Orders: 0';}
   finally{b.disabled=false;}
  });
 })();
@@ -2037,6 +2053,90 @@ def terminal_risk_gate_self_test():
                     cur.execute('DELETE FROM luxalgo_risk_gate_simulations WHERE event_id=ANY(%s)',(list(ids),))
         except (psycopg.Error,RuntimeError,OSError):
             app.logger.warning('Stage 2 diagnostic cleanup deferred; test rows expire automatically')
+
+
+# Stage 3 diagnostic: contract specification + conservative integer-contract sizing.
+# Only GETs public metadata. There is deliberately no order write, no signing,
+# and no authenticated futures trade request.
+def _stage3_contract_sizing(spec, equity, entry, stop, risk_pct, leverage=5):
+    def pos(value, label):
+        try:
+            x=Decimal(str(value))
+        except (InvalidOperation, ValueError, TypeError):
+            raise ValueError('Invalid '+label)
+        if not x.is_finite() or x<=0:
+            raise ValueError('Invalid '+label)
+        return x
+    if not isinstance(spec,dict) or spec.get('name')!='BTC_USDT' or spec.get('type')!='direct':
+        raise ValueError('Unexpected contract metadata')
+    if spec.get('in_delisting') or spec.get('enable_decimal'):
+        raise ValueError('Delisting or fractional lots require separate validation')
+    mult=pos(spec.get('quanto_multiplier'),'multiplier')
+    maximum=pos(spec.get('order_size_max'),'maximum size')
+    reported_min=pos(spec.get('order_size_min'),'minimum size')
+    max_lev=pos(spec.get('leverage_max'),'maximum leverage')
+    lev=pos(leverage,'leverage')
+    eq=pos(equity,'equity')
+    en=pos(entry,'reference entry')
+    sl=pos(stop,'reference stop')
+    risk=pos(risk_pct,'risk percentage')
+    if risk>Decimal('3') or lev>Decimal('5') or lev>max_lev or en==sl:
+        raise ValueError('Risk, leverage or stop geometry invalid')
+    if reported_min!=reported_min.to_integral_value() or maximum!=maximum.to_integral_value():
+        raise ValueError('Contract lot precision not yet supported')
+    budget=eq*risk/100
+    distance=abs(en-sl)
+    count=int((budget/(distance*mult)).to_integral_value(rounding=ROUND_FLOOR))
+    if count<int(reported_min) or count>int(maximum) or count<1:
+        raise ValueError('Risk budget cannot meet contract limits')
+    worst_stop=Decimal(count)*distance*mult
+    nominal=Decimal(count)*en*mult
+    estimated_margin=nominal/lev
+    if worst_stop>budget or estimated_margin>eq:
+        raise ValueError('Estimated stop loss or margin exceeds limits')
+    return dict(contracts=count, estimated_stop_loss=str(worst_stop), risk_budget=str(budget),
+                estimated_margin=str(estimated_margin), leverage=str(lev))
+
+@app.post('/terminal/stage3-contract-self-test')
+def terminal_stage3_contract_self_test():
+    if not _terminal_permitted(): return _terminal_guard()
+    if not _csrf_valid():
+        return jsonify(status='BLOCKED',error='Invalid session verification',orders_placed=0),403
+    if os.getenv('LIVE_TRADING_ENABLED','false').strip().lower()!='false':
+        return jsonify(status='BLOCKED',error='Live trading must remain OFF',orders_placed=0),503
+    try:
+        req=Request('https://api.gateio.ws/api/v4/futures/usdt/contracts/BTC_USDT',
+                    headers={'Accept':'application/json','User-Agent':'LuxAlgo-PRO-Stage3-ReadOnly/1.0'},method='GET')
+        with urlopen(req,timeout=8) as r:
+            if getattr(r,'status',200)!=200: raise ValueError('Contract metadata response invalid')
+            doc=json.loads(r.read(65536))
+        multiplier=Decimal(str(doc.get('quanto_multiplier','0')))
+        # Synthetic prices chosen to test rounding; not a recommendation or live quote.
+        # Equity chosen to fit at least one BTC contract for most direct BTC_USDT configurations.
+        sample_entry=Decimal('100000')
+        sample_stop=Decimal('99000')
+        long_case=_stage3_contract_sizing(doc,Decimal('10000'),sample_entry,sample_stop,Decimal('3'))
+        short_case=_stage3_contract_sizing(doc,Decimal('10000'),sample_entry,Decimal('101000'),Decimal('3'))
+        valid=long_case['contracts']==short_case['contracts'] and long_case['contracts']>0
+        negative_tests=[]
+        for test in (
+            lambda:_stage3_contract_sizing(doc,10000,100000,99000,4),
+            lambda:_stage3_contract_sizing(doc,10000,100000,99000,3,6),
+            lambda:_stage3_contract_sizing(doc,10000,100000,100000,3),
+            lambda:_stage3_contract_sizing(doc,10000,100000,99000,3,'NaN'),
+        ):
+            try: test();negative_tests.append(False)
+            except ValueError: negative_tests.append(True)
+        passed=valid and all(negative_tests)
+        return jsonify(status='PASS' if passed else 'FAIL',
+            detail=('Public BTC_USDT metadata verified; LONG/SHORT integer contract sizing and four invalid inputs checked. Sizing is illustrative only.'
+                    if passed else 'Unexpected sizing validation outcome.'),
+            contract='BTC_USDT',public_metadata_only=True,example_long=long_case,example_short=short_case,
+            bad_inputs_rejected=sum(negative_tests),simulation_only=True,orders_enabled=False,
+            live_trading=False,orders_placed=0), (200 if passed else 409)
+    except (ValueError,HTTPError,URLError,TimeoutError,OSError,KeyError,TypeError,OverflowError,InvalidOperation) as ex:
+        app.logger.warning('Stage 3 public contract sizing self-test inconclusive: %s',type(ex).__name__)
+        return jsonify(status='INCONCLUSIVE',detail='Public contract specifications or illustrative sizing unavailable; no orders placed',orders_placed=0),503
 
 @app.get('/terminal/live-readiness')
 def terminal_live_readiness():
