@@ -492,7 +492,7 @@ h2{font-size:15px;font-weight:850;letter-spacing:.3px}
 <div class="metric"><small>AVAILABLE FUTURES · USDT</small><strong id="futuresAvailable">—</strong><span>Exchange-reported trading availability</span></div>
 <div class="metric"><small>FUTURES BALANCE · USDT</small><strong id="futuresBalance">—</strong><span>Account balance before unrealized P&amp;L</span></div>
 </div></details>
-<details class="panel" style="margin:12px 0" id="liveReadinessPanel"><summary style="font-weight:850;cursor:pointer;color:#ffcf89">LIVE EXECUTION READINESS · SAFETY CHECK (READ ONLY)</summary><p class="light">This panel checks safeguards only. It cannot start trading or enable Gate.io API writes.</p><button class="btn" type="button" id="readinessRefresh">Check readiness</button><button class="btn gloss-action" type="button" id="guardTestButton" style="margin-left:8px">Test Duplicate Order Guard</button><button class="btn gloss-action" type="button" id="riskCheckButton" style="margin-left:8px">Check Account Risk Limits</button><p class="light" id="riskCheckResult" role="status" aria-live="polite">Read-only risk inspection available. Never authorizes a trade.</p><p class="light" id="guardTestResult">Test only: all candidates are BLOCKED; no exchange orders.</p><div id="readinessOutput" role="status" aria-live="polite" style="margin-top:10px;color:#fdbfbf">Live execution BLOCKED until all critical safeguards are implemented and tested.</div></details>
+<details class="panel" style="margin:12px 0" id="liveReadinessPanel"><summary style="font-weight:850;cursor:pointer;color:#ffcf89">LIVE EXECUTION READINESS · SAFETY CHECK (READ ONLY)</summary><p class="light">This panel checks safeguards only. It cannot start trading or enable Gate.io API writes.</p><button class="btn" type="button" id="readinessRefresh">Check readiness</button><button class="btn gloss-action" type="button" id="guardTestButton" style="margin-left:8px">Test Duplicate Order Guard</button><button class="btn gloss-action" type="button" id="riskCheckButton" style="margin-left:8px">Check Account Risk Limits</button><button class="btn gloss-action" type="button" id="stage2GateTestButton" style="margin-left:8px">Test Stage 2 Risk Gate</button><p class="light" id="riskCheckResult" role="status" aria-live="polite">Read-only risk inspection available. Never authorizes a trade.</p><p class="light" id="guardTestResult">Test only: all candidates are BLOCKED; no exchange orders.</p><p class="light" id="stage2GateTestResult" role="status" aria-live="polite">Stage 2 PostgreSQL concurrency test not yet run.</p><div id="readinessOutput" role="status" aria-live="polite" style="margin-top:10px;color:#fdbfbf">Live execution BLOCKED until all critical safeguards are implemented and tested.</div></details>
 <div class="grid metric-grid">
 <div class="metric"><small>GATE.IO CONNECTION</small><strong class="gloss-cyan">READ-ONLY</strong><span id="gatePositionStatus">Checking position feed…</span></div>
 <div class="metric"><small>OPEN POSITIONS</small><strong id="openPositionCount">—</strong><span>Verified Gate.io positions only</span></div>
@@ -600,6 +600,21 @@ h2{font-size:15px;font-weight:850;letter-spacing:.3px}
   finally{b.disabled=false;}
  });
  })();
+
+// Stage 2 independently verifies simulation-only PostgreSQL locking.
+(function(){
+ const b=document.getElementById('stage2GateTestButton'),out=document.getElementById('stage2GateTestResult');
+ if(!b||!out)return;
+ b.addEventListener('click',async()=>{
+  b.disabled=true;out.textContent='Testing simulated duplicate and concurrent reservations (no exchange writes)…';
+  try{
+   const r=await fetch('/terminal/risk-gate-self-test',{method:'POST',headers:{'Content-Type':'application/json','X-Terminal-CSRF':{{ csrf_token|tojson }}},body:'{}',cache:'no-store'});
+   const d=await r.json();
+   out.textContent='Stage 2 '+(d.status||'UNAVAILABLE')+' · '+(d.detail||d.error||'No details')+' · Exchange orders: 0';
+  }catch(e){out.textContent='Stage 2 test unavailable (fail closed): '+e.message+' · Orders: 0';}
+  finally{b.disabled=false;}
+ });
+})();
 
 // Step 415: observe account risk conditions, but never authorize any exchange order.
 (function(){
@@ -1960,6 +1975,68 @@ def terminal_risk_gate_simulation():
     except (psycopg.Error, RuntimeError, OSError):
         app.logger.exception('Risk gate simulation storage unavailable')
         return jsonify(status='BLOCKED',reason='Database unavailable',orders_placed=0),503
+
+# Stage 2 diagnostic only. Concurrent PostgreSQL advisory-lock exercise; never makes an exchange request.
+@app.post('/terminal/risk-gate-self-test')
+def terminal_risk_gate_self_test():
+    if not _terminal_permitted():
+        return _terminal_guard()
+    if not _csrf_valid():
+        return jsonify(status='BLOCKED', error='Invalid session verification', orders_placed=0), 403
+    if os.getenv('LIVE_TRADING_ENABLED','false').strip().lower() != 'false':
+        return jsonify(status='BLOCKED', error='LIVE_TRADING_ENABLED must remain false', orders_placed=0), 503
+    prefix='st2_'+secrets.token_hex(14)
+    ids=(prefix+'_A',prefix+'_B')
+    created=[]
+    try:
+        with _db_connect() as con:
+            _ensure_schema(con)
+            with con.cursor() as cur:
+                cur.execute('SELECT pg_advisory_xact_lock(%s)',(SIM_RISK_LOCK,))
+                cur.execute("SELECT COUNT(*) AS n FROM luxalgo_risk_gate_simulations WHERE state='SIMULATED' AND expires_at>NOW()")
+                if cur.fetchone()['n']:
+                    return jsonify(status='INCONCLUSIVE', detail='An existing simulated reservation is active; retry after it expires.', orders_placed=0), 409
+        def attempt(eid):
+            with _db_connect() as con:
+                with con.cursor() as cur:
+                    cur.execute('SELECT pg_advisory_xact_lock(%s)',(SIM_RISK_LOCK,))
+                    cur.execute("SELECT COUNT(*) AS n FROM luxalgo_risk_gate_simulations WHERE state='SIMULATED' AND expires_at>NOW()")
+                    if cur.fetchone()['n']:
+                        return 'ACCOUNT_SLOT_BLOCKED'
+                    cur.execute("INSERT INTO luxalgo_risk_gate_simulations (event_id,expires_at,state,risk_usdt,leverage,details) VALUES (%s,NOW()+INTERVAL '3 minutes','SIMULATED',%s,%s,%s::jsonb)",
+                        (eid,'2.1','5',json.dumps({'diagnostic_only':True})))
+                    return 'SIMULATED_ONLY'
+        # Exactly one of these concurrent contenders may reserve the single sandbox slot.
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            results=list(pool.map(attempt, ids))
+        created=[ids[i] for i,r in enumerate(results) if r=='SIMULATED_ONLY']
+        race_ok=sorted(results)==['ACCOUNT_SLOT_BLOCKED','SIMULATED_ONLY']
+        winner=created[0] if created else None
+        with _db_connect() as con:
+            with con.cursor() as cur:
+                cur.execute('SELECT pg_advisory_xact_lock(%s)',(SIM_RISK_LOCK,))
+                cur.execute("INSERT INTO luxalgo_risk_gate_simulations (event_id,expires_at,state,risk_usdt,leverage,details) VALUES (%s,NOW()+INTERVAL '3 minutes','SIMULATED',%s,%s,%s::jsonb) ON CONFLICT(event_id) DO NOTHING RETURNING event_id",(winner,'2.1','5',json.dumps({'diagnostic_only':True})))
+                duplicate_blocked=winner is not None and cur.fetchone() is None
+                cur.execute("SELECT COUNT(*) AS n FROM luxalgo_risk_gate_simulations WHERE event_id=ANY(%s) AND state='SIMULATED'",(list(ids),))
+                exactly_one=cur.fetchone()['n']==1
+        passed=race_ok and duplicate_blocked and exactly_one
+        return jsonify(status='PASS' if passed else 'FAIL',
+             detail=('Concurrent requests: one simulated, one blocked; repeated event ID blocked by unique DB record.'
+                      if passed else 'Simulation outcome unexpected; inspect logs.'),
+             concurrent_outcomes=results,duplicate_blocked=duplicate_blocked,
+             single_slot_enforced=exactly_one,live_trading=False,orders_enabled=False,orders_placed=0), (200 if passed else 409)
+    except (psycopg.Error,RuntimeError,OSError,ValueError) as exc:
+        app.logger.warning('Stage 2 diagnostic could not finish: %s', type(exc).__name__)
+        return jsonify(status='INCONCLUSIVE',detail='PostgreSQL diagnostic unavailable; no orders were placed',orders_placed=0),503
+    finally:
+        # Remove ONLY diagnostic rows. Never alter user-created sandbox reservations.
+        try:
+            with _db_connect() as con:
+                with con.cursor() as cur:
+                    cur.execute('SELECT pg_advisory_xact_lock(%s)',(SIM_RISK_LOCK,))
+                    cur.execute('DELETE FROM luxalgo_risk_gate_simulations WHERE event_id=ANY(%s)',(list(ids),))
+        except (psycopg.Error,RuntimeError,OSError):
+            app.logger.warning('Stage 2 diagnostic cleanup deferred; test rows expire automatically')
 
 @app.get('/terminal/live-readiness')
 def terminal_live_readiness():
