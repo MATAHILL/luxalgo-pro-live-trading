@@ -46,6 +46,20 @@ _lock = Lock()
 # Durable signal-only audit store. All trade execution remains disabled.
 # Do not fall back to RAM on DB failures: that would lose duplicate protection.
 DB_SCHEMA = '''
+
+CREATE TABLE IF NOT EXISTS luxalgo_one_trade_candidate (
+ singleton_id SMALLINT PRIMARY KEY CHECK(singleton_id=1),
+ event_id TEXT NOT NULL UNIQUE,
+ created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+ symbol TEXT NOT NULL,
+ side TEXT NOT NULL,
+ timeframe TEXT NOT NULL,
+ entry_price NUMERIC NOT NULL,
+ stop_loss NUMERIC NOT NULL,
+ take_profit NUMERIC NOT NULL,
+ status TEXT NOT NULL CHECK(status='WAITING_FOR_VERIFIED_EXECUTION'),
+ note TEXT NOT NULL DEFAULT 'No real order submitted. Requires validated exchange execution and SL/TP.'
+);
 CREATE TABLE IF NOT EXISTS luxalgo_signal_receipts (
  id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
  received_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -2089,9 +2103,27 @@ def webhook():
     except (psycopg.Error,RuntimeError,OSError):
         app.logger.exception('Cannot durably record incoming LuxAlgo signal')
         return jsonify(error='Signal not stored; retry later',orders_placed=0),503
+    # One-trade handoff: durable first-candidate reservation ONLY. Not an order.
+    # Preserves existing webhook receipt behavior and does not call exchange APIs.
+    one_trade_candidate = 'NOT_ELIGIBLE'
+    if level_status == 'VALID' and not duplicate and tf == '15m':
+        try:
+            with _db_connect() as con:
+                _ensure_schema(con)
+                with con.cursor() as cur:
+                    cur.execute("""INSERT INTO luxalgo_one_trade_candidate
+                        (singleton_id,event_id,symbol,side,timeframe,entry_price,stop_loss,take_profit,status)
+                        VALUES (1,%s,%s,%s,%s,%s,%s,%s,'WAITING_FOR_VERIFIED_EXECUTION')
+                        ON CONFLICT (singleton_id) DO NOTHING RETURNING event_id""",
+                        (event_id,symbol,allowed[side],tf,entry_price,stop_loss,take_profit))
+                    one_trade_candidate = ('RESERVED_NO_ORDER' if cur.fetchone() else 'ALREADY_RESERVED')
+        except (psycopg.Error, RuntimeError, OSError):
+            app.logger.warning('One-trade candidate reservation failed; no execution permitted')
+            one_trade_candidate = 'UNAVAILABLE_NO_ORDER'
     return jsonify(status='signal_received', mode='SIGNAL_ONLY', symbol=symbol,
                    side=allowed[side], timeframe=tf, duplicate_in_candle=duplicate,
-                   dry_run_intent_id=event_id, level_status=level_status, orders_placed=0), 200
+                   dry_run_intent_id=event_id, level_status=level_status,
+                   one_trade_candidate=one_trade_candidate, orders_placed=0), 200
 
 
 def binance_read_only_ping(api_key, api_secret):
