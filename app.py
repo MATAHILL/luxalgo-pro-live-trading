@@ -647,8 +647,8 @@ header.terminal-header{border-radius:17px!important}
 #v4PaperCards .v4-number-value.big{font-size:19px;font-weight:900}
 #v4PaperCards .v4-controls{gap:6px;margin-top:13px}
 #v4PaperCards .v4-controls button{font-size:11px;padding:9px 3px;border-radius:7px}
-@media(max-width:1020px){#v4PaperCards{grid-template-columns:1fr}#v4PaperCards .v4-token{font-size:19px}}
-@media(max-width:570px){#v4PaperCards{padding:10px;gap:9px}#v4PaperCards .v4-numbers{grid-template-columns:repeat(2,minmax(0,1fr))}#v4PaperCards .v4-controls{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:1020px){ #v4PaperCards{grid-template-columns:1fr}#v4PaperCards .v4-token{font-size:19px}}
+@media(max-width:570px){ #v4PaperCards{padding:10px;gap:9px}#v4PaperCards .v4-numbers{grid-template-columns:repeat(2,minmax(0,1fr))}#v4PaperCards .v4-controls{grid-template-columns:repeat(2,minmax(0,1fr))}}
 </style></head><body><div class="wrap"><header class="terminal-header"><div class="terminal-brand"><h1>LUXALGO PRO · TRADING TERMINAL</h1><p>Gate.io USDT Perpetual · LuxAlgo 5m / 15m · Coded by · SUBHASISH</p>
 <div class="profile-greeting"><div class="profile-avatar" id="avatarDisplay"><span>SD</span></div>
 <div><div class="profile-name">Hello SUBHASISH</div><label class="profile-change" for="profileImageInput" tabindex="0">Change Photo</label><input type="file" id="profileImageInput" accept="image/png,image/jpeg,image/webp" hidden></div></div></div><section class="news-slot" aria-label="Latest crypto news"><div class="news-heading"><span>● CRYPTO NEWS</span><span style="display:flex;align-items:center;gap:7px"><span id="newsFeedStatus">Loading headlines…</span><button type="button" id="newsRefresh" aria-label="Refresh crypto news" title="Refresh crypto news">↻</button></span></div><div class="news-viewport" id="newsViewport"><div class="news-stack" id="newsStack"><span class="news-empty">Retrieving publisher headlines…</span></div></div></section><div class="profile-right">
