@@ -154,6 +154,39 @@ def prepare_dry_run(signal, market, account):
         }
 
 
+def audit_exchange_readonly():
+    """Run authenticated GET-only diagnostics if trusted environment credentials exist.
+
+    This is an observation, NEVER an execution authorization. No exchange writes.
+    Failure or missing credentials always means NOT VERIFIED.
+    """
+    import os
+    try:
+        from gate_readonly_reconcile import ENDPOINTS, fetch_readonly, summarize
+        key = os.environ.get('GATE_API_KEY', '').strip()
+        secret = os.environ.get('GATE_API_SECRET', '').strip()
+        if not key or not secret:
+            return {
+                'status': 'NOT_VERIFIED',
+                'reason': 'Read-only API credentials unavailable in this process',
+                'safe_to_trade': False,
+                'live_trading': False,
+                'orders_enabled': False,
+            }
+        snapshots = {name: fetch_readonly(path, query, key, secret)
+                     for name, path, query in ENDPOINTS}
+        result = summarize(snapshots)
+        # Deliberately do not forward any authorization to submit_live_order().
+        result['safe_to_trade'] = False
+        result['live_trading'] = False
+        result['orders_enabled'] = False
+        return result
+    except (ImportError, RuntimeError, ValueError, TypeError, KeyError) as exc:
+        # Avoid logging underlying API responses or credentials.
+        return {'status': 'NOT_VERIFIED', 'reason': 'Reconciliation check failed: ' + type(exc).__name__,
+                'safe_to_trade': False, 'live_trading': False, 'orders_enabled': False}
+
+
 def offline_self_test():
     signal = {'event_id': 'OFFLINE-TEST-001', 'symbol': 'BTCUSDT', 'side': 'LONG',
               'entry': '80000', 'sl': '79700', 'tp1': '80600', 'tp2': '80900'}
