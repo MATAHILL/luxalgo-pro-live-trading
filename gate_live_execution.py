@@ -302,5 +302,104 @@ def offline_self_test():
     }
 
 
+# Phase 3: ISOLATED ORDER LIFECYCLE FIXTURE. No network calls, exchange writes,
+# credential access or live-order activation. Never connect this state machine
+# to a real API without separate authorization, persistent idempotency storage,
+# and exchange-side protection verification.
+class SimulatedOrderLedger:
+    """In-memory, non-executable exercise for retries and unknown acknowledgments."""
+
+    def __init__(self):
+        self._records = {}
+
+    def prepare(self, event_id, protected_preview):
+        event_id = str(event_id).strip()
+        if not event_id or len(event_id) > 128:
+            raise ValueError('Invalid event ID')
+        if (not isinstance(protected_preview, dict) or
+                protected_preview.get('status') != 'PREVIEW_ONLY' or
+                protected_preview.get('orders_enabled') is not False or
+                protected_preview.get('safe_to_trade') is not False):
+            return {'status': 'BLOCKED', 'reason': 'Non-executable preflight is required',
+                    'orders_enabled': False}
+        if event_id in self._records:
+            return {'status': 'BLOCKED', 'reason': 'Duplicate event ID',
+                    'orders_enabled': False}
+        self._records[event_id] = 'PREPARED'
+        return {'status': 'SIMULATED_PREPARED', 'event_id': event_id,
+                'orders_enabled': False}
+
+    def transition(self, event_id, event):
+        state = self._records.get(event_id)
+        if state is None:
+            return {'status': 'BLOCKED', 'reason': 'Unknown event ID', 'orders_enabled': False}
+        transitions = {
+            ('PREPARED', 'MOCK_ACK'): 'SIMULATED_ACK',
+            ('PREPARED', 'MOCK_TIMEOUT'): 'ACK_UNKNOWN',
+            ('SIMULATED_ACK', 'MOCK_PROTECTION_MISSING'): 'REVIEW_REQUIRED',
+            ('SIMULATED_ACK', 'MOCK_PROTECTION_PRESENT'): 'SIMULATED_PROTECTED',
+            ('ACK_UNKNOWN', 'MOCK_RECONCILE'): 'REVIEW_REQUIRED',
+            ('SIMULATED_PROTECTED', 'MOCK_CLOSE'): 'SIMULATED_CLOSED',
+        }
+        next_state = transitions.get((state, event))
+        if next_state is None:
+            return {'status': 'BLOCKED', 'reason': 'Invalid transition or replay',
+                    'state': state, 'orders_enabled': False}
+        self._records[event_id] = next_state
+        return {'status': next_state, 'event_id': event_id,
+                'exchange_protection_verified': False, 'orders_enabled': False}
+
+    def snapshot(self):
+        return {'records': dict(self._records), 'live_trading': False,
+                'orders_enabled': False}
+
+
+def phase3_offline_lifecycle_tests():
+    signal = {'event_id': 'PHASE3-LONG', 'symbol': 'BTCUSDT', 'side': 'LONG',
+              'entry': '80000', 'sl': '79700', 'tp1': '80600', 'tp2': '80900'}
+    market = {'contract': 'BTC_USDT', 'last_price': '80010',
+              'quanto_multiplier': '0.0001', 'order_size_min': 1, 'order_size_max': 1000000}
+    account = {'equity_usdt': '300', 'open_position_count': 0}
+    # Fixture values are intentionally fabricated: they DO NOT verify exchange protection.
+    fixture = {'status': 'READ_ONLY_SNAPSHOT', 'active_positions': 0,
+               'bot_order_reconciliation': 'VERIFIED',
+               'protective_sl_tp_coverage': 'VERIFIED'}
+    preview = preview_protected_order_intent(
+        signal, market, account, fixture,
+        expected_snapshot_age_seconds=1, current_market_age_seconds=1)
+    assert preview['status'] == 'PREVIEW_ONLY'
+    ledger = SimulatedOrderLedger()
+    assert ledger.prepare('PHASE3-LONG', preview)['status'] == 'SIMULATED_PREPARED'
+    assert ledger.prepare('PHASE3-LONG', preview)['status'] == 'BLOCKED'
+    assert ledger.transition('PHASE3-LONG', 'MOCK_TIMEOUT')['status'] == 'ACK_UNKNOWN'
+    assert ledger.transition('PHASE3-LONG', 'MOCK_ACK')['status'] == 'BLOCKED'
+    assert ledger.transition('PHASE3-LONG', 'MOCK_RECONCILE')['status'] == 'REVIEW_REQUIRED'
+    assert ledger.transition('PHASE3-LONG', 'MOCK_CLOSE')['status'] == 'BLOCKED'
+    assert ledger.prepare('PHASE3-SECOND', preview)['status'] == 'SIMULATED_PREPARED'
+    assert ledger.transition('PHASE3-SECOND', 'MOCK_ACK')['status'] == 'SIMULATED_ACK'
+    assert ledger.transition('PHASE3-SECOND', 'MOCK_PROTECTION_MISSING')['status'] == 'REVIEW_REQUIRED'
+    assert ledger.prepare('PHASE3-THIRD', preview)['status'] == 'SIMULATED_PREPARED'
+    assert ledger.transition('PHASE3-THIRD', 'MOCK_ACK')['status'] == 'SIMULATED_ACK'
+    assert ledger.transition('PHASE3-THIRD', 'MOCK_PROTECTION_PRESENT')['status'] == 'SIMULATED_PROTECTED'
+    assert ledger.transition('PHASE3-THIRD', 'MOCK_CLOSE')['status'] == 'SIMULATED_CLOSED'
+    assert ledger.snapshot()['orders_enabled'] is False
+    for fn in (submit_live_order, close_live_position, reverse_live_position):
+        try:
+            fn()
+        except RuntimeError:
+            pass
+        else:
+            raise AssertionError('Real exchange operation unexpectedly permitted')
+    return {'phase3_fixture_tests': 'PASSED',
+            'duplicate_event': 'BLOCKED', 'unknown_ack_retry': 'BLOCKED',
+            'unknown_ack_state': 'REVIEW_REQUIRED',
+            'unprotected_mock_order': 'REVIEW_REQUIRED',
+            'mock_protected_lifecycle': 'SIMULATED_CLOSED',
+            'actual_exchange_protection_verified': False,
+            'real_orders': 'BLOCKED'}
+
+
 if __name__ == '__main__':
-    print(json.dumps({'risk_tests': offline_self_test(), 'protection_tests': offline_protection_test()}, indent=2))
+    print(json.dumps({'risk_tests': offline_self_test(),
+                      'protection_tests': offline_protection_test(),
+                      'phase3_lifecycle_tests': phase3_offline_lifecycle_tests()}, indent=2))
