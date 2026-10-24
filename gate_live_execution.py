@@ -187,6 +187,95 @@ def audit_exchange_readonly():
                 'safe_to_trade': False, 'live_trading': False, 'orders_enabled': False}
 
 
+
+# Stage: protected-order intent PREVIEW only. No Gate.io order endpoints exist.
+def preview_protected_order_intent(signal, market, account, snapshot, *,
+                                   expected_snapshot_age_seconds=None,
+                                   current_market_age_seconds=None):
+    """Fail-closed preflight using real-format inputs, WITHOUT an execution path.
+
+    The exchange snapshot must be authenticated separately, then carefully
+    validated. Even when it is valid this function ALWAYS returns non-executable.
+    Neither checking a snapshot nor displaying an intent proves exchange-side
+    stop-loss or take-profit protection exists.
+    """
+    preview = prepare_dry_run(signal, market, account)
+    if preview.get('status') != 'VALID_DRY_RUN_NOT_EXECUTABLE':
+        return {'status': 'BLOCKED', 'reason': preview.get('reason', 'Preflight failed'),
+                'safe_to_trade': False, 'orders_enabled': False}
+
+    if not isinstance(snapshot, dict) or snapshot.get('status') != 'READ_ONLY_SNAPSHOT':
+        return {'status': 'BLOCKED', 'reason': 'Authenticated read-only snapshot is required',
+                'safe_to_trade': False, 'orders_enabled': False}
+
+    # Do not trust a client-supplied position count over the exchange report.
+    try:
+        exchange_positions = snapshot['active_positions']
+        if (type(exchange_positions) is not int or exchange_positions < 0 or
+                exchange_positions != account['open_position_count']):
+            raise ValueError('Account/exchange position-count mismatch')
+        if exchange_positions >= MAX_OPEN_POSITIONS:
+            raise ValueError('Five-position limit reached on exchange')
+        if expected_snapshot_age_seconds is None or current_market_age_seconds is None:
+            raise ValueError('Snapshot and market freshness must be supplied')
+        age = float(expected_snapshot_age_seconds)
+        market_age = float(current_market_age_seconds)
+        if not (0 <= age <= 15 and 0 <= market_age <= 15):
+            raise ValueError('Exchange snapshot or market metadata is stale')
+        if snapshot.get('bot_order_reconciliation') not in ('MATCHED', 'VERIFIED'):
+            raise ValueError('Bot-to-exchange order identity is not reconciled')
+        if snapshot.get('protective_sl_tp_coverage') != 'VERIFIED':
+            raise ValueError('Exchange-native SL/TP protection is not verified')
+    except (KeyError, ValueError, TypeError, OverflowError) as exc:
+        return {'status': 'BLOCKED', 'reason': str(exc),
+                'safe_to_trade': False, 'orders_enabled': False}
+
+    # Even if every prerequisite is reported true, real submission is disabled.
+    # A real execution engine requires independently reviewed exchange-native
+    # create/cancel/replace semantics, idempotency, and protection verification.
+    return {'status': 'PREVIEW_ONLY', 'intent': preview,
+            'reason': 'Preflight data checked; exchange execution is not implemented',
+            'safe_to_trade': False, 'live_trading': False, 'orders_enabled': False}
+
+
+def offline_protection_test():
+    """Fixture tests: safe blocked behavior and no network/API side effects."""
+    signal = {'event_id':'TEST-002','symbol':'BTCUSDT','side':'LONG',
+              'entry':'80000','sl':'79700','tp1':'80600','tp2':'80900'}
+    market = {'contract':'BTC_USDT','last_price':'80010',
+              'quanto_multiplier':'0.0001','order_size_min':1,'order_size_max':1000000}
+    account = {'equity_usdt':'300','open_position_count':0}
+    empty = {'status':'READ_ONLY_SNAPSHOT', 'active_positions':0,
+             'bot_order_reconciliation':'NOT_IMPLEMENTED',
+             'protective_sl_tp_coverage':'NOT_VERIFIED'}
+    not_ready = preview_protected_order_intent(signal,market,account,empty,
+                                                 expected_snapshot_age_seconds=2,
+                                                 current_market_age_seconds=2)
+    assert not_ready['status']=='BLOCKED'
+    assert not_ready['safe_to_trade'] is False
+    asserted = dict(empty,bot_order_reconciliation='VERIFIED',
+                    protective_sl_tp_coverage='VERIFIED')
+    simulated = preview_protected_order_intent(signal,market,account,asserted,
+                                                 expected_snapshot_age_seconds=2,
+                                                 current_market_age_seconds=2)
+    assert simulated['status']=='PREVIEW_ONLY' and not simulated['orders_enabled']
+    mismatch = preview_protected_order_intent(signal,market,account,
+                                                 dict(asserted,active_positions=1),
+                                                 expected_snapshot_age_seconds=2,
+                                                 current_market_age_seconds=2)
+    assert mismatch['status']=='BLOCKED'
+    stale = preview_protected_order_intent(signal,market,account,asserted,
+                                             expected_snapshot_age_seconds=20,
+                                             current_market_age_seconds=2)
+    assert stale['status']=='BLOCKED'
+    for blocked_function in (submit_live_order,reverse_live_position,close_live_position):
+        try: blocked_function()
+        except RuntimeError: pass
+        else: raise AssertionError('Exchange write was unexpectedly allowed')
+    return {'fixture_tests':'PASSED', 'not_verified':'BLOCKED',
+            'snapshot_mismatch':'BLOCKED','stale_data':'BLOCKED',
+            'validated_intent':'PREVIEW_ONLY', 'real_orders':'BLOCKED'}
+
 def offline_self_test():
     signal = {'event_id': 'OFFLINE-TEST-001', 'symbol': 'BTCUSDT', 'side': 'LONG',
               'entry': '80000', 'sl': '79700', 'tp1': '80600', 'tp2': '80900'}
@@ -214,4 +303,4 @@ def offline_self_test():
 
 
 if __name__ == '__main__':
-    print(json.dumps(offline_self_test(), indent=2))
+    print(json.dumps({'risk_tests': offline_self_test(), 'protection_tests': offline_protection_test()}, indent=2))
