@@ -619,7 +619,7 @@ header.terminal-header{border-radius:17px!important}
 .v4-tools{font-size:12px;color:#b7cce2;padding:10px 0}
 #v4LegacyPaperHost{display:none!important}
 #v4LegacyGateHost{display:none!important}
-#v4ChartOriginal{display:block!important}
+#v4ChartOriginal{display:none!important}
 .bottom-grid{grid-template-columns:1fr!important}
 .bottom-grid>section:first-child{width:100%}
 .bottom-grid>section:first-child .tablewrap{max-height:410px;overflow:auto}
@@ -649,7 +649,22 @@ header.terminal-header{border-radius:17px!important}
 #v4PaperCards .v4-controls button{font-size:11px;padding:9px 3px;border-radius:7px}
 @media(max-width:1020px){ #v4PaperCards{grid-template-columns:1fr}#v4PaperCards .v4-token{font-size:19px}}
 @media(max-width:570px){ #v4PaperCards{padding:10px;gap:9px}#v4PaperCards .v4-numbers{grid-template-columns:repeat(2,minmax(0,1fr))}#v4PaperCards .v4-controls{grid-template-columns:repeat(2,minmax(0,1fr))}}
-</style></head><body><div class="wrap"><header class="terminal-header"><div class="terminal-brand"><h1>LUXALGO PRO · TRADING TERMINAL</h1><p>Gate.io USDT Perpetual · LuxAlgo 5m / 15m · Coded by · SUBHASISH</p>
+/* V4.5 single-select card-width TradingView indicator widget */
+#v4PaperCards>.v4-trade{align-self:start}
+.v45-tools{display:flex;gap:7px;align-items:center;flex-wrap:wrap}
+.v45-refresh{width:30px;height:30px;display:grid;place-items:center;border:1px solid #64eaff;border-radius:50%;color:#f0feff;font-size:18px;font-weight:900;cursor:pointer;background:linear-gradient(145deg,#c8faff 0%,#46bfff 20%,#136da9 48%,#06385f 50%,#269ee3 100%);box-shadow:inset 0 1px 2px #fff9,0 0 11px #1ec8ff67;text-shadow:0 1px 1px #00416b}
+.v45-refresh:disabled{opacity:.6;cursor:wait}
+.v45-indicator-toggle{border:1px solid #6bc6fc;border-radius:7px;padding:5px 8px;font-size:10px;letter-spacing:.15px;font-weight:800;color:#eaffff;cursor:pointer;background:linear-gradient(155deg,#5acafa,#136aa7 45%,#103b77 50%,#207eae);box-shadow:inset 0 1px 2px #ffffff85,0 2px 8px #00a8ff40}
+.v45-indicator-toggle[aria-expanded="true"]{background:linear-gradient(140deg,#296c90,#0c3e60)}
+.v45-indicator{margin-top:12px;border:1px solid #35799c;border-radius:10px;background:#07182b;overflow:hidden}
+.v45-indicator-head{padding:7px 9px;display:flex;justify-content:space-between;gap:8px;align-items:center;font-weight:800;font-size:11px}
+.v45-widget{width:100%;height:305px;min-height:305px;background:#071628;overflow:hidden}
+.v45-widget tv-advanced-chart{display:block;width:100%;height:100%}
+.v45-indicator-foot{padding:6px 9px;color:#a4c6e2;font-size:10px;border-top:1px solid #285276}
+.v45-entry{color:#ffda7c;font-weight:800}
+.v45-refresh-state{font-size:10px;color:#99bbd4;margin-top:7px}
+@media(max-width:550px){.v45-widget{height:265px;min-height:265px}}
+</style><script type="module" src="https://widgets.tradingview-widget.com/w/en/tv-advanced-chart.js"></script></head><body><div class="wrap"><header class="terminal-header"><div class="terminal-brand"><h1>LUXALGO PRO · TRADING TERMINAL</h1><p>Gate.io USDT Perpetual · LuxAlgo 5m / 15m · Coded by · SUBHASISH</p>
 <div class="profile-greeting"><div class="profile-avatar" id="avatarDisplay"><span>SD</span></div>
 <div><div class="profile-name">Hello SUBHASISH</div><label class="profile-change" for="profileImageInput" tabindex="0">Change Photo</label><input type="file" id="profileImageInput" accept="image/png,image/jpeg,image/webp" hidden></div></div></div><section class="news-slot" aria-label="Latest crypto news"><div class="news-heading"><span>● CRYPTO NEWS</span><span style="display:flex;align-items:center;gap:7px"><span id="newsFeedStatus">Loading headlines…</span><button type="button" id="newsRefresh" aria-label="Refresh crypto news" title="Refresh crypto news">↻</button></span></div><div class="news-viewport" id="newsViewport"><div class="news-stack" id="newsStack"><span class="news-empty">Retrieving publisher headlines…</span></div></div></section><div class="profile-right">
 <form method="post" action="/logout"><input type="hidden" name="csrf_token" value="{{ csrf_token|e }}"><button class="glossy-logout" type="submit">⇥ LOGOUT</button></form><span id="signalLiveSync" role="status" aria-live="polite" style="font-size:11px;color:#9de7ff">● Signals auto-sync: connecting…</span></div></header>
@@ -1609,13 +1624,10 @@ if(legacyPaper)legacyPaper.id='v4LegacyPaperHost';
 if(legacyGate)legacyGate.id='v4LegacyGateHost';
 sourcePanel.id='v4ChartOriginal';
 const workspace=document.createElement('section');workspace.id='v4Workspace';
-workspace.innerHTML='<div class="v4-head"><div><strong>INDIVIDUAL OPEN POSITIONS · PAPER SIMULATION</strong><br><small>Click a token for one live public-market chart · Price estimates are NOT exchange fills</small></div><button id="v4DemoToggle" type="button">SHOW SAMPLE LAYOUT</button></div><div class="v4-tabs"><strong id="v4TabCount">Positions (0)</strong><span>Open Orders (0)</span><span>Paper BOT</span></div><div id="v4DemoWarning" hidden class="v4-demo-banner">SAMPLE LAYOUT ONLY — Positions, balances and profit figures below are fabricated for visual review, never actual trades.</div><div id="v4PaperCards"><div class="v4-prompt">Checking the stored paper trade positions…</div></div>';
+workspace.innerHTML='<div class="v4-head"><div><strong>INDIVIDUAL OPEN POSITIONS · PAPER SIMULATION</strong><br><small>Click a token to open its TradingView chart · one chart at a time · Price estimates are NOT exchange fills</small></div><button id="v4DemoToggle" type="button">SHOW SAMPLE LAYOUT</button></div><div class="v4-tabs"><strong id="v4TabCount">Positions (0)</strong><span>Open Orders (0)</span><span>Paper BOT</span></div><div id="v4DemoWarning" hidden class="v4-demo-banner">SAMPLE LAYOUT ONLY — Positions, balances and profit figures below are fabricated for visual review, never actual trades.</div><div id="v4PaperCards"><div class="v4-prompt">Checking the stored paper trade positions…</div></div>';
 strip.after(workspace);
-const modal=document.createElement('div');modal.id='v4ChartModal';modal.setAttribute('role','dialog');modal.setAttribute('aria-modal','true');modal.setAttribute('aria-label','Selected token market chart');
-modal.innerHTML='<div id="v4ModalBox"><div id="v4ModalHeader"><strong id="v4SelectedName">LIVE MARKET CHART</strong><button type="button" id="v4CloseChart">✕ CLOSE CHART</button></div><div id="v4ChartMount"></div><div class="v4-tools">Public Gate.io perpetual market candles · Chart is read-only · All exchange actions remain disabled</div></div>';
-document.body.appendChild(modal);
-modal.querySelector('#v4ChartMount').appendChild(sourcePanel);
-sourcePanel.style.display='block';
+// The previous full-screen chart modal is no longer used. Charts belong to cards.
+sourcePanel.style.display='none';
 if(recent){
  const holder=document.createElement('details');
  holder.id='v4RecentWrapper';holder.className='panel';
@@ -1638,20 +1650,59 @@ if(recent){
   try{sessionStorage.setItem(storageKey,holder.open?'1':'0')}catch(_e){}
  });
 }
-let demo=false,active='';
+let demo=false;
+const openIndicators=new Set(); // Only one chart is open at a time.
 const examples=[['IRYSUSDT','LONG',20,.04,15.12,6,.29,.0734006,.07396,.063115],['BIRBUSDT','SHORT',50,-.03,-11.78,9.92,.19,.08079,.080634,.087],['INITUSDT','LONG',20,.00,3.26,5.98,.29,.153,.1533165,.1301081],['AKEUSDT','LONG',10,.01,2,5.5,.54,.039726,.039815,.0330489],['SOLUSDT','SHORT',5,.87,1.45,300,60,166.5,166.02,199.0],['AVAXUSDT','LONG',5,-.42,-.70,300,60,9.092,9.079,7.2]];
-function fmt(v){const x=Number(v);return Number.isFinite(x)?String(v):'—'}
-function numCell(k,v,extra=''){return '<div><span class="v4-number-label">'+k+'</span><div class="v4-number-value '+extra+'">'+v+'</div></div>'}
-function card(d){const gain=Number(d.pnl)>=0,cl=gain?'v4-pnl-good':'v4-pnl-bad';const pnl=Number.isFinite(Number(d.pnl))?((Number(d.pnl)>0?'+':'')+d.pnl):'—';return '<article class="v4-trade"><div class="v4-trade-top"><div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><span class="v4-side '+(d.side==='SHORT'?'short':'')+'">'+(d.side==='SHORT'?'S':'L')+'</span><button class="v4-token" type="button" data-v4-symbol="'+d.symbol+'">'+d.symbol+' ↗</button><span class="v4-tag">Perp</span><span class="v4-tag">'+d.leverage+'</span><span class="v4-tag">'+(demo?'DEMO':'PAPER')+'</span></div><div style="text-align:right"><div class="v4-number-label">ROI (estimated)</div><div class="v4-number-value big '+cl+'">'+d.roi+'</div></div></div><div class="v4-numbers">'+numCell('UNREALIZED P&L (USDT)',pnl,cl+' big')+numCell('SIZE (USDT)',d.size)+numCell('MARGIN (USDT)',d.margin)+numCell('ENTRY PRICE',d.entry)+numCell('MARK PRICE',d.mark)+numCell('LIQ. PRICE',d.liq)+numCell('STOP LOSS',d.sl)+numCell('TAKE PROFIT',d.tp)+'</div><div class="v4-controls"><button disabled title="Live execution not implemented">TP/SL</button><button disabled title="Live execution not implemented">Reverse</button><button disabled title="Live execution not implemented">Market Close</button><button disabled title="Live execution not implemented">Close</button></div></article>'}
-function fromTable(){const rows=[...table.querySelectorAll('tr[data-paper-event-id]')].filter(r=>r.dataset.paperState==='OPEN');return rows.map(r=>{const c=[...r.cells].map(x=>x.textContent.trim()), entry=Number(c[3]), mark=Number(c[7]), p=Number(c[8]);return {symbol:c[1],side:c[2],leverage:'Not verified',pnl:c[8],roi:'—',size:'Not verified',margin:'Not verified',entry:c[3],mark:c[7],liq:'Not available',sl:c[4],tp:c[5]}})}
-function draw(){let data;if(demo){data=examples.map(x=>({symbol:x[0],side:x[1],leverage:'Cross '+x[2]+'x',pnl:x[3],roi:x[4]+'%',size:x[5],margin:x[6],entry:x[7],mark:x[8],liq:x[9],sl:'Sample only',tp:'Sample only'}))}else{data=fromTable()};document.getElementById('v4TabCount').textContent='Positions ('+data.length+')';const cards=document.getElementById('v4PaperCards');cards.innerHTML=data.length?data.map(card).join(''):'<div class="v4-prompt">No OPEN paper positions currently. Closed paper trades remain in history. Use SHOW SAMPLE LAYOUT to inspect the six-card design without placing any trades.</div>'}
-workspace.querySelector('#v4DemoToggle').onclick=()=>{demo=!demo;document.getElementById('v4DemoWarning').hidden=!demo;document.getElementById('v4DemoToggle').textContent=demo?'RETURN TO REAL PAPER DATA':'SHOW SAMPLE LAYOUT';draw()};
-function openChart(sym){if(!/^[A-Z0-9]{2,26}USDT$/.test(sym))return;active=sym;document.getElementById('v4SelectedName').textContent=sym+' · PUBLIC LIVE CANDLES';modal.classList.add('open');document.body.style.overflow='hidden';const field=document.getElementById('chartSymbol');field.value=sym;const refresh=document.getElementById('chartRefresh');requestAnimationFrame(()=>setTimeout(()=>refresh?.click(),120));}
-function closeChart(){modal.classList.remove('open');document.body.style.overflow=''}
-workspace.addEventListener('click',e=>{const b=e.target.closest('[data-v4-symbol]');if(b)openChart(b.dataset.v4Symbol)});
-document.getElementById('v4CloseChart').onclick=closeChart;modal.addEventListener('click',e=>{if(e.target===modal)closeChart()});document.addEventListener('keydown',e=>{if(e.key==='Escape'&&modal.classList.contains('open'))closeChart()});
+const esc=v=>String(v??'—').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+function numCell(k,v,extra='',field=''){return '<div><span class="v4-number-label">'+k+'</span><div class="v4-number-value '+extra+'"'+(field?' data-v45-field="'+field+'"':'')+'>'+esc(v)+'</div></div>'}
+function chartMarkup(d){
+ const sym=String(d.symbol||'').toUpperCase();
+ if(!/^[A-Z0-9]{2,26}USDT$/.test(sym))return '<p class="light">Chart symbol unavailable.</p>';
+ // TradingView's Binance perp public reference market; it is not an authenticated Gate.io fill feed.
+ const token=sym.slice(0,-4), market='BINANCE:'+token+'USDT.P';
+ return '<section class="v45-indicator" data-v45-chart="'+esc(sym)+'"><div class="v45-indicator-head"><span>'+esc(sym)+' · TradingView</span><span>15m · Public market</span></div><div class="v45-widget"><tv-advanced-chart symbol="'+esc(market)+'" interval="15" theme="dark" timezone="Asia/Kolkata" chart-type="candles"></tv-advanced-chart></div><div class="v45-indicator-foot"><span class="v45-entry">ENTRY: '+esc(d.entry)+'</span> · Reference level only (not plotted in widget). TradingView refresh rate depends on its feed. Paid LuxAlgo not embedded.</div></section>';
+}
+function card(d){
+ const gain=Number(d.pnl)>=0,cl=gain?'v4-pnl-good':'v4-pnl-bad',valid=Number.isFinite(Number(d.pnl));
+ const pnl=valid?((Number(d.pnl)>0?'+':'')+d.pnl):'—',sym=String(d.symbol||'').toUpperCase(),open=openIndicators.has(sym);
+ return '<article class="v4-trade" data-v45-card="'+esc(sym)+'"><div class="v4-trade-top"><div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap"><span class="v4-side '+(d.side==='SHORT'?'short':'')+'">'+(d.side==='SHORT'?'S':'L')+'</span><button class="v4-token" type="button" data-v45-toggle="'+esc(sym)+'">'+esc(sym)+'</button><span class="v4-tag">Perp</span><span class="v4-tag">'+esc(d.leverage)+'</span><span class="v4-tag">'+(demo?'DEMO':'PAPER')+'</span><div class="v45-tools"><button class="v45-refresh" type="button" data-v45-refresh="'+esc(sym)+'" title="Refresh position" aria-label="Refresh '+esc(sym)+' position">↻</button><button class="v45-indicator-toggle" type="button" data-v45-toggle="'+esc(sym)+'" aria-expanded="'+String(open)+'">'+(open?'▲ CLOSE':'▼ INDICATOR')+'</button></div></div><div style="text-align:right"><div class="v4-number-label">ROI (estimated)</div><div class="v4-number-value big '+cl+'" data-v45-field="roi">'+esc(d.roi)+'</div></div></div><div class="v4-numbers">'+numCell('UNREALIZED P&L (USDT)',pnl,cl+' big','pnl')+numCell('SIZE (USDT)',d.size)+numCell('MARGIN (USDT)',d.margin)+numCell('ENTRY PRICE',d.entry)+numCell('MARK PRICE',d.mark,'','mark')+numCell('LIQ. PRICE',d.liq)+numCell('STOP LOSS',d.sl)+numCell('TAKE PROFIT',d.tp)+'</div><div class="v4-controls"><button disabled title="Exchange execution not implemented">TP/SL</button><button disabled title="Exchange execution not implemented">Reverse</button><button disabled title="Exchange execution not implemented">Market Close</button><button disabled title="Exchange execution not implemented">Close</button></div><div class="v45-refresh-state" data-v45-state="1">'+(demo?'DEMO — simulated values':'Paper quote refresh runs automatically')+'</div>'+ (open?chartMarkup(d):'')+'</article>';
+}
+function fromTable(){const rows=[...table.querySelectorAll('tr[data-paper-event-id]')].filter(r=>r.dataset.paperState==='OPEN');return rows.map(r=>{const c=[...r.cells].map(x=>x.textContent.trim());return {symbol:c[1],side:c[2],leverage:'Not verified',pnl:c[8],roi:'—',size:'Not verified',margin:'Not verified',entry:c[3],mark:c[7],liq:'Not available',sl:c[4],tp:c[5]}})}
+function currentData(){return demo?examples.map(x=>({symbol:x[0],side:x[1],leverage:'Cross '+x[2]+'x',pnl:x[3],roi:x[4]+'%',size:x[5],margin:x[6],entry:x[7],mark:x[8],liq:x[9],sl:'Sample only',tp:'Sample only'})):fromTable()}
+let lastStructure='';
+function draw(force=false){
+ const data=currentData();const cards=document.getElementById('v4PaperCards');
+ const structure=(demo?'DEMO':'PAPER')+'|'+data.map(d=>String(d.symbol)+'/'+d.side+'/'+openIndicators.has(String(d.symbol))).join('|');
+ document.getElementById('v4TabCount').textContent='Positions ('+data.length+')';
+ if(force||structure!==lastStructure){
+  cards.innerHTML=data.length?data.map(card).join(''):'<div class="v4-prompt">No OPEN paper positions currently. Closed paper trades remain in history. Use SHOW SAMPLE LAYOUT to inspect six example cards without placing trades.</div>';
+  lastStructure=structure;
+ }else{
+  // Update prices/P&L without destroying open TradingView web components.
+  for(const d of data){const c=[...cards.querySelectorAll('[data-v45-card]')].find(x=>x.dataset.v45Card===d.symbol);if(!c)continue;
+   const pnl=Number.isFinite(Number(d.pnl))?((Number(d.pnl)>0?'+':'')+d.pnl):'—';
+   for(const [field,val] of [['pnl',pnl],['roi',d.roi],['mark',d.mark]]){const e=c.querySelector('[data-v45-field="'+field+'"]');if(e&&e.textContent!==String(val))e.textContent=val;}
+  }
+ }
+}
+workspace.querySelector('#v4DemoToggle').onclick=()=>{demo=!demo;openIndicators.clear();lastStructure='';document.getElementById('v4DemoWarning').hidden=!demo;document.getElementById('v4DemoToggle').textContent=demo?'RETURN TO REAL PAPER DATA':'SHOW SAMPLE LAYOUT';draw(true)};
+workspace.addEventListener('click',e=>{
+ const r=e.target.closest('[data-v45-refresh]');
+ if(r){
+  const c=r.closest('[data-v45-card]');const state=c?.querySelector('[data-v45-state]');
+  if(demo){if(state)state.textContent='DEMO — values are illustrative; no exchange refresh';return;}
+  // Uses the existing authenticated paper position refresh, never submits an order.
+  r.disabled=true;if(state)state.textContent='Refreshing paper positions…';
+  btn?.click();setTimeout(()=>{r.disabled=false;if(state&&state.isConnected)state.textContent='Refresh requested · '+new Date().toLocaleTimeString();},1400);
+  return;
+ }
+ const b=e.target.closest('[data-v45-toggle]');if(!b)return;
+ const sym=b.dataset.v45Toggle;if(!/^[A-Z0-9]{2,26}USDT$/.test(sym))return;
+ if(openIndicators.has(sym)){openIndicators.clear();}else{openIndicators.clear();openIndicators.add(sym);}
+ draw(true);
+});
 new MutationObserver(()=>{if(!demo)draw()}).observe(table,{childList:true,subtree:true,characterData:true});
-draw();
+draw(true);
 })();
 </script></body></html>'''
 
