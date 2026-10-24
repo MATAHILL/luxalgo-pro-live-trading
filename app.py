@@ -1046,7 +1046,22 @@ header.terminal-header{border-radius:17px!important}
    try{
      const r=await fetch('/terminal/hide-recent-signal',{method:'POST',headers:{'Content-Type':'application/json','X-Terminal-CSRF':{{ csrf_token|tojson }}},body:JSON.stringify({event_id:button.dataset.eventId}),cache:'no-store'});
      const d=await r.json();if(!r.ok)throw Error(d.error||'Unable to hide signal');
-     window.location.reload();
+     // Keep the user's signal-panel state across this deletion.
+     const signalPanel=document.getElementById('v4RecentWrapper');
+     const panelWasOpen=Boolean(signalPanel && signalPanel.open);
+     // Remove only this row: do not reload the page or reset the open <details> panel.
+     const row=button.closest('tr');
+     const body=row && row.closest('tbody');
+     if(row) row.remove();
+     if(signalPanel && panelWasOpen)signalPanel.open=true;
+     if(body && !body.querySelector('tr')){
+       const empty=document.createElement('tr');
+       const cell=document.createElement('td');
+       cell.colSpan=6;
+       cell.textContent='No signals currently displayed.';
+       empty.appendChild(cell);
+       body.appendChild(empty);
+     }
    }catch(e){button.disabled=false;alert('Delete could not be completed: '+e.message);}
  }));
 
@@ -1583,7 +1598,28 @@ modal.innerHTML='<div id="v4ModalBox"><div id="v4ModalHeader"><strong id="v4Sele
 document.body.appendChild(modal);
 modal.querySelector('#v4ChartMount').appendChild(sourcePanel);
 sourcePanel.style.display='block';
-if(recent){const holder=document.createElement('details');holder.id='v4RecentWrapper';holder.className='panel';holder.innerHTML='<summary>▸ RECENT LUXALGO SIGNALS · 5m / 15m — CLICK TO EXPAND / MINIMIZE</summary>';recent.before(holder);holder.appendChild(recent);holder.addEventListener('toggle',()=>{holder.querySelector('summary').textContent=(holder.open?'▾':'▸')+' RECENT LUXALGO SIGNALS · 5m / 15m — CLICK TO EXPAND / MINIMIZE'})}
+if(recent){
+ const holder=document.createElement('details');
+ holder.id='v4RecentWrapper';holder.className='panel';
+ const storageKey='luxalgo_v4_recent_signals_expanded';
+ // Persist user-controlled expanded state across auto-sync reloads and deletions.
+ let savedOpen=false;
+ try{savedOpen=sessionStorage.getItem(storageKey)==='1';}catch(_e){}
+ if(savedOpen)holder.open=true;
+ holder.innerHTML='<summary>RECENT LUXALGO SIGNALS · 5m / 15m — CLICK TO EXPAND / MINIMIZE</summary>';
+ recent.before(holder);holder.appendChild(recent);
+ const summary=holder.querySelector('summary');
+ const paint=()=>{summary.textContent=(holder.open?'▾':'▸')+' RECENT LUXALGO SIGNALS · 5m / 15m — CLICK TO EXPAND / MINIMIZE'};
+ paint();
+ holder.addEventListener('toggle',()=>{
+  paint();
+  try{sessionStorage.setItem(storageKey,holder.open?'1':'0')}catch(_e){}
+ });
+ // Save before a full-page auto-sync navigation, even if toggle is queued.
+ window.addEventListener('pagehide',()=>{
+  try{sessionStorage.setItem(storageKey,holder.open?'1':'0')}catch(_e){}
+ });
+}
 let demo=false,active='';
 const examples=[['IRYSUSDT','LONG',20,.04,15.12,6,.29,.0734006,.07396,.063115],['BIRBUSDT','SHORT',50,-.03,-11.78,9.92,.19,.08079,.080634,.087],['INITUSDT','LONG',20,.00,3.26,5.98,.29,.153,.1533165,.1301081],['AKEUSDT','LONG',10,.01,2,5.5,.54,.039726,.039815,.0330489]];
 function fmt(v){const x=Number(v);return Number.isFinite(x)?String(v):'—'}
