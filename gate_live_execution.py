@@ -472,8 +472,71 @@ def phase4_offline_blueprint_tests():
             'testnet_execution':'NOT_TESTED', 'real_orders':'BLOCKED'}
 
 
+
+# One-trade exchange integration: REAL order payload validation only.
+# NO exchange write method is invoked or exposed here.
+# Gate.io's one-way and hedge-mode close semantics differ; refusing to guess.
+def build_single_trade_gate_payloads(signal, market, account, *, position_mode):
+    """Build strictly non-executable example payloads; check against exchange
+    metadata and a verified account mode before implementation of actual writes.
+    """
+    base = prepare_dry_run(signal, market, account)
+    if base.get('status') != 'VALID_DRY_RUN_NOT_EXECUTABLE':
+        return {'status':'BLOCKED', 'reason':base.get('reason'), 'orders_enabled':False}
+    if position_mode not in ('single','dual'):
+        return {'status':'BLOCKED', 'reason':'Account position mode must be verified', 'orders_enabled':False}
+    side=base['side']
+    qty=base['contracts'] if side=='LONG' else -base['contracts']
+    contract=base['contract']
+    entry={'contract':contract,'size':qty,'price':'0','tif':'ioc',
+           'text':'t-luxalgo-one-trade'}
+    trigger_direction={'LONG': {'SL':2,'TP':1},'SHORT':{'SL':1,'TP':2}}[side]
+    def protection(kind, level):
+        initial={'contract':contract,'size':0,'price':'0','tif':'ioc',
+                 'reduce_only':True}
+        if position_mode=='dual':
+            initial['auto_size']='close_long' if side=='LONG' else 'close_short'
+        else:
+            initial['close']=True
+        return {'initial':initial,'trigger':{'strategy_type':0,'price_type':1,
+                 'price':base[level],'rule':trigger_direction[kind],
+                 'expiration':86400},
+                'order_type':'close-long-position' if side=='LONG' else 'close-short-position'}
+    return {'status':'PAYLOAD_PREVIEW_ONLY', 'entry':entry,
+            'stop_loss':protection('SL','stop_loss'),
+            'take_profit':protection('TP','take_profit_1'),
+            'position_mode':position_mode,
+            'exchange_order_confirmed':False,
+            'protective_orders_confirmed':False,
+            'entry_fill_confirmed':False,
+            'halt_after_close_implemented':False,
+            'orders_enabled':False,'live_trading':False,
+            'warning':'Never POST these previews. Current code lacks exchange write and recovery orchestration.'}
+
+
+def single_trade_payload_tests():
+    market={'contract':'BTC_USDT','last_price':'80010','quanto_multiplier':'0.0001',
+            'order_size_min':1,'order_size_max':1000000}
+    account={'equity_usdt':'300','open_position_count':0}
+    for direction, sl, tp in [('LONG','79700','80600'),('SHORT','80300','79400')]:
+        signal={'event_id':'SINGLE-TEST','symbol':'BTCUSDT','side':direction,
+                'entry':'80000','sl':sl,'tp1':tp,
+                'tp2':'80900' if direction=='LONG' else '79100'}
+        for mode in ('single','dual'):
+            result=build_single_trade_gate_payloads(signal,market,account,position_mode=mode)
+            assert result['status']=='PAYLOAD_PREVIEW_ONLY',result
+            assert result['entry']['size']*(1 if direction=='LONG' else -1)>0
+            assert result['stop_loss']['initial'].get('auto_size') == (
+                ('close_long' if direction=='LONG' else 'close_short') if mode=='dual' else None)
+            assert result['orders_enabled'] is False
+    assert build_single_trade_gate_payloads(signal,market,account,
+                                            position_mode='unknown')['status']=='BLOCKED'
+    return {'one_trade_payload_checks':'PASSED','hedge_and_one_way':'PASSED',
+            'real_gate_orders':'BLOCKED','protection_exchange_verified':False}
+
 if __name__ == '__main__':
     print(json.dumps({'risk_tests': offline_self_test(),
                       'protection_tests': offline_protection_test(),
                       'phase3_lifecycle_tests': phase3_offline_lifecycle_tests(),
-                      'phase4_blueprint_tests': phase4_offline_blueprint_tests()}, indent=2))
+                      'phase4_blueprint_tests': phase4_offline_blueprint_tests(),
+                       'single_trade_payload_tests': single_trade_payload_tests()}, indent=2))
