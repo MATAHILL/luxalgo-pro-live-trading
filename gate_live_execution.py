@@ -68,3 +68,12 @@ def check_gate_public_connection():
             "live_trading": False,
             "orders_enabled": False
         }
+
+if __name__ == "__main__":
+    import json
+
+    print("Testing Gate.io public futures connection...")
+
+    result = check_gate_public_connection()
+
+    print(json.dumps(result, indent=2))
