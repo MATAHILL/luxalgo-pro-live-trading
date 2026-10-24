@@ -46,6 +46,20 @@ _lock = Lock()
 # Durable signal-only audit store. All trade execution remains disabled.
 # Do not fall back to RAM on DB failures: that would lose duplicate protection.
 DB_SCHEMA = '''
+
+CREATE TABLE IF NOT EXISTS luxalgo_one_trade_candidate (
+ singleton_id SMALLINT PRIMARY KEY CHECK(singleton_id=1),
+ event_id TEXT NOT NULL UNIQUE,
+ created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+ symbol TEXT NOT NULL,
+ side TEXT NOT NULL,
+ timeframe TEXT NOT NULL,
+ entry_price NUMERIC NOT NULL,
+ stop_loss NUMERIC NOT NULL,
+ take_profit NUMERIC NOT NULL,
+ status TEXT NOT NULL CHECK(status='WAITING_FOR_VERIFIED_EXECUTION'),
+ note TEXT NOT NULL DEFAULT 'No real order submitted. Requires validated exchange execution and SL/TP.'
+);
 CREATE TABLE IF NOT EXISTS luxalgo_signal_receipts (
  id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
  received_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -619,7 +633,7 @@ header.terminal-header{border-radius:17px!important}
 .v4-tools{font-size:12px;color:#b7cce2;padding:10px 0}
 #v4LegacyPaperHost{display:none!important}
 #v4LegacyGateHost{display:none!important}
-#v4ChartOriginal{display:block!important}
+#v4ChartOriginal{display:none!important}
 .bottom-grid{grid-template-columns:1fr!important}
 .bottom-grid>section:first-child{width:100%}
 .bottom-grid>section:first-child .tablewrap{max-height:410px;overflow:auto}
@@ -631,7 +645,40 @@ header.terminal-header{border-radius:17px!important}
 #v4RecentWrapper .panel{margin:0}
 @media(max-width:900px){.metric-grid{grid-template-columns:repeat(3,1fr)!important}.v4-numbers{grid-template-columns:repeat(2,minmax(0,1fr))}.v4-controls{grid-template-columns:repeat(2,1fr)}}
 @media(max-width:570px){.metric-grid{grid-template-columns:repeat(2,1fr)!important}.v4-token{font-size:18px}.v4-number-value{font-size:16px}.v4-number-value.big{font-size:21px}#v4PaperCards{padding:0 11px 11px}.v4-head{padding:14px 12px}}
-</style></head><body><div class="wrap"><header class="terminal-header"><div class="terminal-brand"><h1>LUXALGO PRO · TRADING TERMINAL</h1><p>Gate.io USDT Perpetual · LuxAlgo 5m / 15m · Coded by · SUBHASISH</p>
+
+/* V4.1 compact two-up position monitor — visual change only, no trading logic changes. */
+#v4PaperCards{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;padding:12px 16px 17px;align-items:stretch}
+#v4PaperCards>.v4-trade{min-width:0;margin:0;padding:13px 14px 14px;border:1px solid #355a7b;border-radius:12px;background:linear-gradient(145deg,#142d49 0%,#0a1d32 100%);box-shadow:inset 0 1px 0 #ffffff10,0 3px 10px #0003}
+#v4PaperCards>.v4-prompt{grid-column:1/-1}
+#v4PaperCards .v4-trade-top{gap:7px;align-items:flex-start}
+#v4PaperCards .v4-trade-top>div:first-child{gap:6px!important}
+#v4PaperCards .v4-token{font-size:17px;line-height:1.3}
+#v4PaperCards .v4-tag{font-size:10px;padding:3px 5px}
+#v4PaperCards .v4-side{font-size:11px;padding:3px 6px}
+#v4PaperCards .v4-numbers{grid-template-columns:repeat(4,minmax(0,1fr));gap:9px 7px;margin-top:12px}
+#v4PaperCards .v4-number-label{font-size:10px;line-height:1.3;letter-spacing:0}
+#v4PaperCards .v4-number-value{font-size:14px;font-weight:700;margin-top:4px}
+#v4PaperCards .v4-number-value.big{font-size:19px;font-weight:900}
+#v4PaperCards .v4-controls{gap:6px;margin-top:13px}
+#v4PaperCards .v4-controls button{font-size:11px;padding:9px 3px;border-radius:7px}
+@media(max-width:1020px){ #v4PaperCards{grid-template-columns:1fr}#v4PaperCards .v4-token{font-size:19px}}
+@media(max-width:570px){ #v4PaperCards{padding:10px;gap:9px}#v4PaperCards .v4-numbers{grid-template-columns:repeat(2,minmax(0,1fr))}#v4PaperCards .v4-controls{grid-template-columns:repeat(2,minmax(0,1fr))}}
+/* V4.5 single-select card-width TradingView indicator widget */
+#v4PaperCards>.v4-trade{align-self:start}
+.v45-tools{display:flex;gap:7px;align-items:center;flex-wrap:wrap}
+.v45-refresh{width:30px;height:30px;display:grid;place-items:center;border:1px solid #64eaff;border-radius:50%;color:#f0feff;font-size:18px;font-weight:900;cursor:pointer;background:linear-gradient(145deg,#c8faff 0%,#46bfff 20%,#136da9 48%,#06385f 50%,#269ee3 100%);box-shadow:inset 0 1px 2px #fff9,0 0 11px #1ec8ff67;text-shadow:0 1px 1px #00416b}
+.v45-refresh:disabled{opacity:.6;cursor:wait}
+.v45-indicator-toggle{border:1px solid #6bc6fc;border-radius:7px;padding:5px 8px;font-size:10px;letter-spacing:.15px;font-weight:800;color:#eaffff;cursor:pointer;background:linear-gradient(155deg,#5acafa,#136aa7 45%,#103b77 50%,#207eae);box-shadow:inset 0 1px 2px #ffffff85,0 2px 8px #00a8ff40}
+.v45-indicator-toggle[aria-expanded="true"]{background:linear-gradient(140deg,#296c90,#0c3e60)}
+.v45-indicator{margin-top:12px;border:1px solid #35799c;border-radius:10px;background:#07182b;overflow:hidden}
+.v45-indicator-head{padding:7px 9px;display:flex;justify-content:space-between;gap:8px;align-items:center;font-weight:800;font-size:11px}
+.v45-widget{width:100%;height:305px;min-height:305px;background:#071628;overflow:hidden}
+.v45-widget tv-advanced-chart{display:block;width:100%;height:100%}
+.v45-indicator-foot{padding:6px 9px;color:#a4c6e2;font-size:10px;border-top:1px solid #285276}
+.v45-entry{color:#ffda7c;font-weight:800}
+.v45-refresh-state{font-size:10px;color:#99bbd4;margin-top:7px}
+@media(max-width:550px){.v45-widget{height:265px;min-height:265px}}
+</style><script type="module" src="https://widgets.tradingview-widget.com/w/en/tv-advanced-chart.js"></script></head><body><div class="wrap"><header class="terminal-header"><div class="terminal-brand"><h1>LUXALGO PRO · TRADING TERMINAL</h1><p>Gate.io USDT Perpetual · LuxAlgo 5m / 15m · Coded by · SUBHASISH</p>
 <div class="profile-greeting"><div class="profile-avatar" id="avatarDisplay"><span>SD</span></div>
 <div><div class="profile-name">Hello SUBHASISH</div><label class="profile-change" for="profileImageInput" tabindex="0">Change Photo</label><input type="file" id="profileImageInput" accept="image/png,image/jpeg,image/webp" hidden></div></div></div><section class="news-slot" aria-label="Latest crypto news"><div class="news-heading"><span>● CRYPTO NEWS</span><span style="display:flex;align-items:center;gap:7px"><span id="newsFeedStatus">Loading headlines…</span><button type="button" id="newsRefresh" aria-label="Refresh crypto news" title="Refresh crypto news">↻</button></span></div><div class="news-viewport" id="newsViewport"><div class="news-stack" id="newsStack"><span class="news-empty">Retrieving publisher headlines…</span></div></div></section><div class="profile-right">
 <form method="post" action="/logout"><input type="hidden" name="csrf_token" value="{{ csrf_token|e }}"><button class="glossy-logout" type="submit">⇥ LOGOUT</button></form><span id="signalLiveSync" role="status" aria-live="polite" style="font-size:11px;color:#9de7ff">● Signals auto-sync: connecting…</span></div></header>
@@ -679,16 +726,12 @@ header.terminal-header{border-radius:17px!important}
 <p class="light">Technical labels reflect EMA trend, RSI, recent price-range break and candle volume. They are not LuxAlgo orders.</p>
 </section></div>
 <section class="panel advanced-panel" id="advancedScannerPanel"><div class="panel-heading"><h2>LUXALGO PRO · ADVANCED FUTURES OPPORTUNITY SCANNER <span class="gloss-cyan">● MARKET INTELLIGENCE</span></h2><button class="btn gloss-action" id="advancedRefresh" type="button">↻ Scan All Pairs</button></div>
-<p class="light">Gate.io USDT perpetuals · 5m + 15m completed candles · volume / trend / structure screening · up to five watchlist candidates. Only genuine stored LuxAlgo alerts can confirm SL1 and TP1. NEVER PLACES ORDERS.</p>
+<p class="light">Gate.io USDT perpetuals · 5m + 15m completed candles · volume / trend / structure screening · up to five watchlist candidates. ATR-based technical levels are estimates only; only genuine stored LuxAlgo alerts confirm SL1/TP1. NEVER PLACES ORDERS.</p>
 <div class="adv-controls"><strong id="advancedScanStatus" class="adv-summary">Ready to inspect markets…</strong><span id="advancedEquityInfo" class="light">Equity risk sizing: verifying read-only account</span></div>
 <div class="adv-table"><table><thead><tr><th>PAIR</th><th>DIRECTION</th><th>TIMEFRAME</th><th>LUXALGO</th><th>ENTRY REF.</th><th>SL1</th><th>TP1</th><th>R:R</th><th>3% RISK / SIZE</th><th>STATUS / REASON</th></tr></thead><tbody id="advancedScanBody"><tr><td colspan="10" class="light">Waiting for scan results.</td></tr></tbody></table></div>
-<p class="light">Technical watchlist is NOT a LuxAlgo signal or recommendation. No fresh verified SL1/TP1 = NO TRADE. Capital figures are account-read-only; sizes are indicative BASE-asset quantities, not validated Gate.io contract quantities. Live execution remains BLOCKED.</p>
+<p class="light">Technical watchlist is NOT a LuxAlgo signal or recommendation. Technical entry/SL1/TP1 are non-executable previews. No verified LuxAlgo SL1/TP1 = NO TRADE. Capital figures are account-read-only; sizes are indicative BASE-asset quantities, not validated Gate.io contract quantities. Live execution remains BLOCKED.</p>
 </section>
-<div class="bottom-grid"><section class="panel"><h2>RECENT LUXALGO SIGNALS · 5m / 15m</h2><div class="tablewrap"><table><thead><tr><th>Received (IST)</th><th>Token</th><th>Signal</th><th>Timeframe</th><th>Status</th><th>Entry / SL / TP Plan</th></tr></thead><tbody>{% for r in records %}<tr><td>{{r.time_ist|e}}</td><td>{{r.symbol|e}}</td><td>{{r.side|e}}</td><td>{{r.tf|e}}</td><td>Received · Not executed</td><td><button class="btn plan" data-symbol="{{r.symbol|e}}" data-side="{{r.side|e}}" data-tf="{{r.tf|e}}">Plan + Chart</button> <button class="btn signal-risk" type="button" data-received="{{r.time|e}}" data-symbol="{{r.symbol|e}}" data-side="{{r.side|e}}" data-tf="{{r.tf|e}}">Signal Risk Check</button> <button class="btn execution-check" type="button" data-event-id="{{r.event_id|e}}">Execution Precheck</button> <button class="btn simulate-order" type="button" data-event-id="{{r.event_id|e}}">Simulate Order</button> <button class="btn call-status" type="button" data-event-id="{{r.event_id|e}}" title="Review signal market outcome (not a real exchange trade)">↻ Call Status</button> <button class="btn delete-recent-signal" type="button" data-event-id="{{r.event_id|e}}">Delete</button></td></tr>{% else %}<tr><td colspan="6">No signals stored in the database yet.</td></tr>{% endfor %}</tbody></table></div><p id="callStatusDetail" class="light" role="status" aria-live="polite">Call status checks public completed candles, not exchange fills.</p><p id="executionCheckStatus" class="light" role="status" aria-live="polite">Execution engine foundation: protected prechecks only; exchange orders disabled.</p><p id="simulatedOrderStatus" class="light" role="status" aria-live="polite">Stage 2: explicit simulated order requests only; no actual exchange positions or protective orders.</p><p class="light">Signals are received events, not fills. Signal receipts and dry-run intent IDs are saved in PostgreSQL. Duplicate signals may not create separate dry-run intents.</p></section>
-<section class="panel performance-panel"><div class="panel-heading"><h2>PERFORMANCE ANALYTICS</h2><span class="label-muted">VERIFIED FILLS ONLY</span></div><div class="perf-grid"><div><span>Total Closed Trades</span><strong>—</strong></div><div><span>Winning Trades</span><strong>—</strong></div><div><span>Losing Trades</span><strong>—</strong></div><div><span>Win Rate</span><strong>—</strong></div><div><span>Total Realized P&amp;L</span><strong>—</strong></div><div><span>Unrealized P&amp;L</span><strong>—</strong></div></div><p class="light">Waiting for authenticated position and fill synchronization. No synthetic P&amp;L or win statistics.</p></section></div><section class="panel"><h2>TRADE PLAN · SL · TP1 <span class="tag">READ ONLY</span></h2>
-<div class="controls"><label>Entry reference <input id="entry" type="number" step="any" placeholder="Choose a signal" readonly></label><label>Stop Loss · 1.5 ATR <input id="sl" type="number" step="any" readonly></label><label>TP1 · 2 ATR · 100% exit <input id="tp1" type="number" step="any" readonly></label></div>
-<div id="planResults">Select Plan + Chart beside a signal to calculate illustrative entry, SL and TP1. No orders are placed.</div></section>
-<section class="panel"><div class="panel-heading"><h2>COMPLETED TRADES · EXIT RECORD</h2><span class="label-muted">PENDING ACCOUNT HISTORY INTEGRATION</span></div><div class="tablewrap"><table><thead><tr><th>TIME (UTC)</th><th>PAIR</th><th>DIRECTION</th><th>ENTRY FILL</th><th>EXIT FILL</th><th>NET REALIZED P&amp;L</th><th>RESULT</th></tr></thead><tbody><tr><td colspan="7" class="empty-state">No verified exchange fills have been synchronized. Signal receipts are not executed trades.</td></tr></tbody></table></div></section><section class="panel"><div class="panel-heading"><h2>PAPER TRADE MONITOR <span class="tag">SIMULATION ONLY</span></h2><button class="btn gloss-action" id="paperRefresh" type="button">↻ Check Paper Trades</button></div><p class="light" id="paperStatus" role="status" aria-live="polite">Checks queued simulated orders when the dashboard is open; historical outcomes remain estimates, not fills.</p><div class="tablewrap"><table><thead><tr><th>CREATED (UTC)</th><th>PAIR</th><th>SIDE</th><th>SIM ENTRY</th><th>SIM SL</th><th>SIM TP</th><th>STATE</th><th>LAST PRICE</th><th>UNREALIZED P&amp;L</th><th>EST. CLOSED P&amp;L</th></tr></thead><tbody id="paperBody"><tr><td colspan="10">No simulated positions loaded.</td></tr></tbody></table></div><p id="paperOpenPnlTotal" class="light" role="status" aria-live="polite">Open paper unrealized P&amp;L: not yet available.</p><p class="light">Simulation outcomes assume the reference entry was achievable and exclude fees, slippage and funding. If both SL and TP are touched in one candle, SL is assumed first. Historical-data gaps are not guessed. Simulated P&amp;L is never included in verified real-trade analytics.</p></section><section class="panel"><div class="panel-heading"><h2>EXECUTION SAFETY PREVIEW <span class="tag">DRY RUN ONLY</span></h2><span class="label-muted">NO EXCHANGE ORDERS</span></div><p class="light">Preview illustrative risk and contract-size checks using a hypothetical USDT equity. This does not validate your actual available margin, fee-adjusted fills, current hedge settings, or protective order placement.</p><div class="controls"><label>Trading pair<input id="previewSymbol" value="BTCUSDT" maxlength="29" autocomplete="off"></label><label>Direction<select id="previewSide"><option value="LONG">LONG / BUY</option><option value="SHORT">SHORT / SELL</option></select></label><label>Timeframe<select id="previewTf"><option value="15m">15 minutes</option><option value="5m">5 minutes</option></select></label><label>Hypothetical equity (USDT)<input id="previewEquity" type="number" value="100" min="1" max="10000000" step="any"></label><label>Risk per trade (%)<select id="previewRisk"><option value="0.5">0.5%</option><option value="1">1%</option><option value="1.5">1.5%</option><option value="2">2%</option><option value="2.5">2.5%</option><option value="3" selected>3% (default)</option><option value="3.5">3.5%</option><option value="4">4%</option><option value="4.5">4.5%</option><option value="5">5% (maximum)</option></select></label></div><button class="btn gloss-action" id="previewButton" type="button">Generate Read-Only Risk Preview</button><p id="signalPreviewContext" class="light" aria-live="polite">Manual calculator input; not a trading recommendation.</p><div id="previewResult" role="status" aria-live="polite" style="white-space:pre-wrap;margin-top:12px;background:#0b1a2b;border:1px solid #2b435e;border-radius:8px;padding:14px;font:12px/1.8 ui-monospace,Consolas,monospace">Ready for a simulated preview. Nothing can place or close orders.</div></section><div class="foot">LUXALGO PRO · Private terminal · Market data is public Gate.io data. Scanners are technical watchlists, not LuxAlgo entry signals. No account positions, fills, profit or loss are available until authenticated exchange sync is implemented. LIVE TRADING OFF; no orders are placed.</div></div><script>
+<div class="bottom-grid"><section class="panel performance-panel"><div class="panel-heading"><h2>PERFORMANCE ANALYTICS</h2><span class="label-muted">VERIFIED FILLS ONLY</span></div><div class="perf-grid"><div><span>Total Closed Trades</span><strong>—</strong></div><div><span>Winning Trades</span><strong>—</strong></div><div><span>Losing Trades</span><strong>—</strong></div><div><span>Win Rate</span><strong>—</strong></div><div><span>Total Realized P&amp;L</span><strong>—</strong></div><div><span>Unrealized P&amp;L</span><strong>—</strong></div></div><p class="light">Waiting for authenticated position and fill synchronization. No synthetic P&amp;L or win statistics.</p></section></div><section class="panel"><div class="panel-heading"><h2>COMPLETED TRADES · EXIT RECORD</h2><span class="label-muted">PENDING ACCOUNT HISTORY INTEGRATION</span></div><div class="tablewrap"><table><thead><tr><th>TIME (UTC)</th><th>PAIR</th><th>DIRECTION</th><th>ENTRY FILL</th><th>EXIT FILL</th><th>NET REALIZED P&amp;L</th><th>RESULT</th></tr></thead><tbody><tr><td colspan="7" class="empty-state">No verified exchange fills have been synchronized. Signal receipts are not executed trades.</td></tr></tbody></table></div></section><section class="panel"><div class="panel-heading"><h2>PAPER TRADE MONITOR <span class="tag">SIMULATION ONLY</span></h2><button class="btn gloss-action" id="paperRefresh" type="button">↻ Check Paper Trades</button></div><p class="light" id="paperStatus" role="status" aria-live="polite">Checks queued simulated orders when the dashboard is open; historical outcomes remain estimates, not fills.</p><div class="tablewrap"><table><thead><tr><th>CREATED (UTC)</th><th>PAIR</th><th>SIDE</th><th>SIM ENTRY</th><th>SIM SL</th><th>SIM TP</th><th>STATE</th><th>LAST PRICE</th><th>UNREALIZED P&amp;L</th><th>EST. CLOSED P&amp;L</th></tr></thead><tbody id="paperBody"><tr><td colspan="10">No simulated positions loaded.</td></tr></tbody></table></div><p id="paperOpenPnlTotal" class="light" role="status" aria-live="polite">Open paper unrealized P&amp;L: not yet available.</p><p class="light">Simulation outcomes assume the reference entry was achievable and exclude fees, slippage and funding. If both SL and TP are touched in one candle, SL is assumed first. Historical-data gaps are not guessed. Simulated P&amp;L is never included in verified real-trade analytics.</p></section><div class="foot">LUXALGO PRO · Private terminal · Market data is public Gate.io data. Scanners are technical watchlists, not LuxAlgo entry signals. No account positions, fills, profit or loss are available until authenticated exchange sync is implemented. LIVE TRADING OFF; no orders are placed.</div></div><script>
 
 // Read-only advanced watchlist: uses completed 5m/15m public candles and validated LuxAlgo receipt records.
 (function(){
@@ -700,7 +743,7 @@ header.terminal-header{border-radius:17px!important}
   let x=data.scan||{};status.textContent='5m '+(x['5m']?.scanned||0)+'/'+(x['5m']?.total||0)+' · 15m '+(x['15m']?.scanned||0)+'/'+(x['15m']?.total||0)+(x.running?' · scanning progressively':' · current snapshot')+' · '+(data.updated_at?new Date(data.updated_at*1000).toLocaleTimeString():'pending');
   risk.textContent=data.equity_usdt==null?'Risk sizing unavailable (equity not verified)':'Verified equity: '+data.equity_usdt.toFixed(2)+' USDT · 3% budget '+data.risk_budget_usdt.toFixed(2)+' USDT';
   body.replaceChildren();if(!data.candidates?.length){const tr=body.insertRow();cell(tr,'NO TRADE · '+(x.running?'Scans are still running':'No verified opportunities meeting screening conditions'), 'adv-blocked').colSpan=10;}
-  for(const p of (data.candidates||[])){const tr=body.insertRow();cell(tr,p.symbol);cell(tr,p.side,p.side==='LONG'?'adv-signal long':'adv-signal short');cell(tr,p.timeframe);cell(tr,p.confirmation);cell(tr,p.entry);cell(tr,p.sl1);cell(tr,p.tp1);cell(tr,p.rr);cell(tr,p.size_hint);cell(tr,p.status+' · '+p.reason,'adv-reason');}
+  for(const p of (data.candidates||[])){const tr=body.insertRow();cell(tr,p.symbol);cell(tr,p.side,p.side==='LONG'?'adv-signal long':'adv-signal short');cell(tr,p.timeframe);cell(tr,p.confirmation);cell(tr,p.entry==null?'—':Number(p.entry).toPrecision(7));cell(tr,p.sl1==null?'—':Number(p.sl1).toPrecision(7));cell(tr,p.tp1==null?'—':Number(p.tp1).toPrecision(7));cell(tr,p.rr);cell(tr,p.size_hint);cell(tr,p.status+' · '+(p.level_source||'UNAVAILABLE')+' · '+p.reason,'adv-reason');}
  }catch(e){status.textContent='Advanced scan unavailable: '+e.message;body.replaceChildren();const tr=body.insertRow();cell(tr,'NO TRADE · market confirmation unavailable').colSpan=10;}
  finally{busy=false;btn.disabled=false;}}
  btn.addEventListener('click',()=>refresh(true));refresh();setInterval(()=>{if(!document.hidden)refresh();},20000);
@@ -1039,32 +1082,6 @@ header.terminal-header{border-radius:17px!important}
  });
 })();
 
- // Hide a recent signal from dashboard only; immutable audit history remains.
- document.querySelectorAll('.delete-recent-signal').forEach(button=>button.addEventListener('click',async()=>{
-   if(!confirm('Hide this signal from Recent LuxAlgo Signals? Its audit records and paper history will remain.'))return;
-   button.disabled=true;
-   try{
-     const r=await fetch('/terminal/hide-recent-signal',{method:'POST',headers:{'Content-Type':'application/json','X-Terminal-CSRF':{{ csrf_token|tojson }}},body:JSON.stringify({event_id:button.dataset.eventId}),cache:'no-store'});
-     const d=await r.json();if(!r.ok)throw Error(d.error||'Unable to hide signal');
-     // Keep the user's signal-panel state across this deletion.
-     const signalPanel=document.getElementById('v4RecentWrapper');
-     const panelWasOpen=Boolean(signalPanel && signalPanel.open);
-     // Remove only this row: do not reload the page or reset the open <details> panel.
-     const row=button.closest('tr');
-     const body=row && row.closest('tbody');
-     if(row) row.remove();
-     if(signalPanel && panelWasOpen)signalPanel.open=true;
-     if(body && !body.querySelector('tr')){
-       const empty=document.createElement('tr');
-       const cell=document.createElement('td');
-       cell.colSpan=6;
-       cell.textContent='No signals currently displayed.';
-       empty.appendChild(cell);
-       body.appendChild(empty);
-     }
-   }catch(e){button.disabled=false;alert('Delete could not be completed: '+e.message);}
- }));
-
 // Remote control: persisted in PostgreSQL, never enables exchange trading.
 (function(){
  const label=document.getElementById('botControlLabel'),detail=document.getElementById('botControlDetail');
@@ -1076,56 +1093,8 @@ header.terminal-header{border-radius:17px!important}
 })();
 
 const entry=document.getElementById('entry'), sl=document.getElementById('sl'), tp1=document.getElementById('tp1');
-// Use the genuine stored LuxAlgo direction to populate the existing risk calculator.
-// This is a manual, read-only action: no webhook or trading API is invoked.
-document.querySelectorAll('.signal-risk').forEach(b=>b.addEventListener('click',()=>{
- const symbol=b.dataset.symbol,side=b.dataset.side,tf=b.dataset.tf;
- const received=Date.parse(b.dataset.received);
- const ageSeconds=Number.isFinite(received)?Math.max(0,(Date.now()-received)/1000):null;
- document.getElementById('previewSymbol').value=symbol;
- document.getElementById('previewSide').value=side;
- document.getElementById('previewTf').value=tf;
- const out=document.getElementById('previewResult');
- const freshness=ageSeconds===null?'Signal time could not be verified.':ageSeconds>120?'STALE SIGNAL ('+Math.round(ageSeconds)+' seconds old); this is NOT an executable entry.':'Recently received signal ('+Math.round(ageSeconds)+' seconds old); this is still NOT an executable quote.';
- document.getElementById('signalPreviewContext').textContent='LuxAlgo '+symbol+' '+side+' '+tf+' · '+freshness+' Preview uses NEW completed market candles, not the historical signal entry. No orders.';
- document.getElementById('previewButton').click();
- document.getElementById('previewResult').scrollIntoView({behavior:'smooth',block:'center'});
-}));
-
-
-// Stage 1: record an immutable, fail-closed readiness check for stored alerts.
-// No exchange order routes, signing of writes, or position changes exist.
-document.querySelectorAll('.execution-check').forEach(b=>b.addEventListener('click',async()=>{
- const out=document.getElementById('executionCheckStatus');
- b.disabled=true;out.textContent='Recording a read-only execution safety precheck…';
- try{
-  const r=await fetch('/terminal/execution-precheck',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({event_id:b.dataset.eventId}),cache:'no-store'});
-  const d=await r.json();if(!r.ok)throw Error(d.error||'Precheck unavailable');
-  const p=d.precheck;out.textContent=p.symbol+' '+p.side+' '+p.timeframe+' | '+p.status+' | Risk default: '+p.risk_percent+'% | '+(d.duplicate?'Existing persisted check. ':'Saved to PostgreSQL. ')+'No orders placed. Blockers: '+p.blockers.join('; ');
- }catch(e){out.textContent='Execution precheck blocked: '+e.message+'; no orders placed.'}
- finally{b.disabled=false}
-}));
-
-// Stage 2: simulate a hypothetical market entry from a stored fresh event; no exchange writes.
-document.querySelectorAll('.simulate-order').forEach(b=>b.addEventListener('click',async()=>{
- const out=document.getElementById('simulatedOrderStatus');
- b.disabled=true;out.textContent='Creating a simulated order record (no actual orders)…';
- try{
-  const r=await fetch('/terminal/simulate-order',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({event_id:b.dataset.eventId}),cache:'no-store'});
-  const d=await r.json();if(!r.ok)throw Error(d.error||'Simulation rejected');
-  const x=d.simulation;
-  out.textContent=x.symbol+' '+x.side+' '+x.timeframe+' | '+x.status+' | Entry reference: '+x.reference_entry+' | Illustrative SL: '+x.stop_loss+' | Illustrative TP: '+x.take_profit+' | Contracts: '+x.size_contracts+' | Risk: '+x.risk_percent+'% | '+(d.duplicate?'Existing simulation; not duplicated.':'Saved to PostgreSQL.')+' | Exchange orders: 0. No real protection.';
- }catch(e){out.textContent='Simulation not created: '+e.message+' | Orders placed: 0.';}
- finally{b.disabled=false;}
-}));
-
-document.querySelectorAll('.plan').forEach(b=>b.addEventListener('click',async()=>{
- const out=document.querySelector('#planResults');b.disabled=true;out.textContent='Calculating read-only ATR plan…';
- try{const r=await fetch('/terminal/plan',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({symbol:b.dataset.symbol,side:b.dataset.side,tf:b.dataset.tf})});const d=await r.json();if(!r.ok)throw Error(d.error||'Plan unavailable');const p=d.plan;
- entry.value=p.reference_entry;sl.value=p.stop_loss_1_5_atr;tp1.value=p.take_profit_1_2_atr;document.getElementById('chartSymbol').value=b.dataset.symbol;document.getElementById('chartTf').value=b.dataset.tf;window.loadChart();
- out.textContent=['Contract: '+p.contract,'Signal: '+p.side,'Timeframe: '+p.timeframe,'Reference: latest completed candle close (not a fill)','AUTO Stop Loss: 1.5 × ATR','AUTO TP1: 2 × ATR (100% close intended)','Order count: 0','Manual changes are previews only. No exchange orders or protection exist.'].join('\\n');
- }catch(e){out.textContent=e.message}finally{b.disabled=false}
-}));
+// Removed on-demand signal panel controls and manual dry-run preview UI.
+// Webhook receipts, paper simulation, and backend safety checks remain intact.
 
 (function(){
 'use strict';
@@ -1216,38 +1185,6 @@ setInterval(()=>{if(!document.hidden)loadChart();},30000);
 })();
 
 
-
-// Independent dry-run calculator: illustrative sizing, never submits orders.
-(function(){
- 'use strict';
- const btn=document.getElementById('previewButton'),out=document.getElementById('previewResult');
- btn.addEventListener('click',async()=>{
-  btn.disabled=true;out.textContent='Checking public contract rules and calculating preview…';
-  try{
-   const payload={symbol:document.getElementById('previewSymbol').value.trim().toUpperCase(),side:document.getElementById('previewSide').value,tf:document.getElementById('previewTf').value,hypothetical_equity_usdt:Number(document.getElementById('previewEquity').value),risk_percent:Number(document.getElementById('previewRisk').value)};
-   const res=await fetch('/terminal/execution-preview',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload),cache:'no-store'});
-   const d=await res.json();if(!res.ok)throw Error(d.error||'Preview unavailable');
-   const v=d.preview;
-   const fmt=x=>x===null||x===undefined?'Unavailable':String(x);
-   out.textContent=['MODE: SIMULATION ONLY — NO ORDER SUBMISSION',
-      'Pair / direction / timeframe: '+v.contract+' / '+v.side+' / '+v.timeframe,
-      'Hypothetical equity: '+v.hypothetical_equity_usdt+' USDT',
-      'Budgeted risk ('+v.risk_percent+'%): '+v.risk_budget_usdt+' USDT',
-      'Reference entry (completed candle): '+v.reference_entry,
-      'Stop loss (1.5 ATR): '+v.stop_loss,
-      'TP1 (2 ATR; 100% planned exit): '+v.take_profit,
-      'Contract multiplier: '+v.quanto_multiplier,
-      'Conservative integer size: '+fmt(v.size_contracts)+' contracts',
-      'Estimated price-only loss at SL: '+fmt(v.estimated_sl_loss_usdt)+' USDT (excludes fees/slippage)',
-      'Estimated notional / 5x margin: '+fmt(v.notional_usdt)+' / '+fmt(v.estimated_margin_usdt)+' USDT',
-      'Gate minimum / maximum contracts: '+v.order_size_min+' / '+v.order_size_max,
-      'Result: '+v.result,
-      ...v.blockers.map(x=>'BLOCKER: '+x),
-      'Trading permissions: READ ONLY. Orders submitted: 0.',
-      'Actual equity, available margin, leverage/hedge setting, protective orders, fees, execution and reconciliation are NOT verified.'].join('\\n');
-  }catch(e){out.textContent='Preview unavailable: '+e.message+' · No orders submitted.'}finally{btn.disabled=false;}
- });
-})();
 
 // Private read-only Gate.io position cards. NO account-mutating actions.
 (function(){
@@ -1591,49 +1528,63 @@ if(legacyPaper)legacyPaper.id='v4LegacyPaperHost';
 if(legacyGate)legacyGate.id='v4LegacyGateHost';
 sourcePanel.id='v4ChartOriginal';
 const workspace=document.createElement('section');workspace.id='v4Workspace';
-workspace.innerHTML='<div class="v4-head"><div><strong>INDIVIDUAL OPEN POSITIONS · PAPER SIMULATION</strong><br><small>Click a token for one live public-market chart · Price estimates are NOT exchange fills</small></div><button id="v4DemoToggle" type="button">SHOW SAMPLE LAYOUT</button></div><div class="v4-tabs"><strong id="v4TabCount">Positions (0)</strong><span>Open Orders (0)</span><span>Paper BOT</span></div><div id="v4DemoWarning" hidden class="v4-demo-banner">SAMPLE LAYOUT ONLY — Positions, balances and profit figures below are fabricated for visual review, never actual trades.</div><div id="v4PaperCards"><div class="v4-prompt">Checking the stored paper trade positions…</div></div>';
+workspace.innerHTML='<div class="v4-head"><div><strong>INDIVIDUAL OPEN POSITIONS · PAPER SIMULATION</strong><br><small>Click a token to open its TradingView chart · one chart at a time · Price estimates are NOT exchange fills</small></div><button id="v4DemoToggle" type="button">SHOW SAMPLE LAYOUT</button></div><div class="v4-tabs"><strong id="v4TabCount">Positions (0)</strong><span>Open Orders (0)</span><span>Paper BOT</span></div><div id="v4DemoWarning" hidden class="v4-demo-banner">SAMPLE LAYOUT ONLY — Positions, balances and profit figures below are fabricated for visual review, never actual trades.</div><div id="v4PaperCards"><div class="v4-prompt">Checking the stored paper trade positions…</div></div>';
 strip.after(workspace);
-const modal=document.createElement('div');modal.id='v4ChartModal';modal.setAttribute('role','dialog');modal.setAttribute('aria-modal','true');modal.setAttribute('aria-label','Selected token market chart');
-modal.innerHTML='<div id="v4ModalBox"><div id="v4ModalHeader"><strong id="v4SelectedName">LIVE MARKET CHART</strong><button type="button" id="v4CloseChart">✕ CLOSE CHART</button></div><div id="v4ChartMount"></div><div class="v4-tools">Public Gate.io perpetual market candles · Chart is read-only · All exchange actions remain disabled</div></div>';
-document.body.appendChild(modal);
-modal.querySelector('#v4ChartMount').appendChild(sourcePanel);
-sourcePanel.style.display='block';
-if(recent){
- const holder=document.createElement('details');
- holder.id='v4RecentWrapper';holder.className='panel';
- const storageKey='luxalgo_v4_recent_signals_expanded';
- // Persist user-controlled expanded state across auto-sync reloads and deletions.
- let savedOpen=false;
- try{savedOpen=sessionStorage.getItem(storageKey)==='1';}catch(_e){}
- if(savedOpen)holder.open=true;
- holder.innerHTML='<summary>RECENT LUXALGO SIGNALS · 5m / 15m — CLICK TO EXPAND / MINIMIZE</summary>';
- recent.before(holder);holder.appendChild(recent);
- const summary=holder.querySelector('summary');
- const paint=()=>{summary.textContent=(holder.open?'▾':'▸')+' RECENT LUXALGO SIGNALS · 5m / 15m — CLICK TO EXPAND / MINIMIZE'};
- paint();
- holder.addEventListener('toggle',()=>{
-  paint();
-  try{sessionStorage.setItem(storageKey,holder.open?'1':'0')}catch(_e){}
- });
- // Save before a full-page auto-sync navigation, even if toggle is queued.
- window.addEventListener('pagehide',()=>{
-  try{sessionStorage.setItem(storageKey,holder.open?'1':'0')}catch(_e){}
- });
+// The previous full-screen chart modal is no longer used. Charts belong to cards.
+sourcePanel.style.display='none';
+let demo=false;
+const openIndicators=new Set(); // Only one chart is open at a time.
+const examples=[['IRYSUSDT','LONG',20,.04,15.12,6,.29,.0734006,.07396,.063115],['BIRBUSDT','SHORT',50,-.03,-11.78,9.92,.19,.08079,.080634,.087],['INITUSDT','LONG',20,.00,3.26,5.98,.29,.153,.1533165,.1301081],['AKEUSDT','LONG',10,.01,2,5.5,.54,.039726,.039815,.0330489],['SOLUSDT','SHORT',5,.87,1.45,300,60,166.5,166.02,199.0],['AVAXUSDT','LONG',5,-.42,-.70,300,60,9.092,9.079,7.2]];
+const esc=v=>String(v??'—').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+function numCell(k,v,extra='',field=''){return '<div><span class="v4-number-label">'+k+'</span><div class="v4-number-value '+extra+'"'+(field?' data-v45-field="'+field+'"':'')+'>'+esc(v)+'</div></div>'}
+function chartMarkup(d){
+ const sym=String(d.symbol||'').toUpperCase();
+ if(!/^[A-Z0-9]{2,26}USDT$/.test(sym))return '<p class="light">Chart symbol unavailable.</p>';
+ // TradingView's Binance perp public reference market; it is not an authenticated Gate.io fill feed.
+ const token=sym.slice(0,-4), market='BINANCE:'+token+'USDT.P';
+ return '<section class="v45-indicator" data-v45-chart="'+esc(sym)+'"><div class="v45-indicator-head"><span>'+esc(sym)+' · TradingView</span><span>15m · Public market</span></div><div class="v45-widget"><tv-advanced-chart symbol="'+esc(market)+'" interval="15" theme="dark" timezone="Asia/Kolkata" chart-type="candles"></tv-advanced-chart></div><div class="v45-indicator-foot"><span class="v45-entry">ENTRY: '+esc(d.entry)+'</span> · Reference level only (not plotted in widget). TradingView refresh rate depends on its feed. Paid LuxAlgo not embedded.</div></section>';
 }
-let demo=false,active='';
-const examples=[['IRYSUSDT','LONG',20,.04,15.12,6,.29,.0734006,.07396,.063115],['BIRBUSDT','SHORT',50,-.03,-11.78,9.92,.19,.08079,.080634,.087],['INITUSDT','LONG',20,.00,3.26,5.98,.29,.153,.1533165,.1301081],['AKEUSDT','LONG',10,.01,2,5.5,.54,.039726,.039815,.0330489]];
-function fmt(v){const x=Number(v);return Number.isFinite(x)?String(v):'—'}
-function numCell(k,v,extra=''){return '<div><span class="v4-number-label">'+k+'</span><div class="v4-number-value '+extra+'">'+v+'</div></div>'}
-function card(d){const gain=Number(d.pnl)>=0,cl=gain?'v4-pnl-good':'v4-pnl-bad';const pnl=Number.isFinite(Number(d.pnl))?((Number(d.pnl)>0?'+':'')+d.pnl):'—';return '<article class="v4-trade"><div class="v4-trade-top"><div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><span class="v4-side '+(d.side==='SHORT'?'short':'')+'">'+(d.side==='SHORT'?'S':'L')+'</span><button class="v4-token" type="button" data-v4-symbol="'+d.symbol+'">'+d.symbol+' ↗</button><span class="v4-tag">Perp</span><span class="v4-tag">'+d.leverage+'</span><span class="v4-tag">'+(demo?'DEMO':'PAPER')+'</span></div><div style="text-align:right"><div class="v4-number-label">ROI (estimated)</div><div class="v4-number-value big '+cl+'">'+d.roi+'</div></div></div><div class="v4-numbers">'+numCell('UNREALIZED P&L (USDT)',pnl,cl+' big')+numCell('SIZE (USDT)',d.size)+numCell('MARGIN (USDT)',d.margin)+numCell('ENTRY PRICE',d.entry)+numCell('MARK PRICE',d.mark)+numCell('LIQ. PRICE',d.liq)+numCell('STOP LOSS',d.sl)+numCell('TAKE PROFIT',d.tp)+'</div><div class="v4-controls"><button disabled title="Live execution not implemented">TP/SL</button><button disabled title="Live execution not implemented">Reverse</button><button disabled title="Live execution not implemented">Market Close</button><button disabled title="Live execution not implemented">Close</button></div></article>'}
-function fromTable(){const rows=[...table.querySelectorAll('tr[data-paper-event-id]')].filter(r=>r.dataset.paperState==='OPEN');return rows.map(r=>{const c=[...r.cells].map(x=>x.textContent.trim()), entry=Number(c[3]), mark=Number(c[7]), p=Number(c[8]);return {symbol:c[1],side:c[2],leverage:'Not verified',pnl:c[8],roi:'—',size:'Not verified',margin:'Not verified',entry:c[3],mark:c[7],liq:'Not available',sl:c[4],tp:c[5]}})}
-function draw(){let data;if(demo){data=examples.map(x=>({symbol:x[0],side:x[1],leverage:'Cross '+x[2]+'x',pnl:x[3],roi:x[4]+'%',size:x[5],margin:x[6],entry:x[7],mark:x[8],liq:x[9],sl:'Sample only',tp:'Sample only'}))}else{data=fromTable()};document.getElementById('v4TabCount').textContent='Positions ('+data.length+')';const cards=document.getElementById('v4PaperCards');cards.innerHTML=data.length?data.map(card).join(''):'<div class="v4-prompt">No OPEN paper positions currently. Closed paper trades remain in history. Use SHOW SAMPLE LAYOUT to inspect the four-card design without placing any trades.</div>'}
-workspace.querySelector('#v4DemoToggle').onclick=()=>{demo=!demo;document.getElementById('v4DemoWarning').hidden=!demo;document.getElementById('v4DemoToggle').textContent=demo?'RETURN TO REAL PAPER DATA':'SHOW SAMPLE LAYOUT';draw()};
-function openChart(sym){if(!/^[A-Z0-9]{2,26}USDT$/.test(sym))return;active=sym;document.getElementById('v4SelectedName').textContent=sym+' · PUBLIC LIVE CANDLES';modal.classList.add('open');document.body.style.overflow='hidden';const field=document.getElementById('chartSymbol');field.value=sym;const refresh=document.getElementById('chartRefresh');requestAnimationFrame(()=>setTimeout(()=>refresh?.click(),120));}
-function closeChart(){modal.classList.remove('open');document.body.style.overflow=''}
-workspace.addEventListener('click',e=>{const b=e.target.closest('[data-v4-symbol]');if(b)openChart(b.dataset.v4Symbol)});
-document.getElementById('v4CloseChart').onclick=closeChart;modal.addEventListener('click',e=>{if(e.target===modal)closeChart()});document.addEventListener('keydown',e=>{if(e.key==='Escape'&&modal.classList.contains('open'))closeChart()});
+function card(d){
+ const gain=Number(d.pnl)>=0,cl=gain?'v4-pnl-good':'v4-pnl-bad',valid=Number.isFinite(Number(d.pnl));
+ const pnl=valid?((Number(d.pnl)>0?'+':'')+d.pnl):'—',sym=String(d.symbol||'').toUpperCase(),open=openIndicators.has(sym);
+ return '<article class="v4-trade" data-v45-card="'+esc(sym)+'"><div class="v4-trade-top"><div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap"><span class="v4-side '+(d.side==='SHORT'?'short':'')+'">'+(d.side==='SHORT'?'S':'L')+'</span><button class="v4-token" type="button" data-v45-toggle="'+esc(sym)+'">'+esc(sym)+'</button><span class="v4-tag">Perp</span><span class="v4-tag">'+esc(d.leverage)+'</span><span class="v4-tag">'+(demo?'DEMO':'PAPER')+'</span><div class="v45-tools"><button class="v45-refresh" type="button" data-v45-refresh="'+esc(sym)+'" title="Refresh position" aria-label="Refresh '+esc(sym)+' position">↻</button><button class="v45-indicator-toggle" type="button" data-v45-toggle="'+esc(sym)+'" aria-expanded="'+String(open)+'">'+(open?'▲ CLOSE':'▼ INDICATOR')+'</button></div></div><div style="text-align:right"><div class="v4-number-label">ROI (estimated)</div><div class="v4-number-value big '+cl+'" data-v45-field="roi">'+esc(d.roi)+'</div></div></div><div class="v4-numbers">'+numCell('UNREALIZED P&L (USDT)',pnl,cl+' big','pnl')+numCell('SIZE (USDT)',d.size)+numCell('MARGIN (USDT)',d.margin)+numCell('ENTRY PRICE',d.entry)+numCell('MARK PRICE',d.mark,'','mark')+numCell('LIQ. PRICE',d.liq)+numCell('STOP LOSS',d.sl)+numCell('TAKE PROFIT',d.tp)+'</div><div class="v4-controls"><button disabled title="Exchange execution not implemented">TP/SL</button><button disabled title="Exchange execution not implemented">Reverse</button><button disabled title="Exchange execution not implemented">Market Close</button><button disabled title="Exchange execution not implemented">Close</button></div><div class="v45-refresh-state" data-v45-state="1">'+(demo?'DEMO — simulated values':'Paper quote refresh runs automatically')+'</div>'+ (open?chartMarkup(d):'')+'</article>';
+}
+function fromTable(){const rows=[...table.querySelectorAll('tr[data-paper-event-id]')].filter(r=>r.dataset.paperState==='OPEN');return rows.map(r=>{const c=[...r.cells].map(x=>x.textContent.trim());return {symbol:c[1],side:c[2],leverage:'Not verified',pnl:c[8],roi:'—',size:'Not verified',margin:'Not verified',entry:c[3],mark:c[7],liq:'Not available',sl:c[4],tp:c[5]}})}
+function currentData(){return demo?examples.map(x=>({symbol:x[0],side:x[1],leverage:'Cross '+x[2]+'x',pnl:x[3],roi:x[4]+'%',size:x[5],margin:x[6],entry:x[7],mark:x[8],liq:x[9],sl:'Sample only',tp:'Sample only'})):fromTable()}
+let lastStructure='';
+function draw(force=false){
+ const data=currentData();const cards=document.getElementById('v4PaperCards');
+ const structure=(demo?'DEMO':'PAPER')+'|'+data.map(d=>String(d.symbol)+'/'+d.side+'/'+openIndicators.has(String(d.symbol))).join('|');
+ document.getElementById('v4TabCount').textContent='Positions ('+data.length+')';
+ if(force||structure!==lastStructure){
+  cards.innerHTML=data.length?data.map(card).join(''):'<div class="v4-prompt">No OPEN paper positions currently. Closed paper trades remain in history. Use SHOW SAMPLE LAYOUT to inspect six example cards without placing trades.</div>';
+  lastStructure=structure;
+ }else{
+  // Update prices/P&L without destroying open TradingView web components.
+  for(const d of data){const c=[...cards.querySelectorAll('[data-v45-card]')].find(x=>x.dataset.v45Card===d.symbol);if(!c)continue;
+   const pnl=Number.isFinite(Number(d.pnl))?((Number(d.pnl)>0?'+':'')+d.pnl):'—';
+   for(const [field,val] of [['pnl',pnl],['roi',d.roi],['mark',d.mark]]){const e=c.querySelector('[data-v45-field="'+field+'"]');if(e&&e.textContent!==String(val))e.textContent=val;}
+  }
+ }
+}
+workspace.querySelector('#v4DemoToggle').onclick=()=>{demo=!demo;openIndicators.clear();lastStructure='';document.getElementById('v4DemoWarning').hidden=!demo;document.getElementById('v4DemoToggle').textContent=demo?'RETURN TO REAL PAPER DATA':'SHOW SAMPLE LAYOUT';draw(true)};
+workspace.addEventListener('click',e=>{
+ const r=e.target.closest('[data-v45-refresh]');
+ if(r){
+  const c=r.closest('[data-v45-card]');const state=c?.querySelector('[data-v45-state]');
+  if(demo){if(state)state.textContent='DEMO — values are illustrative; no exchange refresh';return;}
+  // Uses the existing authenticated paper position refresh, never submits an order.
+  r.disabled=true;if(state)state.textContent='Refreshing paper positions…';
+  btn?.click();setTimeout(()=>{r.disabled=false;if(state&&state.isConnected)state.textContent='Refresh requested · '+new Date().toLocaleTimeString();},1400);
+  return;
+ }
+ const b=e.target.closest('[data-v45-toggle]');if(!b)return;
+ const sym=b.dataset.v45Toggle;if(!/^[A-Z0-9]{2,26}USDT$/.test(sym))return;
+ if(openIndicators.has(sym)){openIndicators.clear();}else{openIndicators.clear();openIndicators.add(sym);}
+ draw(true);
+});
 new MutationObserver(()=>{if(!demo)draw()}).observe(table,{childList:true,subtree:true,characterData:true});
-draw();
+draw(true);
 })();
 </script></body></html>'''
 
@@ -2152,9 +2103,62 @@ def webhook():
     except (psycopg.Error,RuntimeError,OSError):
         app.logger.exception('Cannot durably record incoming LuxAlgo signal')
         return jsonify(error='Signal not stored; retry later',orders_placed=0),503
+    # One-trade handoff: durable first-candidate reservation ONLY. Not an order.
+    # Preserves existing webhook receipt behavior and does not call exchange APIs.
+    one_trade_candidate = 'NOT_ELIGIBLE'
+    if level_status == 'VALID' and not duplicate and tf == '15m':
+        try:
+            with _db_connect() as con:
+                _ensure_schema(con)
+                with con.cursor() as cur:
+                    cur.execute("""INSERT INTO luxalgo_one_trade_candidate
+                        (singleton_id,event_id,symbol,side,timeframe,entry_price,stop_loss,take_profit,status)
+                        VALUES (1,%s,%s,%s,%s,%s,%s,%s,'WAITING_FOR_VERIFIED_EXECUTION')
+                        ON CONFLICT (singleton_id) DO NOTHING RETURNING event_id""",
+                        (event_id,symbol,allowed[side],tf,entry_price,stop_loss,take_profit))
+                    one_trade_candidate = ('RESERVED_NO_ORDER' if cur.fetchone() else 'ALREADY_RESERVED')
+        except (psycopg.Error, RuntimeError, OSError):
+            app.logger.warning('One-trade candidate reservation failed; no execution permitted')
+            one_trade_candidate = 'UNAVAILABLE_NO_ORDER'
     return jsonify(status='signal_received', mode='SIGNAL_ONLY', symbol=symbol,
                    side=allowed[side], timeframe=tf, duplicate_in_candle=duplicate,
-                   dry_run_intent_id=event_id, level_status=level_status, orders_placed=0), 200
+                   dry_run_intent_id=event_id, level_status=level_status,
+                   one_trade_candidate=one_trade_candidate, orders_placed=0), 200
+
+
+# One-trade bridge inspection: authenticated, database-backed and READ-ONLY.
+# This endpoint does not authorize exchange orders or change the one-trade latch.
+@app.get('/terminal/one-trade-status')
+def terminal_one_trade_status():
+    if not _terminal_permitted():
+        return _terminal_guard()
+    try:
+        with _db_connect() as con:
+            _ensure_schema(con)
+            with con.cursor() as cur:
+                cur.execute("""SELECT event_id, created_at, symbol, side, timeframe,
+                         entry_price, stop_loss, take_profit, status
+                         FROM luxalgo_one_trade_candidate WHERE singleton_id=1""")
+                row = cur.fetchone()
+        candidate = None
+        if row:
+            candidate = {
+                'event_id': row['event_id'],
+                'created_at': row['created_at'].isoformat(),
+                'symbol': row['symbol'], 'side': row['side'],
+                'timeframe': row['timeframe'],
+                'entry_price': str(row['entry_price']),
+                'stop_loss': str(row['stop_loss']),
+                'take_profit': str(row['take_profit']),
+                'state': row['status'],
+            }
+        return jsonify(status='READ_ONLY', candidate=candidate,
+                       engine_connected=False, exchange_order_submitted=False,
+                       exchange_protection_verified=False,
+                       orders_enabled=False, live_trading=False)
+    except (psycopg.Error, RuntimeError, OSError):
+        return jsonify(status='UNAVAILABLE', candidate=None,
+                       orders_enabled=False, live_trading=False), 503
 
 
 def binance_read_only_ping(api_key, api_secret):
@@ -4739,6 +4743,14 @@ def _scan_one_pair(symbol,tf,change):
     usable = sorted({x[0]:x for x in usable}.values())
     if len(usable)<26 or any(b[0]-a[0]!=secs for a,b in zip(usable[-26:-1],usable[-25:])):
         raise ValueError('Insufficient consecutive candles')
+    # Wilder ATR(14) on completed candles; must not use an in-progress bar.
+    true_ranges = [max(cur[2]-cur[3], abs(cur[2]-prev[1]), abs(cur[3]-prev[1]))
+                   for prev,cur in zip(usable[:-1],usable[1:])]
+    atr14 = sum(true_ranges[:14])/14
+    for tr in true_ranges[14:]:
+        atr14 = (atr14*13 + tr)/14
+    if not math.isfinite(atr14) or atr14<=0:
+        raise ValueError('Invalid completed-candle ATR')
     closes = [b[1] for b in usable]; current = closes[-1]
     ema9 = _ema(closes,9); ema21 = _ema(closes,21); rsi = _rsi(closes)
     h20 = max(b[2] for b in usable[-21:-1]); l20 = min(b[3] for b in usable[-21:-1])
@@ -4752,7 +4764,7 @@ def _scan_one_pair(symbol,tf,change):
                 + (10 if change>1 else -10 if change< -1 else 0))
     return {'contract':symbol,'bias':'bullish' if bull_break else 'bearish' if bear_break else 'mixed',
             'score':score,'rsi':round(rsi,2),'volume_ratio':round(vr,2),'timeframe':tf,
-            'reference_price':current,'support':l20,'resistance':h20,'candle_at':usable[-1][0]}
+            'reference_price':current,'support':l20,'resistance':h20,'atr14':atr14,'candle_at':usable[-1][0]}
 
 
 def _run_scan(tf):
@@ -4859,26 +4871,63 @@ def terminal_advanced_scanner():
         score=abs(p15['score'])+abs(p5['score'])+min(30,p5['volume_ratio']*10)
         signal=next((a for a in fresh if a['symbol'].replace('_','')==sym.replace('_','') and a['side']==side
                      and a['timeframe'] in ('5m','15m')),None)
-        entry=sl=tp=rr=None;size_hint='—';reason='LuxAlgo SL1/TP1 not confirmed';confirmation='PENDING';state='WATCHLIST ONLY'
+        # Technical plan is a non-executable, completed-candle ATR estimate.
+        # A market watchlist never becomes an authenticated LuxAlgo order.
+        entry=sl=tp=rr=None;size_hint='—';confirmation='PENDING';state='WATCHLIST ONLY'
+        level_source='UNAVAILABLE';reason='Technical market reference unavailable'
+        technical_atr=p15.get('atr14');technical_entry=p15.get('reference_price')
+        try:
+            e=float(technical_entry);atr=float(technical_atr)
+            if not all(math.isfinite(x) and x>0 for x in (e,atr)):
+                raise ValueError('Invalid technical reference/ATR')
+            stop_distance=1.5*atr
+            if stop_distance>=e:
+                raise ValueError('ATR stop too large relative to reference')
+            entry=e
+            sl=e-stop_distance if islong else e+stop_distance
+            tp=e+2*stop_distance if islong else e-2*stop_distance
+            if tp<=0:raise ValueError('Invalid technical target')
+            rr=2.0
+            level_source='TECHNICAL ESTIMATE'
+            reason='ATR-based technical preview; LuxAlgo confirmation pending'
+            if equity is None or available is None or open_count is None:
+                reason+='; verified account sizing unavailable'
+            elif equity>0 and available>0 and open_count<5:
+                # Preview BASE units only, NOT an executable Gate.io contract quantity.
+                qty=min(equity*.03/stop_distance, available*5/e)
+                if math.isfinite(qty) and qty>0:
+                    size_hint=f'{qty:.8g} base units (technical estimate)'
+            elif open_count>=5:
+                reason+='; five exchange positions already open'
+            else:
+                reason+='; available balance not positive'
+        except (ValueError,TypeError,ZeroDivisionError,OverflowError):
+            reason='No valid 15m ATR technical estimate available'
         if signal:
             try:
-                entry=float(signal['entry_price']);sl=float(signal['stop_loss']);tp=float(signal['take_profit'])
-                good=all(map(math.isfinite,(entry,sl,tp))) and ((sl<entry<tp) if islong else (tp<entry<sl))
-                if good:
-                    rr=round(abs(tp-entry)/abs(entry-sl),2)
-                    confirmation='VALIDATED ALERT';reason='Exchange protection and execution engine not ready'
-                    if rr<1.5:reason='R:R below 1.5 preference'
-                    if equity is None or available is None or open_count is None:reason='Account verification unavailable'
-                    elif open_count>=1:reason='One-position limit reached'
-                    elif rr>=1.5:
-                        # Indicative base-asset size only, NOT Gate.io contract size.
-                        base_qty=min(equity*.03/abs(entry-sl), max(0,available)*5/entry)
-                        size_hint=f'{base_qty:.8g} base units (indicative)'
-                else:reason='LuxAlgo prices failed directional validation';confirmation='INVALID ALERT'
+                se=float(signal['entry_price']);ss=float(signal['stop_loss']);st=float(signal['take_profit'])
+                valid=all(math.isfinite(x) and x>0 for x in (se,ss,st)) and ((ss<se<st) if islong else (st<se<ss))
+                if not valid:raise ValueError('Invalid directional verified alert levels')
+                entry,sl,tp=se,ss,st
+                rr=round(abs(st-se)/abs(se-ss),2)
+                confirmation='VALIDATED ALERT'
+                level_source='STORED LUXALGO LEVELS'
+                reason='Verified signal levels (within 3m); exchange execution remains BLOCKED'
+                size_hint='—'
+                if equity is not None and available is not None and open_count is not None and open_count<5 and equity>0 and available>0:
+                    qty=min(equity*.03/abs(se-ss),available*5/se)
+                    if math.isfinite(qty) and qty>0:
+                        size_hint=f'{qty:.8g} base units (indicative)'
+                elif open_count is not None and open_count>=5:
+                    reason+='; maximum five positions'
+                else:reason+='; account sizing unavailable'
+                if rr<1.5:reason+='; R:R below 1.5 preference'
             except (ValueError,TypeError,ZeroDivisionError,OverflowError):
-                reason='LuxAlgo prices failed validation';confirmation='INVALID ALERT'
+                confirmation='INVALID ALERT'
+                reason='Stored LuxAlgo levels invalid; '+reason
+        # Never allow a watchlist candidate to become an executable order.
         candidates.append({'symbol':sym.replace('_',''),'side':side,'timeframe':'5m + 15m',
-                           'confirmation':confirmation,'entry':entry,'sl1':sl,'tp1':tp,'rr':rr,
+                           'confirmation':confirmation,'level_source':level_source,'entry':entry,'sl1':sl,'tp1':tp,'rr':rr,
                            'size_hint':size_hint,'status':state,'reason':reason,'score':round(score,1),'volume':ticker['volume']})
     # Score combines 5m and 15m momentum; never label as executable.
     candidates.sort(key=lambda p:(-p['score'],-p['volume'],p['symbol']))
