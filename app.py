@@ -631,6 +631,24 @@ header.terminal-header{border-radius:17px!important}
 #v4RecentWrapper .panel{margin:0}
 @media(max-width:900px){.metric-grid{grid-template-columns:repeat(3,1fr)!important}.v4-numbers{grid-template-columns:repeat(2,minmax(0,1fr))}.v4-controls{grid-template-columns:repeat(2,1fr)}}
 @media(max-width:570px){.metric-grid{grid-template-columns:repeat(2,1fr)!important}.v4-token{font-size:18px}.v4-number-value{font-size:16px}.v4-number-value.big{font-size:21px}#v4PaperCards{padding:0 11px 11px}.v4-head{padding:14px 12px}}
+
+/* V4.1 compact two-up position monitor — visual change only, no trading logic changes. */
+#v4PaperCards{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;padding:12px 16px 17px;align-items:stretch}
+#v4PaperCards>.v4-trade{min-width:0;margin:0;padding:13px 14px 14px;border:1px solid #355a7b;border-radius:12px;background:linear-gradient(145deg,#142d49 0%,#0a1d32 100%);box-shadow:inset 0 1px 0 #ffffff10,0 3px 10px #0003}
+#v4PaperCards>.v4-prompt{grid-column:1/-1}
+#v4PaperCards .v4-trade-top{gap:7px;align-items:flex-start}
+#v4PaperCards .v4-trade-top>div:first-child{gap:6px!important}
+#v4PaperCards .v4-token{font-size:17px;line-height:1.3}
+#v4PaperCards .v4-tag{font-size:10px;padding:3px 5px}
+#v4PaperCards .v4-side{font-size:11px;padding:3px 6px}
+#v4PaperCards .v4-numbers{grid-template-columns:repeat(4,minmax(0,1fr));gap:9px 7px;margin-top:12px}
+#v4PaperCards .v4-number-label{font-size:10px;line-height:1.3;letter-spacing:0}
+#v4PaperCards .v4-number-value{font-size:14px;font-weight:700;margin-top:4px}
+#v4PaperCards .v4-number-value.big{font-size:19px;font-weight:900}
+#v4PaperCards .v4-controls{gap:6px;margin-top:13px}
+#v4PaperCards .v4-controls button{font-size:11px;padding:9px 3px;border-radius:7px}
+@media(max-width:1020px){#v4PaperCards{grid-template-columns:1fr}#v4PaperCards .v4-token{font-size:19px}}
+@media(max-width:570px){#v4PaperCards{padding:10px;gap:9px}#v4PaperCards .v4-numbers{grid-template-columns:repeat(2,minmax(0,1fr))}#v4PaperCards .v4-controls{grid-template-columns:repeat(2,minmax(0,1fr))}}
 </style></head><body><div class="wrap"><header class="terminal-header"><div class="terminal-brand"><h1>LUXALGO PRO · TRADING TERMINAL</h1><p>Gate.io USDT Perpetual · LuxAlgo 5m / 15m · Coded by · SUBHASISH</p>
 <div class="profile-greeting"><div class="profile-avatar" id="avatarDisplay"><span>SD</span></div>
 <div><div class="profile-name">Hello SUBHASISH</div><label class="profile-change" for="profileImageInput" tabindex="0">Change Photo</label><input type="file" id="profileImageInput" accept="image/png,image/jpeg,image/webp" hidden></div></div></div><section class="news-slot" aria-label="Latest crypto news"><div class="news-heading"><span>● CRYPTO NEWS</span><span style="display:flex;align-items:center;gap:7px"><span id="newsFeedStatus">Loading headlines…</span><button type="button" id="newsRefresh" aria-label="Refresh crypto news" title="Refresh crypto news">↻</button></span></div><div class="news-viewport" id="newsViewport"><div class="news-stack" id="newsStack"><span class="news-empty">Retrieving publisher headlines…</span></div></div></section><div class="profile-right">
@@ -1621,12 +1639,12 @@ if(recent){
  });
 }
 let demo=false,active='';
-const examples=[['IRYSUSDT','LONG',20,.04,15.12,6,.29,.0734006,.07396,.063115],['BIRBUSDT','SHORT',50,-.03,-11.78,9.92,.19,.08079,.080634,.087],['INITUSDT','LONG',20,.00,3.26,5.98,.29,.153,.1533165,.1301081],['AKEUSDT','LONG',10,.01,2,5.5,.54,.039726,.039815,.0330489]];
+const examples=[['IRYSUSDT','LONG',20,.04,15.12,6,.29,.0734006,.07396,.063115],['BIRBUSDT','SHORT',50,-.03,-11.78,9.92,.19,.08079,.080634,.087],['INITUSDT','LONG',20,.00,3.26,5.98,.29,.153,.1533165,.1301081],['AKEUSDT','LONG',10,.01,2,5.5,.54,.039726,.039815,.0330489],['SOLUSDT','SHORT',5,.87,1.45,300,60,166.5,166.02,199.0],['AVAXUSDT','LONG',5,-.42,-.70,300,60,9.092,9.079,7.2]];
 function fmt(v){const x=Number(v);return Number.isFinite(x)?String(v):'—'}
 function numCell(k,v,extra=''){return '<div><span class="v4-number-label">'+k+'</span><div class="v4-number-value '+extra+'">'+v+'</div></div>'}
 function card(d){const gain=Number(d.pnl)>=0,cl=gain?'v4-pnl-good':'v4-pnl-bad';const pnl=Number.isFinite(Number(d.pnl))?((Number(d.pnl)>0?'+':'')+d.pnl):'—';return '<article class="v4-trade"><div class="v4-trade-top"><div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><span class="v4-side '+(d.side==='SHORT'?'short':'')+'">'+(d.side==='SHORT'?'S':'L')+'</span><button class="v4-token" type="button" data-v4-symbol="'+d.symbol+'">'+d.symbol+' ↗</button><span class="v4-tag">Perp</span><span class="v4-tag">'+d.leverage+'</span><span class="v4-tag">'+(demo?'DEMO':'PAPER')+'</span></div><div style="text-align:right"><div class="v4-number-label">ROI (estimated)</div><div class="v4-number-value big '+cl+'">'+d.roi+'</div></div></div><div class="v4-numbers">'+numCell('UNREALIZED P&L (USDT)',pnl,cl+' big')+numCell('SIZE (USDT)',d.size)+numCell('MARGIN (USDT)',d.margin)+numCell('ENTRY PRICE',d.entry)+numCell('MARK PRICE',d.mark)+numCell('LIQ. PRICE',d.liq)+numCell('STOP LOSS',d.sl)+numCell('TAKE PROFIT',d.tp)+'</div><div class="v4-controls"><button disabled title="Live execution not implemented">TP/SL</button><button disabled title="Live execution not implemented">Reverse</button><button disabled title="Live execution not implemented">Market Close</button><button disabled title="Live execution not implemented">Close</button></div></article>'}
 function fromTable(){const rows=[...table.querySelectorAll('tr[data-paper-event-id]')].filter(r=>r.dataset.paperState==='OPEN');return rows.map(r=>{const c=[...r.cells].map(x=>x.textContent.trim()), entry=Number(c[3]), mark=Number(c[7]), p=Number(c[8]);return {symbol:c[1],side:c[2],leverage:'Not verified',pnl:c[8],roi:'—',size:'Not verified',margin:'Not verified',entry:c[3],mark:c[7],liq:'Not available',sl:c[4],tp:c[5]}})}
-function draw(){let data;if(demo){data=examples.map(x=>({symbol:x[0],side:x[1],leverage:'Cross '+x[2]+'x',pnl:x[3],roi:x[4]+'%',size:x[5],margin:x[6],entry:x[7],mark:x[8],liq:x[9],sl:'Sample only',tp:'Sample only'}))}else{data=fromTable()};document.getElementById('v4TabCount').textContent='Positions ('+data.length+')';const cards=document.getElementById('v4PaperCards');cards.innerHTML=data.length?data.map(card).join(''):'<div class="v4-prompt">No OPEN paper positions currently. Closed paper trades remain in history. Use SHOW SAMPLE LAYOUT to inspect the four-card design without placing any trades.</div>'}
+function draw(){let data;if(demo){data=examples.map(x=>({symbol:x[0],side:x[1],leverage:'Cross '+x[2]+'x',pnl:x[3],roi:x[4]+'%',size:x[5],margin:x[6],entry:x[7],mark:x[8],liq:x[9],sl:'Sample only',tp:'Sample only'}))}else{data=fromTable()};document.getElementById('v4TabCount').textContent='Positions ('+data.length+')';const cards=document.getElementById('v4PaperCards');cards.innerHTML=data.length?data.map(card).join(''):'<div class="v4-prompt">No OPEN paper positions currently. Closed paper trades remain in history. Use SHOW SAMPLE LAYOUT to inspect the six-card design without placing any trades.</div>'}
 workspace.querySelector('#v4DemoToggle').onclick=()=>{demo=!demo;document.getElementById('v4DemoWarning').hidden=!demo;document.getElementById('v4DemoToggle').textContent=demo?'RETURN TO REAL PAPER DATA':'SHOW SAMPLE LAYOUT';draw()};
 function openChart(sym){if(!/^[A-Z0-9]{2,26}USDT$/.test(sym))return;active=sym;document.getElementById('v4SelectedName').textContent=sym+' · PUBLIC LIVE CANDLES';modal.classList.add('open');document.body.style.overflow='hidden';const field=document.getElementById('chartSymbol');field.value=sym;const refresh=document.getElementById('chartRefresh');requestAnimationFrame(()=>setTimeout(()=>refresh?.click(),120));}
 function closeChart(){modal.classList.remove('open');document.body.style.overflow=''}
