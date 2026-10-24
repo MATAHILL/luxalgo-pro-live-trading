@@ -712,10 +712,10 @@ header.terminal-header{border-radius:17px!important}
 <p class="light">Technical labels reflect EMA trend, RSI, recent price-range break and candle volume. They are not LuxAlgo orders.</p>
 </section></div>
 <section class="panel advanced-panel" id="advancedScannerPanel"><div class="panel-heading"><h2>LUXALGO PRO · ADVANCED FUTURES OPPORTUNITY SCANNER <span class="gloss-cyan">● MARKET INTELLIGENCE</span></h2><button class="btn gloss-action" id="advancedRefresh" type="button">↻ Scan All Pairs</button></div>
-<p class="light">Gate.io USDT perpetuals · 5m + 15m completed candles · volume / trend / structure screening · up to five watchlist candidates. Only genuine stored LuxAlgo alerts can confirm SL1 and TP1. NEVER PLACES ORDERS.</p>
+<p class="light">Gate.io USDT perpetuals · 5m + 15m completed candles · volume / trend / structure screening · up to five watchlist candidates. ATR-based technical levels are estimates only; only genuine stored LuxAlgo alerts confirm SL1/TP1. NEVER PLACES ORDERS.</p>
 <div class="adv-controls"><strong id="advancedScanStatus" class="adv-summary">Ready to inspect markets…</strong><span id="advancedEquityInfo" class="light">Equity risk sizing: verifying read-only account</span></div>
 <div class="adv-table"><table><thead><tr><th>PAIR</th><th>DIRECTION</th><th>TIMEFRAME</th><th>LUXALGO</th><th>ENTRY REF.</th><th>SL1</th><th>TP1</th><th>R:R</th><th>3% RISK / SIZE</th><th>STATUS / REASON</th></tr></thead><tbody id="advancedScanBody"><tr><td colspan="10" class="light">Waiting for scan results.</td></tr></tbody></table></div>
-<p class="light">Technical watchlist is NOT a LuxAlgo signal or recommendation. No fresh verified SL1/TP1 = NO TRADE. Capital figures are account-read-only; sizes are indicative BASE-asset quantities, not validated Gate.io contract quantities. Live execution remains BLOCKED.</p>
+<p class="light">Technical watchlist is NOT a LuxAlgo signal or recommendation. Technical entry/SL1/TP1 are non-executable previews. No verified LuxAlgo SL1/TP1 = NO TRADE. Capital figures are account-read-only; sizes are indicative BASE-asset quantities, not validated Gate.io contract quantities. Live execution remains BLOCKED.</p>
 </section>
 <div class="bottom-grid"><section class="panel"><h2>RECENT LUXALGO SIGNALS · 5m / 15m</h2><div class="tablewrap"><table><thead><tr><th>Received (IST)</th><th>Token</th><th>Signal</th><th>Timeframe</th><th>Status</th><th>Entry / SL / TP Plan</th></tr></thead><tbody>{% for r in records %}<tr><td>{{r.time_ist|e}}</td><td>{{r.symbol|e}}</td><td>{{r.side|e}}</td><td>{{r.tf|e}}</td><td>Received · Not executed</td><td><button class="btn plan" data-symbol="{{r.symbol|e}}" data-side="{{r.side|e}}" data-tf="{{r.tf|e}}">Plan + Chart</button> <button class="btn signal-risk" type="button" data-received="{{r.time|e}}" data-symbol="{{r.symbol|e}}" data-side="{{r.side|e}}" data-tf="{{r.tf|e}}">Signal Risk Check</button> <button class="btn execution-check" type="button" data-event-id="{{r.event_id|e}}">Execution Precheck</button> <button class="btn simulate-order" type="button" data-event-id="{{r.event_id|e}}">Simulate Order</button> <button class="btn call-status" type="button" data-event-id="{{r.event_id|e}}" title="Review signal market outcome (not a real exchange trade)">↻ Call Status</button> <button class="btn delete-recent-signal" type="button" data-event-id="{{r.event_id|e}}">Delete</button></td></tr>{% else %}<tr><td colspan="6">No signals stored in the database yet.</td></tr>{% endfor %}</tbody></table></div><p id="callStatusDetail" class="light" role="status" aria-live="polite">Call status checks public completed candles, not exchange fills.</p><p id="executionCheckStatus" class="light" role="status" aria-live="polite">Execution engine foundation: protected prechecks only; exchange orders disabled.</p><p id="simulatedOrderStatus" class="light" role="status" aria-live="polite">Stage 2: explicit simulated order requests only; no actual exchange positions or protective orders.</p><p class="light">Signals are received events, not fills. Signal receipts and dry-run intent IDs are saved in PostgreSQL. Duplicate signals may not create separate dry-run intents.</p></section>
 <section class="panel performance-panel"><div class="panel-heading"><h2>PERFORMANCE ANALYTICS</h2><span class="label-muted">VERIFIED FILLS ONLY</span></div><div class="perf-grid"><div><span>Total Closed Trades</span><strong>—</strong></div><div><span>Winning Trades</span><strong>—</strong></div><div><span>Losing Trades</span><strong>—</strong></div><div><span>Win Rate</span><strong>—</strong></div><div><span>Total Realized P&amp;L</span><strong>—</strong></div><div><span>Unrealized P&amp;L</span><strong>—</strong></div></div><p class="light">Waiting for authenticated position and fill synchronization. No synthetic P&amp;L or win statistics.</p></section></div><section class="panel"><h2>TRADE PLAN · SL · TP1 <span class="tag">READ ONLY</span></h2>
@@ -733,7 +733,7 @@ header.terminal-header{border-radius:17px!important}
   let x=data.scan||{};status.textContent='5m '+(x['5m']?.scanned||0)+'/'+(x['5m']?.total||0)+' · 15m '+(x['15m']?.scanned||0)+'/'+(x['15m']?.total||0)+(x.running?' · scanning progressively':' · current snapshot')+' · '+(data.updated_at?new Date(data.updated_at*1000).toLocaleTimeString():'pending');
   risk.textContent=data.equity_usdt==null?'Risk sizing unavailable (equity not verified)':'Verified equity: '+data.equity_usdt.toFixed(2)+' USDT · 3% budget '+data.risk_budget_usdt.toFixed(2)+' USDT';
   body.replaceChildren();if(!data.candidates?.length){const tr=body.insertRow();cell(tr,'NO TRADE · '+(x.running?'Scans are still running':'No verified opportunities meeting screening conditions'), 'adv-blocked').colSpan=10;}
-  for(const p of (data.candidates||[])){const tr=body.insertRow();cell(tr,p.symbol);cell(tr,p.side,p.side==='LONG'?'adv-signal long':'adv-signal short');cell(tr,p.timeframe);cell(tr,p.confirmation);cell(tr,p.entry);cell(tr,p.sl1);cell(tr,p.tp1);cell(tr,p.rr);cell(tr,p.size_hint);cell(tr,p.status+' · '+p.reason,'adv-reason');}
+  for(const p of (data.candidates||[])){const tr=body.insertRow();cell(tr,p.symbol);cell(tr,p.side,p.side==='LONG'?'adv-signal long':'adv-signal short');cell(tr,p.timeframe);cell(tr,p.confirmation);cell(tr,p.entry==null?'—':Number(p.entry).toPrecision(7));cell(tr,p.sl1==null?'—':Number(p.sl1).toPrecision(7));cell(tr,p.tp1==null?'—':Number(p.tp1).toPrecision(7));cell(tr,p.rr);cell(tr,p.size_hint);cell(tr,p.status+' · '+(p.level_source||'UNAVAILABLE')+' · '+p.reason,'adv-reason');}
  }catch(e){status.textContent='Advanced scan unavailable: '+e.message;body.replaceChildren();const tr=body.insertRow();cell(tr,'NO TRADE · market confirmation unavailable').colSpan=10;}
  finally{busy=false;btn.disabled=false;}}
  btn.addEventListener('click',()=>refresh(true));refresh();setInterval(()=>{if(!document.hidden)refresh();},20000);
@@ -4808,6 +4808,14 @@ def _scan_one_pair(symbol,tf,change):
     usable = sorted({x[0]:x for x in usable}.values())
     if len(usable)<26 or any(b[0]-a[0]!=secs for a,b in zip(usable[-26:-1],usable[-25:])):
         raise ValueError('Insufficient consecutive candles')
+    # Wilder ATR(14) on completed candles; must not use an in-progress bar.
+    true_ranges = [max(cur[2]-cur[3], abs(cur[2]-prev[1]), abs(cur[3]-prev[1]))
+                   for prev,cur in zip(usable[:-1],usable[1:])]
+    atr14 = sum(true_ranges[:14])/14
+    for tr in true_ranges[14:]:
+        atr14 = (atr14*13 + tr)/14
+    if not math.isfinite(atr14) or atr14<=0:
+        raise ValueError('Invalid completed-candle ATR')
     closes = [b[1] for b in usable]; current = closes[-1]
     ema9 = _ema(closes,9); ema21 = _ema(closes,21); rsi = _rsi(closes)
     h20 = max(b[2] for b in usable[-21:-1]); l20 = min(b[3] for b in usable[-21:-1])
@@ -4821,7 +4829,7 @@ def _scan_one_pair(symbol,tf,change):
                 + (10 if change>1 else -10 if change< -1 else 0))
     return {'contract':symbol,'bias':'bullish' if bull_break else 'bearish' if bear_break else 'mixed',
             'score':score,'rsi':round(rsi,2),'volume_ratio':round(vr,2),'timeframe':tf,
-            'reference_price':current,'support':l20,'resistance':h20,'candle_at':usable[-1][0]}
+            'reference_price':current,'support':l20,'resistance':h20,'atr14':atr14,'candle_at':usable[-1][0]}
 
 
 def _run_scan(tf):
@@ -4928,26 +4936,63 @@ def terminal_advanced_scanner():
         score=abs(p15['score'])+abs(p5['score'])+min(30,p5['volume_ratio']*10)
         signal=next((a for a in fresh if a['symbol'].replace('_','')==sym.replace('_','') and a['side']==side
                      and a['timeframe'] in ('5m','15m')),None)
-        entry=sl=tp=rr=None;size_hint='—';reason='LuxAlgo SL1/TP1 not confirmed';confirmation='PENDING';state='WATCHLIST ONLY'
+        # Technical plan is a non-executable, completed-candle ATR estimate.
+        # A market watchlist never becomes an authenticated LuxAlgo order.
+        entry=sl=tp=rr=None;size_hint='—';confirmation='PENDING';state='WATCHLIST ONLY'
+        level_source='UNAVAILABLE';reason='Technical market reference unavailable'
+        technical_atr=p15.get('atr14');technical_entry=p15.get('reference_price')
+        try:
+            e=float(technical_entry);atr=float(technical_atr)
+            if not all(math.isfinite(x) and x>0 for x in (e,atr)):
+                raise ValueError('Invalid technical reference/ATR')
+            stop_distance=1.5*atr
+            if stop_distance>=e:
+                raise ValueError('ATR stop too large relative to reference')
+            entry=e
+            sl=e-stop_distance if islong else e+stop_distance
+            tp=e+2*stop_distance if islong else e-2*stop_distance
+            if tp<=0:raise ValueError('Invalid technical target')
+            rr=2.0
+            level_source='TECHNICAL ESTIMATE'
+            reason='ATR-based technical preview; LuxAlgo confirmation pending'
+            if equity is None or available is None or open_count is None:
+                reason+='; verified account sizing unavailable'
+            elif equity>0 and available>0 and open_count<5:
+                # Preview BASE units only, NOT an executable Gate.io contract quantity.
+                qty=min(equity*.03/stop_distance, available*5/e)
+                if math.isfinite(qty) and qty>0:
+                    size_hint=f'{qty:.8g} base units (technical estimate)'
+            elif open_count>=5:
+                reason+='; five exchange positions already open'
+            else:
+                reason+='; available balance not positive'
+        except (ValueError,TypeError,ZeroDivisionError,OverflowError):
+            reason='No valid 15m ATR technical estimate available'
         if signal:
             try:
-                entry=float(signal['entry_price']);sl=float(signal['stop_loss']);tp=float(signal['take_profit'])
-                good=all(map(math.isfinite,(entry,sl,tp))) and ((sl<entry<tp) if islong else (tp<entry<sl))
-                if good:
-                    rr=round(abs(tp-entry)/abs(entry-sl),2)
-                    confirmation='VALIDATED ALERT';reason='Exchange protection and execution engine not ready'
-                    if rr<1.5:reason='R:R below 1.5 preference'
-                    if equity is None or available is None or open_count is None:reason='Account verification unavailable'
-                    elif open_count>=1:reason='One-position limit reached'
-                    elif rr>=1.5:
-                        # Indicative base-asset size only, NOT Gate.io contract size.
-                        base_qty=min(equity*.03/abs(entry-sl), max(0,available)*5/entry)
-                        size_hint=f'{base_qty:.8g} base units (indicative)'
-                else:reason='LuxAlgo prices failed directional validation';confirmation='INVALID ALERT'
+                se=float(signal['entry_price']);ss=float(signal['stop_loss']);st=float(signal['take_profit'])
+                valid=all(math.isfinite(x) and x>0 for x in (se,ss,st)) and ((ss<se<st) if islong else (st<se<ss))
+                if not valid:raise ValueError('Invalid directional verified alert levels')
+                entry,sl,tp=se,ss,st
+                rr=round(abs(st-se)/abs(se-ss),2)
+                confirmation='VALIDATED ALERT'
+                level_source='STORED LUXALGO LEVELS'
+                reason='Verified signal levels (within 3m); exchange execution remains BLOCKED'
+                size_hint='—'
+                if equity is not None and available is not None and open_count is not None and open_count<5 and equity>0 and available>0:
+                    qty=min(equity*.03/abs(se-ss),available*5/se)
+                    if math.isfinite(qty) and qty>0:
+                        size_hint=f'{qty:.8g} base units (indicative)'
+                elif open_count is not None and open_count>=5:
+                    reason+='; maximum five positions'
+                else:reason+='; account sizing unavailable'
+                if rr<1.5:reason+='; R:R below 1.5 preference'
             except (ValueError,TypeError,ZeroDivisionError,OverflowError):
-                reason='LuxAlgo prices failed validation';confirmation='INVALID ALERT'
+                confirmation='INVALID ALERT'
+                reason='Stored LuxAlgo levels invalid; '+reason
+        # Never allow a watchlist candidate to become an executable order.
         candidates.append({'symbol':sym.replace('_',''),'side':side,'timeframe':'5m + 15m',
-                           'confirmation':confirmation,'entry':entry,'sl1':sl,'tp1':tp,'rr':rr,
+                           'confirmation':confirmation,'level_source':level_source,'entry':entry,'sl1':sl,'tp1':tp,'rr':rr,
                            'size_hint':size_hint,'status':state,'reason':reason,'score':round(score,1),'volume':ticker['volume']})
     # Score combines 5m and 15m momentum; never label as executable.
     candidates.sort(key=lambda p:(-p['score'],-p['volume'],p['symbol']))
