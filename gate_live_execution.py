@@ -29,3 +29,42 @@ def submit_live_order(*args, **kwargs):
         "LIVE ORDER BLOCKED: Safe execution is not yet implemented."
     )
 
+
+def check_gate_public_connection():
+    """Check Gate.io public futures API without trading."""
+    import json
+    from urllib.request import Request, urlopen
+
+    url = "https://api.gateio.ws/api/v4/futures/usdt/contracts/BTC_USDT"
+
+    try:
+        request = Request(
+            url,
+            headers={"Accept": "application/json"}
+        )
+
+        with urlopen(request, timeout=10) as response:
+            data = json.load(response)
+
+        if data.get("name") != "BTC_USDT":
+            return {
+                "status": "FAILED",
+                "reason": "Unexpected exchange response"
+            }
+
+        return {
+            "status": "CONNECTED",
+            "exchange": "Gate.io",
+            "market": "BTC_USDT",
+            "connection": "PUBLIC_READ_ONLY",
+            "live_trading": False,
+            "orders_enabled": False
+        }
+
+    except Exception as error:
+        return {
+            "status": "FAILED",
+            "reason": str(error),
+            "live_trading": False,
+            "orders_enabled": False
+        }
