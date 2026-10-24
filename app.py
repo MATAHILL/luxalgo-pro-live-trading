@@ -578,6 +578,59 @@ h2{font-size:15px;font-weight:850;letter-spacing:.3px}
 .bot-state-indicator.on{color:#d6ffe9;border-color:#29d982;background:#0a6145;box-shadow:0 0 10px #25e68c66}
 .bot-state-indicator.off{color:#ffe7e9;border-color:#f66a79;background:#812d3b;box-shadow:0 0 10px #f03b5766}
 .bot-state-indicator.unknown{color:#f5dfb0;border-color:#997a38;background:#494027}
+
+/* V4: approved Binance-inspired position workspace, visual layer only */
+.wrap{max-width:1510px!important;padding:18px 22px 36px!important}
+header.terminal-header{border-radius:17px!important}
+.metric-grid{display:grid!important;grid-template-columns:repeat(6,minmax(0,1fr))!important;gap:8px!important;margin:12px 0!important}
+.metric-grid .metric{min-height:75px!important;padding:10px 12px!important;border-radius:9px!important}
+.metric-grid .metric strong{font-size:17px!important;margin:4px 0!important}
+.metric-grid .metric small,.metric-grid .metric span{font-size:10px!important}
+#v4Workspace{background:linear-gradient(155deg,#122943,#0d2137);border:1px solid #335575;border-radius:16px;box-shadow:0 10px 24px #0003;margin-top:14px;overflow:hidden}
+.v4-head{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;padding:18px 20px;border-bottom:1px solid #2e4864}
+.v4-head strong{font-size:16px;letter-spacing:.2px}.v4-head small{color:#9ab5d0}
+.v4-tabs{padding:14px 20px 9px;display:flex;gap:23px;color:#a5b8cc;font-size:17px;align-items:center}
+.v4-tabs strong{border-bottom:4px solid #eacc53;color:#edf7ff;padding-bottom:8px}
+#v4PaperCards{padding:0 20px 12px}
+.v4-trade{padding:20px 2px 22px;border-top:1px solid #35506b}
+.v4-trade-top{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}
+.v4-token{border:0;background:transparent;color:#eff7ff;font-size:22px;font-weight:900;padding:3px 0;cursor:pointer;text-decoration:underline;text-decoration-color:#5abdfa;text-underline-offset:5px}
+.v4-token:hover{color:#77d8ff}
+.v4-side{padding:3px 8px;border-radius:5px;font-weight:900;background:#18885b;color:white}.v4-side.short{background:#ba4159}
+.v4-tag{background:#283a50;color:#d4e4ef;border:1px solid #52657a;border-radius:5px;padding:3px 7px;font-size:12px}
+.v4-numbers{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:16px 10px;margin-top:15px}
+.v4-number-label{font-size:12px;color:#a7bacc;border-bottom:1px dotted #526b81;display:inline-block}
+.v4-number-value{font-size:20px;margin-top:6px;font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
+.v4-number-value.big{font-size:27px;font-weight:900}
+.v4-pnl-good{color:#27d898}.v4-pnl-bad{color:#ff677c}
+.v4-controls{display:grid;grid-template-columns:repeat(4,1fr);gap:11px;margin-top:19px}
+.v4-controls button{border:1px solid #51657c;border-radius:9px;background:#35455b;color:#ecf4ff;padding:12px 8px;font-weight:700;cursor:not-allowed;opacity:.65}
+.v4-prompt{padding:24px 20px;color:#abc4dc;font-size:14px}
+#v4DemoToggle{border:1px solid #60abda;background:#163f60;color:#e8f7ff;border-radius:8px;padding:9px 13px;cursor:pointer}
+.v4-demo-banner{background:#553821;border:1px solid #a67938;color:#ffe1a1;border-radius:9px;padding:10px 13px;margin:0 20px 12px}
+#v4ChartModal{position:fixed;inset:0;z-index:10000;background:#020a16e8;display:none;align-items:center;justify-content:center;padding:20px}
+#v4ChartModal.open{display:flex}
+#v4ModalBox{background:#10253e;border:1px solid #4d7faa;width:min(1230px,96vw);max-height:95vh;overflow:auto;border-radius:16px;padding:14px 18px;box-shadow:0 20px 70px #000b}
+#v4ModalHeader{display:flex;justify-content:space-between;align-items:center;gap:9px;padding:5px 0 10px}
+#v4ModalHeader strong{font-size:21px}
+#v4CloseChart{background:#57283b;color:#fff;border:1px solid #bb6481;padding:10px 14px;border-radius:8px;cursor:pointer}
+#v4ChartMount .panel{margin:0}
+#v4ChartMount #tradeChart{height:550px!important}
+.v4-tools{font-size:12px;color:#b7cce2;padding:10px 0}
+#v4LegacyPaperHost{display:none!important}
+#v4LegacyGateHost{display:none!important}
+#v4ChartOriginal{display:block!important}
+.bottom-grid{grid-template-columns:1fr!important}
+.bottom-grid>section:first-child{width:100%}
+.bottom-grid>section:first-child .tablewrap{max-height:410px;overflow:auto}
+#v4RecentWrapper:not([open]){padding:0!important}
+#v4RecentWrapper>summary{list-style:none;padding:16px 18px;font-weight:900;cursor:pointer}
+#v4RecentWrapper>summary::-webkit-details-marker{display:none}
+#v4RecentWrapper[open]>summary{border-bottom:1px solid #33516a}
+#v4RecentWrapper>.bottom-grid{margin:0;padding:9px}
+#v4RecentWrapper .panel{margin:0}
+@media(max-width:900px){.metric-grid{grid-template-columns:repeat(3,1fr)!important}.v4-numbers{grid-template-columns:repeat(2,minmax(0,1fr))}.v4-controls{grid-template-columns:repeat(2,1fr)}}
+@media(max-width:570px){.metric-grid{grid-template-columns:repeat(2,1fr)!important}.v4-token{font-size:18px}.v4-number-value{font-size:16px}.v4-number-value.big{font-size:21px}#v4PaperCards{padding:0 11px 11px}.v4-head{padding:14px 12px}}
 </style></head><body><div class="wrap"><header class="terminal-header"><div class="terminal-brand"><h1>LUXALGO PRO · TRADING TERMINAL</h1><p>Gate.io USDT Perpetual · LuxAlgo 5m / 15m · Coded by · SUBHASISH</p>
 <div class="profile-greeting"><div class="profile-avatar" id="avatarDisplay"><span>SD</span></div>
 <div><div class="profile-name">Hello SUBHASISH</div><label class="profile-change" for="profileImageInput" tabindex="0">Change Photo</label><input type="file" id="profileImageInput" accept="image/png,image/jpeg,image/webp" hidden></div></div></div><section class="news-slot" aria-label="Latest crypto news"><div class="news-heading"><span>● CRYPTO NEWS</span><span style="display:flex;align-items:center;gap:7px"><span id="newsFeedStatus">Loading headlines…</span><button type="button" id="newsRefresh" aria-label="Refresh crypto news" title="Refresh crypto news">↻</button></span></div><div class="news-viewport" id="newsViewport"><div class="news-stack" id="newsStack"><span class="news-empty">Retrieving publisher headlines…</span></div></div></section><div class="profile-right">
@@ -1504,6 +1557,47 @@ loadRadar();loadScanner();setInterval(()=>{if(!document.hidden)loadRadar()},6000
  document.addEventListener('visibilitychange',()=>{if(!document.hidden)check();});
  check();
  setInterval(()=>{if(failures<3||!document.hidden)check();},4000);
+})();
+
+// Stage 16 V4 presentation. Reads existing paper table only; does not mutate trades.
+(function(){
+'use strict';
+const table=document.getElementById('paperBody');
+const btn=document.getElementById('paperRefresh');
+const sourceChart=document.getElementById('chartShell');
+const sourcePanel=sourceChart&&sourceChart.closest('.panel');
+const legacyPaper=table&&table.closest('.panel');
+const legacyGate=document.getElementById('gatePositionsBody')?.closest('.panel');
+const strip=document.querySelector('.metric-grid');
+const radar=document.querySelector('.market-grid');
+const recent=document.querySelector('.bottom-grid');
+if(!table||!sourcePanel||!strip||!radar)return;
+if(legacyPaper)legacyPaper.id='v4LegacyPaperHost';
+if(legacyGate)legacyGate.id='v4LegacyGateHost';
+sourcePanel.id='v4ChartOriginal';
+const workspace=document.createElement('section');workspace.id='v4Workspace';
+workspace.innerHTML='<div class="v4-head"><div><strong>INDIVIDUAL OPEN POSITIONS · PAPER SIMULATION</strong><br><small>Click a token for one live public-market chart · Price estimates are NOT exchange fills</small></div><button id="v4DemoToggle" type="button">SHOW SAMPLE LAYOUT</button></div><div class="v4-tabs"><strong id="v4TabCount">Positions (0)</strong><span>Open Orders (0)</span><span>Paper BOT</span></div><div id="v4DemoWarning" hidden class="v4-demo-banner">SAMPLE LAYOUT ONLY — Positions, balances and profit figures below are fabricated for visual review, never actual trades.</div><div id="v4PaperCards"><div class="v4-prompt">Checking the stored paper trade positions…</div></div>';
+strip.after(workspace);
+const modal=document.createElement('div');modal.id='v4ChartModal';modal.setAttribute('role','dialog');modal.setAttribute('aria-modal','true');modal.setAttribute('aria-label','Selected token market chart');
+modal.innerHTML='<div id="v4ModalBox"><div id="v4ModalHeader"><strong id="v4SelectedName">LIVE MARKET CHART</strong><button type="button" id="v4CloseChart">✕ CLOSE CHART</button></div><div id="v4ChartMount"></div><div class="v4-tools">Public Gate.io perpetual market candles · Chart is read-only · All exchange actions remain disabled</div></div>';
+document.body.appendChild(modal);
+modal.querySelector('#v4ChartMount').appendChild(sourcePanel);
+sourcePanel.style.display='block';
+if(recent){const holder=document.createElement('details');holder.id='v4RecentWrapper';holder.className='panel';holder.innerHTML='<summary>▸ RECENT LUXALGO SIGNALS · 5m / 15m — CLICK TO EXPAND / MINIMIZE</summary>';recent.before(holder);holder.appendChild(recent);holder.addEventListener('toggle',()=>{holder.querySelector('summary').textContent=(holder.open?'▾':'▸')+' RECENT LUXALGO SIGNALS · 5m / 15m — CLICK TO EXPAND / MINIMIZE'})}
+let demo=false,active='';
+const examples=[['IRYSUSDT','LONG',20,.04,15.12,6,.29,.0734006,.07396,.063115],['BIRBUSDT','SHORT',50,-.03,-11.78,9.92,.19,.08079,.080634,.087],['INITUSDT','LONG',20,.00,3.26,5.98,.29,.153,.1533165,.1301081],['AKEUSDT','LONG',10,.01,2,5.5,.54,.039726,.039815,.0330489]];
+function fmt(v){const x=Number(v);return Number.isFinite(x)?String(v):'—'}
+function numCell(k,v,extra=''){return '<div><span class="v4-number-label">'+k+'</span><div class="v4-number-value '+extra+'">'+v+'</div></div>'}
+function card(d){const gain=Number(d.pnl)>=0,cl=gain?'v4-pnl-good':'v4-pnl-bad';const pnl=Number.isFinite(Number(d.pnl))?((Number(d.pnl)>0?'+':'')+d.pnl):'—';return '<article class="v4-trade"><div class="v4-trade-top"><div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><span class="v4-side '+(d.side==='SHORT'?'short':'')+'">'+(d.side==='SHORT'?'S':'L')+'</span><button class="v4-token" type="button" data-v4-symbol="'+d.symbol+'">'+d.symbol+' ↗</button><span class="v4-tag">Perp</span><span class="v4-tag">'+d.leverage+'</span><span class="v4-tag">'+(demo?'DEMO':'PAPER')+'</span></div><div style="text-align:right"><div class="v4-number-label">ROI (estimated)</div><div class="v4-number-value big '+cl+'">'+d.roi+'</div></div></div><div class="v4-numbers">'+numCell('UNREALIZED P&L (USDT)',pnl,cl+' big')+numCell('SIZE (USDT)',d.size)+numCell('MARGIN (USDT)',d.margin)+numCell('ENTRY PRICE',d.entry)+numCell('MARK PRICE',d.mark)+numCell('LIQ. PRICE',d.liq)+numCell('STOP LOSS',d.sl)+numCell('TAKE PROFIT',d.tp)+'</div><div class="v4-controls"><button disabled title="Live execution not implemented">TP/SL</button><button disabled title="Live execution not implemented">Reverse</button><button disabled title="Live execution not implemented">Market Close</button><button disabled title="Live execution not implemented">Close</button></div></article>'}
+function fromTable(){const rows=[...table.querySelectorAll('tr[data-paper-event-id]')].filter(r=>r.dataset.paperState==='OPEN');return rows.map(r=>{const c=[...r.cells].map(x=>x.textContent.trim()), entry=Number(c[3]), mark=Number(c[7]), p=Number(c[8]);return {symbol:c[1],side:c[2],leverage:'Not verified',pnl:c[8],roi:'—',size:'Not verified',margin:'Not verified',entry:c[3],mark:c[7],liq:'Not available',sl:c[4],tp:c[5]}})}
+function draw(){let data;if(demo){data=examples.map(x=>({symbol:x[0],side:x[1],leverage:'Cross '+x[2]+'x',pnl:x[3],roi:x[4]+'%',size:x[5],margin:x[6],entry:x[7],mark:x[8],liq:x[9],sl:'Sample only',tp:'Sample only'}))}else{data=fromTable()};document.getElementById('v4TabCount').textContent='Positions ('+data.length+')';const cards=document.getElementById('v4PaperCards');cards.innerHTML=data.length?data.map(card).join(''):'<div class="v4-prompt">No OPEN paper positions currently. Closed paper trades remain in history. Use SHOW SAMPLE LAYOUT to inspect the four-card design without placing any trades.</div>'}
+workspace.querySelector('#v4DemoToggle').onclick=()=>{demo=!demo;document.getElementById('v4DemoWarning').hidden=!demo;document.getElementById('v4DemoToggle').textContent=demo?'RETURN TO REAL PAPER DATA':'SHOW SAMPLE LAYOUT';draw()};
+function openChart(sym){if(!/^[A-Z0-9]{2,26}USDT$/.test(sym))return;active=sym;document.getElementById('v4SelectedName').textContent=sym+' · PUBLIC LIVE CANDLES';modal.classList.add('open');document.body.style.overflow='hidden';const field=document.getElementById('chartSymbol');field.value=sym;const refresh=document.getElementById('chartRefresh');requestAnimationFrame(()=>setTimeout(()=>refresh?.click(),120));}
+function closeChart(){modal.classList.remove('open');document.body.style.overflow=''}
+workspace.addEventListener('click',e=>{const b=e.target.closest('[data-v4-symbol]');if(b)openChart(b.dataset.v4Symbol)});
+document.getElementById('v4CloseChart').onclick=closeChart;modal.addEventListener('click',e=>{if(e.target===modal)closeChart()});document.addEventListener('keydown',e=>{if(e.key==='Escape'&&modal.classList.contains('open'))closeChart()});
+new MutationObserver(()=>{if(!demo)draw()}).observe(table,{childList:true,subtree:true,characterData:true});
+draw();
 })();
 </script></body></html>'''
 
