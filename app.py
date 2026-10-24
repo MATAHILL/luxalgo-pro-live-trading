@@ -4938,5 +4938,33 @@ def terminal_advanced_scanner():
              'open_positions':open_count,'orders_enabled':False,'live_trading':False,'execution_status':'BLOCKED'}
     res=jsonify(payload);res.headers['Cache-Control']='no-store';return res
 
+# Gate.io execution-status bridge: authenticated READ-ONLY account inspection.
+# Deliberately does not connect a signal to order submission.
+@app.get('/terminal/gate-execution-status')
+def terminal_gate_execution_status():
+    if not _terminal_permitted():
+        return _terminal_guard()
+    try:
+        from gate_one_trade_execution_IMPLEMENTATION_DEV import account_snapshot
+        snapshot = account_snapshot()
+        positions = snapshot['positions']
+        orders = snapshot['open_orders']
+        triggers = snapshot['open_trigger_orders']
+        # Snapshot is non-atomic. Do not imply exchange protection is verified.
+        result = {'status': 'READ_ONLY_SNAPSHOT', 'active_position_rows': len(positions),
+                  'open_order_rows': len(orders), 'open_trigger_order_rows': len(triggers),
+                  'snapshot_atomic': False, 'bot_order_reconciliation': 'NOT_VERIFIED',
+                  'exchange_protection_verified': False, 'live_trading': False,
+                  'orders_enabled': False, 'one_trade_execution_connected': False}
+        response = jsonify(result)
+        response.headers['Cache-Control'] = 'no-store'
+        return response
+    except (ImportError, RuntimeError, ValueError, TypeError, KeyError, OSError) as exc:
+        response = jsonify(status='NOT_VERIFIED', error_type=type(exc).__name__,
+                           live_trading=False, orders_enabled=False,
+                           one_trade_execution_connected=False)
+        response.headers['Cache-Control'] = 'no-store'
+        return response, 503
+
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=int(os.getenv('PORT', '8080')))
