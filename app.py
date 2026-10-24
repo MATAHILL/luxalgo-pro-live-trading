@@ -717,11 +717,7 @@ header.terminal-header{border-radius:17px!important}
 <div class="adv-table"><table><thead><tr><th>PAIR</th><th>DIRECTION</th><th>TIMEFRAME</th><th>LUXALGO</th><th>ENTRY REF.</th><th>SL1</th><th>TP1</th><th>R:R</th><th>3% RISK / SIZE</th><th>STATUS / REASON</th></tr></thead><tbody id="advancedScanBody"><tr><td colspan="10" class="light">Waiting for scan results.</td></tr></tbody></table></div>
 <p class="light">Technical watchlist is NOT a LuxAlgo signal or recommendation. Technical entry/SL1/TP1 are non-executable previews. No verified LuxAlgo SL1/TP1 = NO TRADE. Capital figures are account-read-only; sizes are indicative BASE-asset quantities, not validated Gate.io contract quantities. Live execution remains BLOCKED.</p>
 </section>
-<div class="bottom-grid"><section class="panel"><h2>RECENT LUXALGO SIGNALS · 5m / 15m</h2><div class="tablewrap"><table><thead><tr><th>Received (IST)</th><th>Token</th><th>Signal</th><th>Timeframe</th><th>Status</th><th>Entry / SL / TP Plan</th></tr></thead><tbody>{% for r in records %}<tr><td>{{r.time_ist|e}}</td><td>{{r.symbol|e}}</td><td>{{r.side|e}}</td><td>{{r.tf|e}}</td><td>Received · Not executed</td><td><button class="btn plan" data-symbol="{{r.symbol|e}}" data-side="{{r.side|e}}" data-tf="{{r.tf|e}}">Plan + Chart</button> <button class="btn signal-risk" type="button" data-received="{{r.time|e}}" data-symbol="{{r.symbol|e}}" data-side="{{r.side|e}}" data-tf="{{r.tf|e}}">Signal Risk Check</button> <button class="btn execution-check" type="button" data-event-id="{{r.event_id|e}}">Execution Precheck</button> <button class="btn simulate-order" type="button" data-event-id="{{r.event_id|e}}">Simulate Order</button> <button class="btn call-status" type="button" data-event-id="{{r.event_id|e}}" title="Review signal market outcome (not a real exchange trade)">↻ Call Status</button> <button class="btn delete-recent-signal" type="button" data-event-id="{{r.event_id|e}}">Delete</button></td></tr>{% else %}<tr><td colspan="6">No signals stored in the database yet.</td></tr>{% endfor %}</tbody></table></div><p id="callStatusDetail" class="light" role="status" aria-live="polite">Call status checks public completed candles, not exchange fills.</p><p id="executionCheckStatus" class="light" role="status" aria-live="polite">Execution engine foundation: protected prechecks only; exchange orders disabled.</p><p id="simulatedOrderStatus" class="light" role="status" aria-live="polite">Stage 2: explicit simulated order requests only; no actual exchange positions or protective orders.</p><p class="light">Signals are received events, not fills. Signal receipts and dry-run intent IDs are saved in PostgreSQL. Duplicate signals may not create separate dry-run intents.</p></section>
-<section class="panel performance-panel"><div class="panel-heading"><h2>PERFORMANCE ANALYTICS</h2><span class="label-muted">VERIFIED FILLS ONLY</span></div><div class="perf-grid"><div><span>Total Closed Trades</span><strong>—</strong></div><div><span>Winning Trades</span><strong>—</strong></div><div><span>Losing Trades</span><strong>—</strong></div><div><span>Win Rate</span><strong>—</strong></div><div><span>Total Realized P&amp;L</span><strong>—</strong></div><div><span>Unrealized P&amp;L</span><strong>—</strong></div></div><p class="light">Waiting for authenticated position and fill synchronization. No synthetic P&amp;L or win statistics.</p></section></div><section class="panel"><h2>TRADE PLAN · SL · TP1 <span class="tag">READ ONLY</span></h2>
-<div class="controls"><label>Entry reference <input id="entry" type="number" step="any" placeholder="Choose a signal" readonly></label><label>Stop Loss · 1.5 ATR <input id="sl" type="number" step="any" readonly></label><label>TP1 · 2 ATR · 100% exit <input id="tp1" type="number" step="any" readonly></label></div>
-<div id="planResults">Select Plan + Chart beside a signal to calculate illustrative entry, SL and TP1. No orders are placed.</div></section>
-<section class="panel"><div class="panel-heading"><h2>COMPLETED TRADES · EXIT RECORD</h2><span class="label-muted">PENDING ACCOUNT HISTORY INTEGRATION</span></div><div class="tablewrap"><table><thead><tr><th>TIME (UTC)</th><th>PAIR</th><th>DIRECTION</th><th>ENTRY FILL</th><th>EXIT FILL</th><th>NET REALIZED P&amp;L</th><th>RESULT</th></tr></thead><tbody><tr><td colspan="7" class="empty-state">No verified exchange fills have been synchronized. Signal receipts are not executed trades.</td></tr></tbody></table></div></section><section class="panel"><div class="panel-heading"><h2>PAPER TRADE MONITOR <span class="tag">SIMULATION ONLY</span></h2><button class="btn gloss-action" id="paperRefresh" type="button">↻ Check Paper Trades</button></div><p class="light" id="paperStatus" role="status" aria-live="polite">Checks queued simulated orders when the dashboard is open; historical outcomes remain estimates, not fills.</p><div class="tablewrap"><table><thead><tr><th>CREATED (UTC)</th><th>PAIR</th><th>SIDE</th><th>SIM ENTRY</th><th>SIM SL</th><th>SIM TP</th><th>STATE</th><th>LAST PRICE</th><th>UNREALIZED P&amp;L</th><th>EST. CLOSED P&amp;L</th></tr></thead><tbody id="paperBody"><tr><td colspan="10">No simulated positions loaded.</td></tr></tbody></table></div><p id="paperOpenPnlTotal" class="light" role="status" aria-live="polite">Open paper unrealized P&amp;L: not yet available.</p><p class="light">Simulation outcomes assume the reference entry was achievable and exclude fees, slippage and funding. If both SL and TP are touched in one candle, SL is assumed first. Historical-data gaps are not guessed. Simulated P&amp;L is never included in verified real-trade analytics.</p></section><section class="panel"><div class="panel-heading"><h2>EXECUTION SAFETY PREVIEW <span class="tag">DRY RUN ONLY</span></h2><span class="label-muted">NO EXCHANGE ORDERS</span></div><p class="light">Preview illustrative risk and contract-size checks using a hypothetical USDT equity. This does not validate your actual available margin, fee-adjusted fills, current hedge settings, or protective order placement.</p><div class="controls"><label>Trading pair<input id="previewSymbol" value="BTCUSDT" maxlength="29" autocomplete="off"></label><label>Direction<select id="previewSide"><option value="LONG">LONG / BUY</option><option value="SHORT">SHORT / SELL</option></select></label><label>Timeframe<select id="previewTf"><option value="15m">15 minutes</option><option value="5m">5 minutes</option></select></label><label>Hypothetical equity (USDT)<input id="previewEquity" type="number" value="100" min="1" max="10000000" step="any"></label><label>Risk per trade (%)<select id="previewRisk"><option value="0.5">0.5%</option><option value="1">1%</option><option value="1.5">1.5%</option><option value="2">2%</option><option value="2.5">2.5%</option><option value="3" selected>3% (default)</option><option value="3.5">3.5%</option><option value="4">4%</option><option value="4.5">4.5%</option><option value="5">5% (maximum)</option></select></label></div><button class="btn gloss-action" id="previewButton" type="button">Generate Read-Only Risk Preview</button><p id="signalPreviewContext" class="light" aria-live="polite">Manual calculator input; not a trading recommendation.</p><div id="previewResult" role="status" aria-live="polite" style="white-space:pre-wrap;margin-top:12px;background:#0b1a2b;border:1px solid #2b435e;border-radius:8px;padding:14px;font:12px/1.8 ui-monospace,Consolas,monospace">Ready for a simulated preview. Nothing can place or close orders.</div></section><div class="foot">LUXALGO PRO · Private terminal · Market data is public Gate.io data. Scanners are technical watchlists, not LuxAlgo entry signals. No account positions, fills, profit or loss are available until authenticated exchange sync is implemented. LIVE TRADING OFF; no orders are placed.</div></div><script>
+<div class="bottom-grid"><section class="panel performance-panel"><div class="panel-heading"><h2>PERFORMANCE ANALYTICS</h2><span class="label-muted">VERIFIED FILLS ONLY</span></div><div class="perf-grid"><div><span>Total Closed Trades</span><strong>—</strong></div><div><span>Winning Trades</span><strong>—</strong></div><div><span>Losing Trades</span><strong>—</strong></div><div><span>Win Rate</span><strong>—</strong></div><div><span>Total Realized P&amp;L</span><strong>—</strong></div><div><span>Unrealized P&amp;L</span><strong>—</strong></div></div><p class="light">Waiting for authenticated position and fill synchronization. No synthetic P&amp;L or win statistics.</p></section></div><section class="panel"><div class="panel-heading"><h2>COMPLETED TRADES · EXIT RECORD</h2><span class="label-muted">PENDING ACCOUNT HISTORY INTEGRATION</span></div><div class="tablewrap"><table><thead><tr><th>TIME (UTC)</th><th>PAIR</th><th>DIRECTION</th><th>ENTRY FILL</th><th>EXIT FILL</th><th>NET REALIZED P&amp;L</th><th>RESULT</th></tr></thead><tbody><tr><td colspan="7" class="empty-state">No verified exchange fills have been synchronized. Signal receipts are not executed trades.</td></tr></tbody></table></div></section><section class="panel"><div class="panel-heading"><h2>PAPER TRADE MONITOR <span class="tag">SIMULATION ONLY</span></h2><button class="btn gloss-action" id="paperRefresh" type="button">↻ Check Paper Trades</button></div><p class="light" id="paperStatus" role="status" aria-live="polite">Checks queued simulated orders when the dashboard is open; historical outcomes remain estimates, not fills.</p><div class="tablewrap"><table><thead><tr><th>CREATED (UTC)</th><th>PAIR</th><th>SIDE</th><th>SIM ENTRY</th><th>SIM SL</th><th>SIM TP</th><th>STATE</th><th>LAST PRICE</th><th>UNREALIZED P&amp;L</th><th>EST. CLOSED P&amp;L</th></tr></thead><tbody id="paperBody"><tr><td colspan="10">No simulated positions loaded.</td></tr></tbody></table></div><p id="paperOpenPnlTotal" class="light" role="status" aria-live="polite">Open paper unrealized P&amp;L: not yet available.</p><p class="light">Simulation outcomes assume the reference entry was achievable and exclude fees, slippage and funding. If both SL and TP are touched in one candle, SL is assumed first. Historical-data gaps are not guessed. Simulated P&amp;L is never included in verified real-trade analytics.</p></section><div class="foot">LUXALGO PRO · Private terminal · Market data is public Gate.io data. Scanners are technical watchlists, not LuxAlgo entry signals. No account positions, fills, profit or loss are available until authenticated exchange sync is implemented. LIVE TRADING OFF; no orders are placed.</div></div><script>
 
 // Read-only advanced watchlist: uses completed 5m/15m public candles and validated LuxAlgo receipt records.
 (function(){
@@ -1072,32 +1068,6 @@ header.terminal-header{border-radius:17px!important}
  });
 })();
 
- // Hide a recent signal from dashboard only; immutable audit history remains.
- document.querySelectorAll('.delete-recent-signal').forEach(button=>button.addEventListener('click',async()=>{
-   if(!confirm('Hide this signal from Recent LuxAlgo Signals? Its audit records and paper history will remain.'))return;
-   button.disabled=true;
-   try{
-     const r=await fetch('/terminal/hide-recent-signal',{method:'POST',headers:{'Content-Type':'application/json','X-Terminal-CSRF':{{ csrf_token|tojson }}},body:JSON.stringify({event_id:button.dataset.eventId}),cache:'no-store'});
-     const d=await r.json();if(!r.ok)throw Error(d.error||'Unable to hide signal');
-     // Keep the user's signal-panel state across this deletion.
-     const signalPanel=document.getElementById('v4RecentWrapper');
-     const panelWasOpen=Boolean(signalPanel && signalPanel.open);
-     // Remove only this row: do not reload the page or reset the open <details> panel.
-     const row=button.closest('tr');
-     const body=row && row.closest('tbody');
-     if(row) row.remove();
-     if(signalPanel && panelWasOpen)signalPanel.open=true;
-     if(body && !body.querySelector('tr')){
-       const empty=document.createElement('tr');
-       const cell=document.createElement('td');
-       cell.colSpan=6;
-       cell.textContent='No signals currently displayed.';
-       empty.appendChild(cell);
-       body.appendChild(empty);
-     }
-   }catch(e){button.disabled=false;alert('Delete could not be completed: '+e.message);}
- }));
-
 // Remote control: persisted in PostgreSQL, never enables exchange trading.
 (function(){
  const label=document.getElementById('botControlLabel'),detail=document.getElementById('botControlDetail');
@@ -1109,56 +1079,8 @@ header.terminal-header{border-radius:17px!important}
 })();
 
 const entry=document.getElementById('entry'), sl=document.getElementById('sl'), tp1=document.getElementById('tp1');
-// Use the genuine stored LuxAlgo direction to populate the existing risk calculator.
-// This is a manual, read-only action: no webhook or trading API is invoked.
-document.querySelectorAll('.signal-risk').forEach(b=>b.addEventListener('click',()=>{
- const symbol=b.dataset.symbol,side=b.dataset.side,tf=b.dataset.tf;
- const received=Date.parse(b.dataset.received);
- const ageSeconds=Number.isFinite(received)?Math.max(0,(Date.now()-received)/1000):null;
- document.getElementById('previewSymbol').value=symbol;
- document.getElementById('previewSide').value=side;
- document.getElementById('previewTf').value=tf;
- const out=document.getElementById('previewResult');
- const freshness=ageSeconds===null?'Signal time could not be verified.':ageSeconds>120?'STALE SIGNAL ('+Math.round(ageSeconds)+' seconds old); this is NOT an executable entry.':'Recently received signal ('+Math.round(ageSeconds)+' seconds old); this is still NOT an executable quote.';
- document.getElementById('signalPreviewContext').textContent='LuxAlgo '+symbol+' '+side+' '+tf+' · '+freshness+' Preview uses NEW completed market candles, not the historical signal entry. No orders.';
- document.getElementById('previewButton').click();
- document.getElementById('previewResult').scrollIntoView({behavior:'smooth',block:'center'});
-}));
-
-
-// Stage 1: record an immutable, fail-closed readiness check for stored alerts.
-// No exchange order routes, signing of writes, or position changes exist.
-document.querySelectorAll('.execution-check').forEach(b=>b.addEventListener('click',async()=>{
- const out=document.getElementById('executionCheckStatus');
- b.disabled=true;out.textContent='Recording a read-only execution safety precheck…';
- try{
-  const r=await fetch('/terminal/execution-precheck',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({event_id:b.dataset.eventId}),cache:'no-store'});
-  const d=await r.json();if(!r.ok)throw Error(d.error||'Precheck unavailable');
-  const p=d.precheck;out.textContent=p.symbol+' '+p.side+' '+p.timeframe+' | '+p.status+' | Risk default: '+p.risk_percent+'% | '+(d.duplicate?'Existing persisted check. ':'Saved to PostgreSQL. ')+'No orders placed. Blockers: '+p.blockers.join('; ');
- }catch(e){out.textContent='Execution precheck blocked: '+e.message+'; no orders placed.'}
- finally{b.disabled=false}
-}));
-
-// Stage 2: simulate a hypothetical market entry from a stored fresh event; no exchange writes.
-document.querySelectorAll('.simulate-order').forEach(b=>b.addEventListener('click',async()=>{
- const out=document.getElementById('simulatedOrderStatus');
- b.disabled=true;out.textContent='Creating a simulated order record (no actual orders)…';
- try{
-  const r=await fetch('/terminal/simulate-order',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({event_id:b.dataset.eventId}),cache:'no-store'});
-  const d=await r.json();if(!r.ok)throw Error(d.error||'Simulation rejected');
-  const x=d.simulation;
-  out.textContent=x.symbol+' '+x.side+' '+x.timeframe+' | '+x.status+' | Entry reference: '+x.reference_entry+' | Illustrative SL: '+x.stop_loss+' | Illustrative TP: '+x.take_profit+' | Contracts: '+x.size_contracts+' | Risk: '+x.risk_percent+'% | '+(d.duplicate?'Existing simulation; not duplicated.':'Saved to PostgreSQL.')+' | Exchange orders: 0. No real protection.';
- }catch(e){out.textContent='Simulation not created: '+e.message+' | Orders placed: 0.';}
- finally{b.disabled=false;}
-}));
-
-document.querySelectorAll('.plan').forEach(b=>b.addEventListener('click',async()=>{
- const out=document.querySelector('#planResults');b.disabled=true;out.textContent='Calculating read-only ATR plan…';
- try{const r=await fetch('/terminal/plan',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({symbol:b.dataset.symbol,side:b.dataset.side,tf:b.dataset.tf})});const d=await r.json();if(!r.ok)throw Error(d.error||'Plan unavailable');const p=d.plan;
- entry.value=p.reference_entry;sl.value=p.stop_loss_1_5_atr;tp1.value=p.take_profit_1_2_atr;document.getElementById('chartSymbol').value=b.dataset.symbol;document.getElementById('chartTf').value=b.dataset.tf;window.loadChart();
- out.textContent=['Contract: '+p.contract,'Signal: '+p.side,'Timeframe: '+p.timeframe,'Reference: latest completed candle close (not a fill)','AUTO Stop Loss: 1.5 × ATR','AUTO TP1: 2 × ATR (100% close intended)','Order count: 0','Manual changes are previews only. No exchange orders or protection exist.'].join('\\n');
- }catch(e){out.textContent=e.message}finally{b.disabled=false}
-}));
+// Removed on-demand signal panel controls and manual dry-run preview UI.
+// Webhook receipts, paper simulation, and backend safety checks remain intact.
 
 (function(){
 'use strict';
@@ -1249,38 +1171,6 @@ setInterval(()=>{if(!document.hidden)loadChart();},30000);
 })();
 
 
-
-// Independent dry-run calculator: illustrative sizing, never submits orders.
-(function(){
- 'use strict';
- const btn=document.getElementById('previewButton'),out=document.getElementById('previewResult');
- btn.addEventListener('click',async()=>{
-  btn.disabled=true;out.textContent='Checking public contract rules and calculating preview…';
-  try{
-   const payload={symbol:document.getElementById('previewSymbol').value.trim().toUpperCase(),side:document.getElementById('previewSide').value,tf:document.getElementById('previewTf').value,hypothetical_equity_usdt:Number(document.getElementById('previewEquity').value),risk_percent:Number(document.getElementById('previewRisk').value)};
-   const res=await fetch('/terminal/execution-preview',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload),cache:'no-store'});
-   const d=await res.json();if(!res.ok)throw Error(d.error||'Preview unavailable');
-   const v=d.preview;
-   const fmt=x=>x===null||x===undefined?'Unavailable':String(x);
-   out.textContent=['MODE: SIMULATION ONLY — NO ORDER SUBMISSION',
-      'Pair / direction / timeframe: '+v.contract+' / '+v.side+' / '+v.timeframe,
-      'Hypothetical equity: '+v.hypothetical_equity_usdt+' USDT',
-      'Budgeted risk ('+v.risk_percent+'%): '+v.risk_budget_usdt+' USDT',
-      'Reference entry (completed candle): '+v.reference_entry,
-      'Stop loss (1.5 ATR): '+v.stop_loss,
-      'TP1 (2 ATR; 100% planned exit): '+v.take_profit,
-      'Contract multiplier: '+v.quanto_multiplier,
-      'Conservative integer size: '+fmt(v.size_contracts)+' contracts',
-      'Estimated price-only loss at SL: '+fmt(v.estimated_sl_loss_usdt)+' USDT (excludes fees/slippage)',
-      'Estimated notional / 5x margin: '+fmt(v.notional_usdt)+' / '+fmt(v.estimated_margin_usdt)+' USDT',
-      'Gate minimum / maximum contracts: '+v.order_size_min+' / '+v.order_size_max,
-      'Result: '+v.result,
-      ...v.blockers.map(x=>'BLOCKER: '+x),
-      'Trading permissions: READ ONLY. Orders submitted: 0.',
-      'Actual equity, available margin, leverage/hedge setting, protective orders, fees, execution and reconciliation are NOT verified.'].join('\\n');
-  }catch(e){out.textContent='Preview unavailable: '+e.message+' · No orders submitted.'}finally{btn.disabled=false;}
- });
-})();
 
 // Private read-only Gate.io position cards. NO account-mutating actions.
 (function(){
@@ -1628,28 +1518,6 @@ workspace.innerHTML='<div class="v4-head"><div><strong>INDIVIDUAL OPEN POSITIONS
 strip.after(workspace);
 // The previous full-screen chart modal is no longer used. Charts belong to cards.
 sourcePanel.style.display='none';
-if(recent){
- const holder=document.createElement('details');
- holder.id='v4RecentWrapper';holder.className='panel';
- const storageKey='luxalgo_v4_recent_signals_expanded';
- // Persist user-controlled expanded state across auto-sync reloads and deletions.
- let savedOpen=false;
- try{savedOpen=sessionStorage.getItem(storageKey)==='1';}catch(_e){}
- if(savedOpen)holder.open=true;
- holder.innerHTML='<summary>RECENT LUXALGO SIGNALS · 5m / 15m — CLICK TO EXPAND / MINIMIZE</summary>';
- recent.before(holder);holder.appendChild(recent);
- const summary=holder.querySelector('summary');
- const paint=()=>{summary.textContent=(holder.open?'▾':'▸')+' RECENT LUXALGO SIGNALS · 5m / 15m — CLICK TO EXPAND / MINIMIZE'};
- paint();
- holder.addEventListener('toggle',()=>{
-  paint();
-  try{sessionStorage.setItem(storageKey,holder.open?'1':'0')}catch(_e){}
- });
- // Save before a full-page auto-sync navigation, even if toggle is queued.
- window.addEventListener('pagehide',()=>{
-  try{sessionStorage.setItem(storageKey,holder.open?'1':'0')}catch(_e){}
- });
-}
 let demo=false;
 const openIndicators=new Set(); // Only one chart is open at a time.
 const examples=[['IRYSUSDT','LONG',20,.04,15.12,6,.29,.0734006,.07396,.063115],['BIRBUSDT','SHORT',50,-.03,-11.78,9.92,.19,.08079,.080634,.087],['INITUSDT','LONG',20,.00,3.26,5.98,.29,.153,.1533165,.1301081],['AKEUSDT','LONG',10,.01,2,5.5,.54,.039726,.039815,.0330489],['SOLUSDT','SHORT',5,.87,1.45,300,60,166.5,166.02,199.0],['AVAXUSDT','LONG',5,-.42,-.70,300,60,9.092,9.079,7.2]];
