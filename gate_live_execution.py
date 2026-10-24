@@ -399,7 +399,81 @@ def phase3_offline_lifecycle_tests():
             'real_orders': 'BLOCKED'}
 
 
+
+
+# Phase 4: Static, untrusted API shape examples. NO HTTP clients for order endpoints.
+# Not executable instructions: hedge-mode flags, sizing, price precision, margin mode,
+# and protection ordering must be independently established in exchange testnet.
+def phase4_protection_blueprint(signal, market, account):
+    """Return documentation-informed stop/TP shape PREVIEWS, never trade instructions."""
+    sizing = prepare_dry_run(signal, market, account)
+    if sizing.get('status') != 'VALID_DRY_RUN_NOT_EXECUTABLE':
+        return {'status': 'BLOCKED', 'reason': sizing.get('reason'), 'orders_enabled': False}
+    direction = sizing['side']
+    contract = sizing['contract']
+    # stop below/above market and profit target above/below entry respectively.
+    def view(level, kind):
+        price = sizing[level]
+        # Gate rule 1 => >= trigger, rule 2 => <= trigger.
+        rule = (2 if direction == 'LONG' else 1) if kind == 'SL' else (1 if direction == 'LONG' else 2)
+        return {
+            'purpose': kind,
+            'endpoint_reference': 'POST /futures/usdt/price_orders',
+            'order_type_reference': 'close-long-position' if direction == 'LONG' else 'close-short-position',
+            'initial_reference': {'contract': contract, 'price': '0', 'size': '0'},
+            'trigger_reference': {'strategy_type': 0, 'price_type': 1,
+                                  'price': price, 'rule': rule},
+            'NOT_A_SUBMITTABLE_PAYLOAD': True,
+        }
+    return {
+        'status': 'OFFLINE_BLUEPRINT_ONLY',
+        'direction': direction, 'contract': contract,
+        'stop_loss_preview': view('stop_loss', 'SL'),
+        'tp1_preview': view('take_profit_1', 'TP'),
+        'tp2_preview': view('take_profit_2', 'TP'),
+        'warnings': [
+            'Illustrative Gate.io request-field references, NOT final accepted API payloads',
+            'Dual-mode/hedge-mode behavior and margins not verified',
+            'TP1/TP2 partial-closing distribution not implemented',
+            'Trigger price precision, current mark price, exchange metadata and stale checks not verified',
+            'Race conditions, competing full-close triggers, and emergency stop not addressed',
+            'No SL/TP protection exists until exchange confirms it on testnet or live exchange',
+        ],
+        'exchange_protection_verified': False,
+        'safe_to_trade': False,
+        'live_trading': False,
+        'orders_enabled': False,
+    }
+
+
+def phase4_offline_blueprint_tests():
+    market = {'contract':'BTC_USDT', 'last_price':'80010',
+              'quanto_multiplier':'0.0001', 'order_size_min':1, 'order_size_max':1000000}
+    account = {'equity_usdt':'300', 'open_position_count':0}
+    long_signal = {'event_id':'P4-LONG', 'symbol':'BTCUSDT', 'side':'LONG',
+                   'entry':'80000', 'sl':'79700', 'tp1':'80600', 'tp2':'80900'}
+    short_signal = {'event_id':'P4-SHORT', 'symbol':'BTCUSDT', 'side':'SHORT',
+                    'entry':'80000', 'sl':'80300', 'tp1':'79400', 'tp2':'79100'}
+    long = phase4_protection_blueprint(long_signal,market,account)
+    short = phase4_protection_blueprint(short_signal,market,account)
+    assert long['status'] == short['status'] == 'OFFLINE_BLUEPRINT_ONLY'
+    assert long['stop_loss_preview']['trigger_reference']['rule'] == 2
+    assert long['tp1_preview']['trigger_reference']['rule'] == 1
+    assert short['stop_loss_preview']['trigger_reference']['rule'] == 1
+    assert short['tp1_preview']['trigger_reference']['rule'] == 2
+    for blueprint in (long,short):
+        assert blueprint['orders_enabled'] is False and blueprint['safe_to_trade'] is False
+        assert all(x['NOT_A_SUBMITTABLE_PAYLOAD'] is True for x in
+                   (blueprint['stop_loss_preview'],blueprint['tp1_preview'],blueprint['tp2_preview']))
+    bad = phase4_protection_blueprint(dict(long_signal,sl='81000'),market,account)
+    assert bad['status'] == 'BLOCKED'
+    return {'offline_blueprint_tests':'PASSED', 'long_rules':'PASSED',
+            'short_rules':'PASSED', 'invalid_levels':'BLOCKED',
+            'testnet_execution':'NOT_TESTED', 'real_orders':'BLOCKED'}
+
+
 if __name__ == '__main__':
     print(json.dumps({'risk_tests': offline_self_test(),
                       'protection_tests': offline_protection_test(),
-                      'phase3_lifecycle_tests': phase3_offline_lifecycle_tests()}, indent=2))
+                      'phase3_lifecycle_tests': phase3_offline_lifecycle_tests(),
+                      'phase4_blueprint_tests': phase4_offline_blueprint_tests()}, indent=2))
