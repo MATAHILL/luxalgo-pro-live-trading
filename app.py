@@ -5688,21 +5688,34 @@ def _gate_verify_protection_against_handoff():
         qty=Decimal(str(position['size']))
         if not qty.is_finite() or qty == 0 or (qty > 0) != (side == 'LONG'):
             raise GateOrderTransportError('Position direction or quantity differs')
-        order_type='close-long-position' if side=='LONG' else 'close-short-position'
-        expected = [(stop,Decimal(str(levels['stop_loss'])),
-                     2 if side=='LONG' else 1),
-                    (take,Decimal(str(levels['take_profit'])),
-                     1 if side=='LONG' else 2)]
+        # Gate.io distinguishes order-attached TP/SL from position-level TP/SL.
+        # An order-attached trigger is bound to the specific entry (me_order_id),
+        # while a position-level trigger must explicitly close the whole position.
+        # Do not infer coverage from order_type alone.
+        expected = [(stop, Decimal(str(levels['stop_loss'])),
+                     2 if side == 'LONG' else 1),
+                    (take, Decimal(str(levels['take_profit'])),
+                     1 if side == 'LONG' else 2)]
+        direction = 'long' if side == 'LONG' else 'short'
         for record, price, rule in expected:
-            initial=record.get('initial') or {}
-            trigger=record.get('trigger') or {}
-            if record.get('status')!='open' or record.get('order_type')!=order_type:
-                raise GateOrderTransportError('Protective trigger inactive or wrong direction')
-            if (initial.get('contract')!=contract or str(initial.get('size'))!='0'
-                    or initial.get('close') is not True or str(initial.get('price'))!='0'):
-                raise GateOrderTransportError('Protective trigger does not fully close position')
-            if Decimal(str(trigger.get('price'))) != price or int(trigger.get('rule')) != rule:
-                raise GateOrderTransportError('Protective trigger levels or direction do not match')
+            initial = record.get('initial') or {}
+            trigger = record.get('trigger') or {}
+            if record.get('status') != 'open' or initial.get('contract') != contract:
+                raise GateOrderTransportError('Protection inactive or wrong contract')
+            kind = record.get('order_type')
+            if kind == 'close-' + direction + '-order':
+                if str(record.get('me_order_id')) != str(ids[0]):
+                    raise GateOrderTransportError('Attached protection belongs to another entry')
+            elif kind == 'close-' + direction + '-position':
+                if (str(initial.get('size')) != '0' or
+                        initial.get('close') is not True or
+                        str(initial.get('price')) != '0'):
+                    raise GateOrderTransportError('Position protection is not a full close')
+            else:
+                raise GateOrderTransportError('Unsupported protective order type')
+            if (Decimal(str(trigger.get('price'))) != price or
+                    int(trigger.get('rule')) != rule):
+                raise GateOrderTransportError('Protection price or trigger rule mismatch')
         return {'status':'EXCHANGE_PROTECTION_OBSERVED','protected':True,
                 'note':'Observed at query time only; does not guarantee stop fill or ongoing protection'}
     except (GateOrderTransportError, ValueError, KeyError, TypeError,
