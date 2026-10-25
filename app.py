@@ -5159,6 +5159,13 @@ def _gate_post_transport_implementation(payload):
     if not (os.getenv('LIVE_TRADING_ENABLED', 'false').strip().lower() == 'true' and
             os.getenv('ORDERS_ENABLED', 'false').strip().lower() == 'true'):
         raise GateOrderTransportError('Exchange entry transport disabled')
+    # Defense in depth: raw transport must never bypass the dispatch arming gate.
+    # The order coordinator has additional independent journal/mode checks.
+    if not (os.getenv('LIVE_TRADING_ENABLED', 'false').strip().lower() == 'true'
+            and os.getenv('ORDERS_ENABLED', 'false').strip().lower() == 'true'):
+        raise GateOrderTransportError('Gate.io exchange writes are disabled')
+    if payload.get('_event_id') is not None:
+        raise GateOrderTransportError('Internal event metadata must not be sent to Gate.io')
     if not isinstance(payload,dict) or not {'contract','size','price','tif','text','tpsl_tp_trigger_price','tpsl_sl_trigger_price'} <= payload.keys():
         raise GateOrderTransportError('Protected entry fields are missing')
     key=os.getenv('GATE_API_KEY','').strip()
@@ -5511,6 +5518,9 @@ def _gate_close_existing_oneway_position(contract, event_id, *,
     """
     if not (position_mode_verified is True and durable_recovery_reserved is True):
         raise GateOrderTransportError('Close blocked: verified ONE-WAY mode and durable recovery reservation required')
+    if not (os.getenv('LIVE_TRADING_ENABLED', 'false').strip().lower() == 'true'
+            and os.getenv('ORDERS_ENABLED', 'false').strip().lower() == 'true'):
+        raise GateOrderTransportError('Gate.io exchange writes are disabled')
     payload=_gate_oneway_safe_close_payload(contract,event_id)
     return _gate_v4_authenticated_request('POST',_GATE_ORDER_PATH,payload=payload)
 
