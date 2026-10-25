@@ -5091,17 +5091,62 @@ def _gate_protected_entry_payload(*, event_id, contract, side, contracts, entry,
 
 def _gate_send_protected_entry(payload, *, durable_reservation_confirmed=False,
                                one_way_mode_verified=False, exit_recovery_verified=False):
-    """Implementation of the actual signed POST, deliberately not yet wired.
+    """Single-shot, journaled exchange entry (NOT connected to the webhook).
 
-    Network uncertainty cannot be retried; the caller must reconcile the client
-    order identifier against Gate.io and check exchange-side protection. A
-    separate durable coordinator must be in place before this is used.
+    Requires independently verified account mode and recovery, a matching
+    PostgreSQL PREPARED row, and explicit, separately gated deployment settings.
+    Once the dispatch attempt is durably marked uncertain, it can NEVER be
+    blindly retried—even if Gate.io times out after accepting the order.
+    The ACK remains UNPROTECTED until exchange-side position & triggers match.
     """
-    if not (durable_reservation_confirmed and one_way_mode_verified and exit_recovery_verified):
-        raise GateOrderTransportError('Persistent reservation, mode, and emergency recovery required')
-    # Critical hard lock: live execution is not safe to activate by changing
-    # only an environment variable. No current webhook invokes this function.
-    raise GateOrderTransportError('Execution locked: order reconciliation and emergency close not integrated')
+    if not all(x is True for x in (durable_reservation_confirmed,
+                                   one_way_mode_verified,exit_recovery_verified)):
+        raise GateOrderTransportError('Missing verified execution prerequisites')
+    if not (os.getenv('LIVE_TRADING_ENABLED','false').lower()=='true' and
+            os.getenv('ORDERS_ENABLED','false').lower()=='true'):
+        raise GateOrderTransportError('Real execution disabled by deployment settings')
+    if not isinstance(payload,dict) or payload.get('price')!='0' or payload.get('tif')!='ioc':
+        raise GateOrderTransportError('Invalid entry payload')
+    event_id=payload.get('_event_id')
+    # _event_id is internal metadata and is not sent to Gate.io.
+    if not re.fullmatch(r'[A-Za-z0-9_.:-]{4,100}',str(event_id)):
+        raise GateOrderTransportError('Explicit event identity required')
+    contract=payload.get('contract')
+    client_text=_gate_client_order_text(event_id)
+    if payload.get('text') != client_text or not re.fullmatch(r'[A-Z0-9]{2,25}_USDT',str(contract)):
+        raise GateOrderTransportError('Contract or client order identity mismatch')
+    qty=payload.get('size')
+    try:
+        size=int(qty)
+        if size == 0 or str(size)!=str(qty): raise ValueError()
+    except (ValueError,TypeError):
+        raise GateOrderTransportError('Invalid signed entry quantity') from None
+    side='LONG' if size>0 else 'SHORT'
+    # Lock and persist irreversible dispatch uncertainty BEFORE the HTTP call.
+    with _db_connect() as con:
+        con.execute(_GATE_LIVE_JOURNAL_SCHEMA)
+        with con.cursor() as cur:
+            cur.execute('SELECT pg_advisory_xact_lock(%s)',(65913043,))
+            cur.execute("SELECT event_id,contract,side,client_order_text,state FROM luxalgo_live_execution_journal WHERE id=1 FOR UPDATE")
+            row=cur.fetchone()
+            if (not row or row['event_id']!=event_id or row['contract']!=contract or
+                    row['side']!=side or row['client_order_text']!=client_text or
+                    row['state']!='PREPARED'):
+                raise GateOrderTransportError('Journal not PREPARED for exactly this order')
+            cur.execute("UPDATE luxalgo_live_execution_journal SET state='DISPATCH_UNCERTAIN',updated_at=NOW() WHERE id=1")
+    # No retry if process crashes or if the HTTP response is lost.
+    wire={k:v for k,v in payload.items() if k!='_event_id'}
+    try:
+        acknowledgement=_gate_post_transport_implementation(wire)
+    except Exception:
+        # Do not attempt to reset DISPATCH_UNCERTAIN to PREPARED.
+        raise GateOrderTransportError('ACK_UNKNOWN_DO_NOT_RETRY; reconcile Gate.io') from None
+    try:
+        _live_journal_record(event_id,'ACKNOWLEDGED',
+                            exchange_order_id=acknowledgement['exchange_order_id'])
+    except Exception:
+        raise GateOrderTransportError('ACK_RECORDED_ON_EXCHANGE_BUT_DB_UNKNOWN; manual reconciliation required') from None
+    return acknowledgement
 
 
 def _gate_post_transport_implementation(payload):
@@ -5295,6 +5340,25 @@ def _live_journal_record(event_id, state, *, exchange_order_id=None,
             # Terminal states cannot be reopened by a replay or a new webhook.
             if row['state']=='CLOSED':
                 raise GateOrderTransportError('Trade already closed')
+            # A single database state-change request must never assert that
+            # exchange protections are present or that a position is closed.
+            # Both require a separately verified exchange reconciliation.
+            if state in ('PROTECTED', 'CLOSED'):
+                raise GateOrderTransportError(
+                    'Exchange-verified transition required: direct journal update prohibited')
+            # The journal cannot claim an ACK before the submission is marked
+            # uncertain, nor silently revert an unknown exchange outcome.
+            allowed = {
+                'PREPARED': {'DISPATCH_UNCERTAIN', 'RECOVERY_REQUIRED'},
+                'DISPATCH_UNCERTAIN': {'ACKNOWLEDGED', 'RECOVERY_REQUIRED'},
+                'ACKNOWLEDGED': {'PROTECTION_UNVERIFIED', 'RECOVERY_REQUIRED'},
+                'PROTECTION_UNVERIFIED': {'RECOVERY_REQUIRED'},
+                'RECOVERY_REQUIRED': {'RECOVERY_REQUIRED'},
+            }
+            if state not in allowed.get(row['state'], set()):
+                raise GateOrderTransportError('Unsafe journal state transition')
+            if state == 'ACKNOWLEDGED' and exchange_order_id is None and not row['exchange_order_id']:
+                raise GateOrderTransportError('Exchange order ID required for ACK')
             for field,new in zip(('exchange_order_id','sl_order_id','tp_order_id'),ids):
                 if new is not None and row[field] is not None and str(row[field])!=str(new):
                     raise GateOrderTransportError('Conflicting exchange order ID')
