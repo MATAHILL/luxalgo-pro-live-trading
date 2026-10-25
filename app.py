@@ -5712,5 +5712,100 @@ def terminal_gate_protection_verification():
         return jsonify(status='UNAVAILABLE', protected=False,
                        orders_enabled=False), 503
 
+
+# === LIVE EXCHANGE RISK INPUTS (GET ONLY; NO PAPER BALANCES) ===
+def _gate_live_sizing_inputs(contract):
+    """Fresh contract metadata and authenticated account equity; never submit orders."""
+    if not re.fullmatch(r'[A-Z0-9]{2,25}_USDT', str(contract)):
+        raise GateOrderTransportError('Invalid contract')
+    from urllib.parse import quote
+    path='/api/v4/futures/usdt/accounts'
+    key=os.getenv('GATE_API_KEY','').strip()
+    secret=os.getenv('GATE_API_SECRET','').strip()
+    if not key or not secret:
+        raise GateOrderTransportError('Gate credentials unavailable')
+    stamp=str(int(time.time()))
+    digest=hashlib.sha512(b'').hexdigest()
+    message='\n'.join(('GET',path,'',digest,stamp))
+    sign=hmac.new(secret.encode(),message.encode(),hashlib.sha512).hexdigest()
+    req=Request('https://api.gateio.ws'+path,method='GET',headers={
+        'KEY':key,'Timestamp':stamp,'SIGN':sign,'Accept':'application/json'})
+    try:
+        with urlopen(req,timeout=8) as response:
+            account=json.load(response)
+        with urlopen(Request('https://api.gateio.ws/api/v4/futures/usdt/contracts/'+quote(contract),
+                             headers={'Accept':'application/json'}),timeout=8) as response:
+            market=json.load(response)
+    except (OSError,HTTPError,URLError,TimeoutError,ValueError):
+        raise GateOrderTransportError('Fresh exchange data unavailable') from None
+    if not isinstance(account,dict) or not isinstance(market,dict) or market.get('name') != contract:
+        raise GateOrderTransportError('Exchange market/account response invalid')
+    try:
+        equity=Decimal(str(account['total']))
+        last=Decimal(str(market['last_price']))
+        multiplier=Decimal(str(market['quanto_multiplier']))
+        min_qty=Decimal(str(market['order_size_min']))
+        max_qty=Decimal(str(market['order_size_max']))
+        if (not all(x.is_finite() for x in (equity,last,multiplier,min_qty,max_qty)) or
+            min(equity,last,multiplier,min_qty,max_qty)<=0 or min_qty!=int(min_qty) or
+            max_qty!=int(max_qty) or max_qty<min_qty):
+            raise ValueError()
+    except (KeyError,InvalidOperation,ValueError,TypeError):
+        raise GateOrderTransportError('Exchange risk inputs missing or invalid') from None
+    return {'equity':equity,'last':last,'multiplier':multiplier,
+            'min_qty':int(min_qty),'max_qty':int(max_qty)}
+
+
+def _gate_live_risk_size(contract, side, entry, stop):
+    """Calculate 0.5% equity stop-distance sizing; does not authorize a trade."""
+    if side not in ('LONG','SHORT'):
+        raise GateOrderTransportError('Invalid side')
+    try:
+        entry=Decimal(str(entry)); stop=Decimal(str(stop))
+        if not entry.is_finite() or not stop.is_finite() or min(entry,stop)<=0 or entry==stop:
+            raise ValueError()
+        if (side=='LONG' and stop>=entry) or (side=='SHORT' and stop<=entry):
+            raise ValueError()
+    except (InvalidOperation,ValueError,TypeError):
+        raise GateOrderTransportError('Invalid entry/stop for direction') from None
+    x=_gate_live_sizing_inputs(contract)
+    if abs(x['last']-entry)/entry > Decimal('0.01'):
+        raise GateOrderTransportError('Entry is stale versus current market')
+    budget=x['equity']*Decimal('0.005')
+    per_contract=abs(entry-stop)*x['multiplier']
+    qty=min(int(budget/per_contract),x['max_qty'])
+    if qty<x['min_qty'] or qty<1:
+        raise GateOrderTransportError('Minimum contract size exceeds 0.5% stop risk')
+    # Hard maximum of 5x effective exposure; does not set exchange leverage.
+    notional=qty*x['multiplier']*x['last']
+    if notional > x['equity']*Decimal(5):
+        raise GateOrderTransportError('Position exposure exceeds 5x equity')
+    return {'contract':contract,'side':side,'contracts':qty,
+            'risk_budget_usdt':str(budget),'stop_distance_risk_usdt':str(qty*per_contract),
+            'reference_market_price':str(x['last']), 'risk_passed':True,
+            'order_submitted':False,'protection_verified':False,
+            'live_trading':False}
+
+@app.get('/terminal/gate-live-risk-check')
+def terminal_gate_live_risk_check():
+    if not _terminal_permitted(): return _terminal_guard()
+    try:
+        with _db_connect() as con:
+            con.execute(_EXECUTION_HANDOFF_SCHEMA)
+            with con.cursor() as cur:
+                cur.execute("""SELECT symbol,side,entry_price,stop_loss FROM luxalgo_execution_handoff
+                               ORDER BY created_at DESC LIMIT 1""")
+                row=cur.fetchone()
+        if not row:
+            return jsonify(status='NO_SIGNAL',orders_enabled=False),404
+        symbol=str(row['symbol']).upper().replace('/','').replace('_','')
+        if not re.fullmatch(r'[A-Z0-9]{2,25}USDT',symbol):
+            raise GateOrderTransportError('Invalid symbol')
+        result=_gate_live_risk_size(symbol[:-4]+'_USDT',row['side'],row['entry_price'],row['stop_loss'])
+        result.update(status='EXCHANGE_RISK_CHECK_ONLY',orders_enabled=False)
+        return jsonify(result)
+    except (GateOrderTransportError,psycopg.Error,RuntimeError,OverflowError,OSError):
+        return jsonify(status='RISK_NOT_VERIFIED',orders_enabled=False,live_trading=False),503
+
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=int(os.getenv('PORT', '8080')))
