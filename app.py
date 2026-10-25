@@ -2120,14 +2120,94 @@ def webhook():
         except (psycopg.Error, RuntimeError, OSError):
             app.logger.warning('One-trade candidate reservation failed; no execution permitted')
             one_trade_candidate = 'UNAVAILABLE_NO_ORDER'
+    execution_handoff = (_record_execution_handoff(event_id, symbol, allowed[side], tf, parsed)
+                         if level_status == 'VALID' and not duplicate else
+                         {'state':'NOT_ELIGIBLE','orders_placed':0})
     return jsonify(status='signal_received', mode='SIGNAL_ONLY', symbol=symbol,
                    side=allowed[side], timeframe=tf, duplicate_in_candle=duplicate,
                    dry_run_intent_id=event_id, level_status=level_status,
-                   one_trade_candidate=one_trade_candidate, orders_placed=0), 200
+                   one_trade_candidate=one_trade_candidate, execution_handoff=execution_handoff, orders_placed=0), 200
 
 
 # One-trade bridge inspection: authenticated, database-backed and READ-ONLY.
 # This endpoint does not authorize exchange orders or change the one-trade latch.
+# Development-only bridge between the production-shaped webhook receipt and
+# the independently reviewed Gate.io one-way execution checks.
+# This bridge DOES NOT place orders, enable POST, or call the exchange.
+def _oneway_candidate_gate_review(candidate):
+    if not isinstance(candidate, dict):
+        return {'status': 'NO_CANDIDATE', 'orders_enabled': False, 'live_ready': False}
+    try:
+        from gate_live_execution_POST_ENTRY_REVIEW_DEV import (
+            gate_entry_payload_review, gate_oneway_trigger_payload_review,
+            prepare_dry_run, LIVE_TRADING_ENABLED, ORDERS_ENABLED)
+    except ImportError:
+        return {'status': 'DEVELOPMENT_ENGINE_NOT_INSTALLED',
+                'orders_enabled': False, 'live_ready': False}
+    if LIVE_TRADING_ENABLED or ORDERS_ENABLED:
+        return {'status': 'BLOCKED_UNEXPECTED_ENGINE_FLAGS',
+                'orders_enabled': False, 'live_ready': False}
+    # PostgreSQL currently stores entry, SL and TP1 only. No TP2, fresh
+    # contract multiplier, exchange equity, or position-mode readback exists
+    # in this record. Consequently, risk sizing and execution are impossible.
+    fields = ('event_id', 'symbol', 'side', 'timeframe', 'entry_price', 'stop_loss', 'take_profit')
+    if any(candidate.get(k) is None for k in fields):
+        return {'status': 'INCOMPLETE_PERSISTED_SIGNAL',
+                'orders_enabled': False, 'live_ready': False}
+    if candidate['timeframe'] != '15m' or candidate['side'] not in ('LONG', 'SHORT'):
+        return {'status': 'BLOCKED_UNSUPPORTED_SIGNAL',
+                'orders_enabled': False, 'live_ready': False}
+    try:
+        entry = Decimal(str(candidate['entry_price']))
+        stop = Decimal(str(candidate['stop_loss']))
+        take = Decimal(str(candidate['take_profit']))
+        if not all(n.is_finite() and n > 0 for n in (entry, stop, take)):
+            raise ValueError('Invalid numeric levels')
+        if candidate['side'] == 'LONG':
+            valid = stop < entry < take
+        else:
+            valid = take < entry < stop
+        if not valid:
+            raise ValueError('Invalid entry/SL/TP direction')
+        symbol = str(candidate['symbol']).upper()
+        if not re.fullmatch(r'[A-Z0-9]{2,28}USDT', symbol):
+            raise ValueError('Invalid contract symbol')
+    except (ValueError, TypeError, InvalidOperation):
+        return {'status': 'BLOCKED_INVALID_SIGNAL_LEVELS',
+                'orders_enabled': False, 'live_ready': False}
+    return {
+        'status': 'PERSISTED_SIGNAL_VALIDATED_EXECUTION_BLOCKED',
+        'event_id': candidate['event_id'],
+        'contract': symbol[:-4] + '_USDT', 'side': candidate['side'],
+        'timeframe': '15m',
+        'risk_percent': '0.5', 'max_leverage': 5,
+        'reason': 'Needs explicit TP2, current authenticated equity, fresh contract metadata, '
+                  'one-way mode verification, durable exchange order IDs and automatic recovery',
+        'gateway_connected': False, 'exchange_orders_submitted': False,
+        'exchange_protection_verified': False, 'orders_enabled': False,
+        'live_ready': False
+    }
+
+
+@app.get('/terminal/oneway-gateway-review')
+def terminal_oneway_gateway_review():
+    if not _terminal_permitted():
+        return _terminal_guard()
+    try:
+        with _db_connect() as con:
+            _ensure_schema(con)
+            with con.cursor() as cur:
+                cur.execute("""SELECT event_id, symbol, side, timeframe,
+                             entry_price, stop_loss, take_profit, status
+                             FROM luxalgo_one_trade_candidate WHERE singleton_id=1""")
+                row = cur.fetchone()
+        review = _oneway_candidate_gate_review(dict(row) if row else None)
+        return jsonify(review), 200
+    except (psycopg.Error, RuntimeError, OSError):
+        return jsonify(status='DATABASE_UNAVAILABLE_FAIL_CLOSED',
+                       orders_enabled=False, live_ready=False), 503
+
+
 @app.get('/terminal/one-trade-status')
 def terminal_one_trade_status():
     if not _terminal_permitted():
@@ -4965,6 +5045,608 @@ def terminal_gate_execution_status():
                            one_trade_execution_connected=False)
         response.headers['Cache-Control'] = 'no-store'
         return response, 503
+
+
+# ------------------------------------------------------------------------
+# Gate.io execution transport: implemented in the existing Flask application.
+# The live webhook has NOT been attached to this transport yet, by design.
+# Never expose an HTTP route for raw order posting.
+# ------------------------------------------------------------------------
+class GateOrderTransportError(RuntimeError):
+    pass
+
+
+def _gate_order_signature(method, path, body_text, timestamp, secret):
+    """Gate API v4 signed request; body MUST match the transmitted bytes."""
+    if method != 'POST' or path != '/api/v4/futures/usdt/orders':
+        raise GateOrderTransportError('Unapproved order route')
+    digest = hashlib.sha512(body_text.encode('utf-8')).hexdigest()
+    material = '\n'.join((method, path, '', digest, str(timestamp)))
+    return hmac.new(secret.encode('utf-8'), material.encode('utf-8'), hashlib.sha512).hexdigest()
+
+
+def _gate_protected_entry_payload(*, event_id, contract, side, contracts, entry, sl, tp):
+    """Gate.io native attached TP/SL entry shape, not proof of protection."""
+    if not re.fullmatch(r'[A-Z0-9]{2,25}_USDT', contract):
+        raise GateOrderTransportError('Invalid futures contract')
+    if side not in ('LONG', 'SHORT') or type(contracts) is not int or contracts < 1:
+        raise GateOrderTransportError('Invalid direction or contract quantity')
+    values=[]
+    for value in (entry, sl, tp):
+        if isinstance(value, bool): raise GateOrderTransportError('Invalid price')
+        try: price=Decimal(str(value))
+        except (InvalidOperation, ValueError, TypeError): raise GateOrderTransportError('Invalid price') from None
+        if not price.is_finite() or price <= 0: raise GateOrderTransportError('Invalid price')
+        values.append(price)
+    ref, stop, take=values
+    if not ((side=='LONG' and stop<ref<take) or (side=='SHORT' and take<ref<stop)):
+        raise GateOrderTransportError('Stop/target invalid for trade direction')
+    if not re.fullmatch(r'[a-zA-Z0-9_.:-]{4,100}', str(event_id)):
+        raise GateOrderTransportError('Invalid idempotency event ID')
+    unique='t-lux-'+hashlib.sha256(str(event_id).encode()).hexdigest()[:24]
+    return {'contract':contract,'size':str(contracts if side=='LONG' else -contracts),
+            'price':'0','tif':'ioc','text':unique,
+            'tpsl_tp_trigger_price':str(take), 'tpsl_sl_trigger_price':str(stop)}
+
+
+def _gate_send_protected_entry(payload, *, durable_reservation_confirmed=False,
+                               one_way_mode_verified=False, exit_recovery_verified=False):
+    """Implementation of the actual signed POST, deliberately not yet wired.
+
+    Network uncertainty cannot be retried; the caller must reconcile the client
+    order identifier against Gate.io and check exchange-side protection. A
+    separate durable coordinator must be in place before this is used.
+    """
+    if not (durable_reservation_confirmed and one_way_mode_verified and exit_recovery_verified):
+        raise GateOrderTransportError('Persistent reservation, mode, and emergency recovery required')
+    # Critical hard lock: live execution is not safe to activate by changing
+    # only an environment variable. No current webhook invokes this function.
+    raise GateOrderTransportError('Execution locked: order reconciliation and emergency close not integrated')
+
+
+def _gate_post_transport_implementation(payload):
+    """Real Gate.io POST mechanics for reviewed integration, never called by webhook.
+
+    This function is intentionally private and inaccessible through Flask.
+    It is NOT authorization to submit a trade and must only be used in a
+    reviewed failure-safe transaction coordinator.
+    """
+    if not isinstance(payload,dict) or not {'contract','size','price','tif','text','tpsl_tp_trigger_price','tpsl_sl_trigger_price'} <= payload.keys():
+        raise GateOrderTransportError('Protected entry fields are missing')
+    key=os.getenv('GATE_API_KEY','').strip()
+    secret=os.getenv('GATE_API_SECRET','').strip()
+    if not key or not secret: raise GateOrderTransportError('Missing Gate API credentials')
+    path='/api/v4/futures/usdt/orders'
+    body=json.dumps(payload,separators=(',', ':'),ensure_ascii=True)
+    stamp=str(int(time.time()))
+    sign=_gate_order_signature('POST',path,body,stamp,secret)
+    req=Request('https://api.gateio.ws'+path,method='POST',data=body.encode('utf-8'),
+                headers={'KEY':key,'Timestamp':stamp,'SIGN':sign,
+                         'Accept':'application/json','Content-Type':'application/json'})
+    # A network timeout may have CREATED an order. Do not retry automatically.
+    try:
+        with urlopen(req,timeout=8) as response:
+            result=json.load(response)
+    except (HTTPError, URLError, TimeoutError, ValueError, OSError):
+        raise GateOrderTransportError('ACK_UNKNOWN_DO_NOT_RETRY; reconcile exchange order') from None
+    if not isinstance(result,dict):
+        raise GateOrderTransportError('ACK_UNKNOWN_DO_NOT_RETRY; invalid exchange reply')
+    oid=str(result.get('id_string') or result.get('id') or '')
+    if not re.fullmatch(r'[1-9][0-9]{0,19}',oid):
+        raise GateOrderTransportError('ACK_UNKNOWN_DO_NOT_RETRY; no exchange order ID')
+    # Order acknowledgement is NOT equivalent to a fill or attached SL/TP.
+    return {'state':'ACKNOWLEDGED_UNPROTECTED','exchange_order_id':oid,
+            'client_order_id':payload['text'],'protection_verified':False}
+
+
+
+# --- Integrated one-trade live-execution handoff (PostgreSQL, fail-closed) ---
+# Runs as part of the existing webhook, NOT as a second server or background task.
+# This is a durable handoff, not a trade. Exchange writes stay disabled until
+# actual fill/protection reconciliation and emergency position-close exist.
+_EXECUTION_HANDOFF_SCHEMA = """
+CREATE TABLE IF NOT EXISTS luxalgo_execution_handoff (
+  event_id TEXT PRIMARY KEY,
+  symbol TEXT NOT NULL,
+  side TEXT NOT NULL CHECK(side IN ('LONG','SHORT')),
+  timeframe TEXT NOT NULL CHECK(timeframe='15m'),
+  entry_price NUMERIC NOT NULL,
+  stop_loss NUMERIC NOT NULL,
+  take_profit NUMERIC NOT NULL,
+  state TEXT NOT NULL CHECK(state IN (
+    'AWAITING_SAFE_EXECUTOR','BLOCKED_MISSING_PROTECTION','BLOCKED_INVALID_SIGNAL')),
+  exchange_order_id TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  changed_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  CONSTRAINT never_untracked_entry CHECK(exchange_order_id IS NULL)
+);
+CREATE UNIQUE INDEX IF NOT EXISTS luxalgo_execution_handoff_one_candidate
+  ON luxalgo_execution_handoff ((TRUE));
+"""
+
+
+def _record_execution_handoff(event_id, symbol, side, tf, levels):
+    """Reserve at most ONE valid 15m execution candidate in PostgreSQL.
+
+    No orders are placed or accepted; duplicate receipts cannot make another
+    candidate. On database failure this always fails closed.
+    """
+    if tf != '15m' or side not in ('LONG', 'SHORT') or not isinstance(levels, (list, tuple)) or len(levels)!=3:
+        return {'state':'NOT_ELIGIBLE','orders_placed':0}
+    try:
+        entry,sl,tp = (Decimal(str(x)) for x in levels)
+        if not all(v.is_finite() and v>0 for v in (entry,sl,tp)):
+            return {'state':'INVALID_LEVELS','orders_placed':0}
+        if not ((side=='LONG' and sl<entry<tp) or (side=='SHORT' and tp<entry<sl)):
+            return {'state':'INVALID_LEVELS','orders_placed':0}
+        with _db_connect() as conn:
+            # An atomic single row and unique index guard against two workers.
+            conn.execute(_EXECUTION_HANDOFF_SCHEMA)
+            with conn.cursor() as cur:
+                cur.execute("""INSERT INTO luxalgo_execution_handoff
+                    (event_id,symbol,side,timeframe,entry_price,stop_loss,take_profit,state)
+                    VALUES (%s,%s,%s,%s,%s,%s,%s,'AWAITING_SAFE_EXECUTOR')
+                    ON CONFLICT DO NOTHING RETURNING event_id""",
+                    (event_id,symbol,side,tf,entry,sl,tp))
+                inserted = cur.fetchone() is not None
+        return {'state':'RESERVED_EXECUTION_NOT_ENABLED' if inserted else 'ALREADY_RESERVED',
+                'orders_placed':0}
+    except (psycopg.Error, RuntimeError, OSError):
+        app.logger.warning('Execution handoff database unavailable; live execution remains locked')
+        return {'state':'DB_UNAVAILABLE_NO_ORDER','orders_placed':0}
+
+
+@app.get('/terminal/execution-handoff')
+def terminal_execution_handoff():
+    if not _terminal_permitted():
+        return _terminal_guard()
+    try:
+        with _db_connect() as con:
+            con.execute(_EXECUTION_HANDOFF_SCHEMA)
+            with con.cursor() as cur:
+                cur.execute("""SELECT event_id,symbol,side,timeframe,state,
+                    created_at FROM luxalgo_execution_handoff ORDER BY created_at DESC LIMIT 1""")
+                row=cur.fetchone()
+        result={'handoff': None if row is None else dict(row),
+                'exchange_write_enabled':False,'live_trading':False,
+                'exchange_order_submitted':False,
+                'blocker':'Actual fill + native SL/TP verification and automated emergency close are not connected'}
+        if row is not None:
+            result['handoff']['created_at']=row['created_at'].isoformat()
+        response=jsonify(result)
+        response.headers['Cache-Control']='no-store'
+        return response
+    except (psycopg.Error, RuntimeError, OSError):
+        return jsonify(error='Execution handoff unavailable',live_trading=False),503
+
+
+# --- Persistent real-execution recovery journal and authenticated READ-BACK ---
+# This is part of the existing Flask server and PostgreSQL. No second bot.
+# It deliberately does not grant the currently missing permission to place orders.
+_GATE_LIVE_JOURNAL_SCHEMA = """
+CREATE TABLE IF NOT EXISTS luxalgo_live_execution_journal (
+  id SMALLINT PRIMARY KEY CHECK (id=1),
+  event_id TEXT NOT NULL UNIQUE,
+  contract TEXT NOT NULL,
+  side TEXT NOT NULL CHECK(side IN ('LONG','SHORT')),
+  client_order_text TEXT NOT NULL UNIQUE,
+  state TEXT NOT NULL CHECK(state IN
+    ('PREPARED','DISPATCH_UNCERTAIN','ACKNOWLEDGED','PROTECTION_UNVERIFIED',
+     'PROTECTED','RECOVERY_REQUIRED','CLOSED')),
+  exchange_order_id TEXT,
+  sl_order_id TEXT,
+  tp_order_id TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  last_observation JSONB NOT NULL DEFAULT '{}'::jsonb
+);
+"""
+
+
+def _gate_client_order_text(event_id):
+    return 't-lux-'+hashlib.sha256(str(event_id).encode('utf8')).hexdigest()[:24]
+
+
+def _live_journal_prepare(event_id, contract, side):
+    """Atomically reserve the one lifetime trade ID before any potential POST.
+
+    Must never be invoked from an untrusted public route. Leaves the existing
+    journal intact on replays, network crashes, or duplicate signals.
+    """
+    if not re.fullmatch(r'[a-zA-Z0-9_.:-]{4,100}', str(event_id)):
+        raise GateOrderTransportError('Invalid event ID')
+    if not re.fullmatch(r'[A-Z0-9]{2,25}_USDT', str(contract)) or side not in ('LONG','SHORT'):
+        raise GateOrderTransportError('Invalid contract or direction')
+    with _db_connect() as con:
+        con.execute(_GATE_LIVE_JOURNAL_SCHEMA)
+        with con.cursor() as cur:
+            cur.execute('SELECT pg_advisory_xact_lock(%s)', (65913043,))
+            cur.execute('''INSERT INTO luxalgo_live_execution_journal
+                (id,event_id,contract,side,client_order_text,state)
+                VALUES (1,%s,%s,%s,%s,'PREPARED')
+                ON CONFLICT DO NOTHING RETURNING event_id''',
+                (event_id,contract,side,_gate_client_order_text(event_id)))
+            return cur.fetchone() is not None
+
+
+def _live_journal_record(event_id, state, *, exchange_order_id=None,
+                         sl_order_id=None, tp_order_id=None):
+    """Fail closed and record exchange identities; no order is sent here.
+
+    An unknown POST outcome MUST be logged as DISPATCH_UNCERTAIN. The
+    journal is never reset automatically, even after a restart.
+    """
+    states={'DISPATCH_UNCERTAIN','ACKNOWLEDGED','PROTECTION_UNVERIFIED',
+            'PROTECTED','RECOVERY_REQUIRED','CLOSED'}
+    if state not in states:
+        raise GateOrderTransportError('Unapproved lifecycle state')
+    ids=(exchange_order_id,sl_order_id,tp_order_id)
+    if any(x is not None and not re.fullmatch(r'[1-9][0-9]{0,19}',str(x)) for x in ids):
+        raise GateOrderTransportError('Invalid exchange ID')
+    with _db_connect() as con:
+        con.execute(_GATE_LIVE_JOURNAL_SCHEMA)
+        with con.cursor() as cur:
+            cur.execute('SELECT pg_advisory_xact_lock(%s)', (65913043,))
+            cur.execute('''SELECT state,exchange_order_id,sl_order_id,tp_order_id
+                  FROM luxalgo_live_execution_journal WHERE id=1 AND event_id=%s FOR UPDATE''',(event_id,))
+            row=cur.fetchone()
+            if row is None:
+                raise GateOrderTransportError('Missing durable reservation')
+            # Terminal states cannot be reopened by a replay or a new webhook.
+            if row['state']=='CLOSED':
+                raise GateOrderTransportError('Trade already closed')
+            for field,new in zip(('exchange_order_id','sl_order_id','tp_order_id'),ids):
+                if new is not None and row[field] is not None and str(row[field])!=str(new):
+                    raise GateOrderTransportError('Conflicting exchange order ID')
+            cur.execute('''UPDATE luxalgo_live_execution_journal SET
+                  state=%s, exchange_order_id=COALESCE(exchange_order_id,%s),
+                  sl_order_id=COALESCE(sl_order_id,%s),
+                  tp_order_id=COALESCE(tp_order_id,%s),updated_at=NOW()
+                  WHERE id=1 AND event_id=%s''',
+                  (state,str(exchange_order_id) if exchange_order_id else None,
+                   str(sl_order_id) if sl_order_id else None,
+                   str(tp_order_id) if tp_order_id else None,event_id))
+
+
+def _gate_get_execution_record(path):
+    """Read one identified Gate.io futures order/position using API v4 GET."""
+    if not (re.fullmatch(r'/api/v4/futures/usdt/orders/[1-9][0-9]{0,19}',path) or
+            re.fullmatch(r'/api/v4/futures/usdt/price_orders/[1-9][0-9]{0,19}',path) or
+            re.fullmatch(r'/api/v4/futures/usdt/positions/[A-Z0-9]{2,25}_USDT',path)):
+        raise GateOrderTransportError('Read endpoint not approved')
+    key=os.getenv('GATE_API_KEY','').strip()
+    secret=os.getenv('GATE_API_SECRET','').strip()
+    if not key or not secret:
+        raise GateOrderTransportError('Gate credentials unavailable')
+    stamp=str(int(time.time()))
+    digest=hashlib.sha512(b'').hexdigest()
+    message='\n'.join(('GET',path,'',digest,stamp))
+    sign=hmac.new(secret.encode(),message.encode(),hashlib.sha512).hexdigest()
+    req=Request('https://api.gateio.ws'+path, method='GET',headers={
+        'KEY':key,'Timestamp':stamp,'SIGN':sign,'Accept':'application/json'})
+    try:
+        with urlopen(req,timeout=8) as response:
+            record=json.load(response)
+    except (HTTPError,URLError,OSError,TimeoutError,ValueError):
+        raise GateOrderTransportError('Exchange read-back unavailable') from None
+    if not isinstance(record,dict):
+        raise GateOrderTransportError('Invalid exchange response')
+    if '/positions/' in path and record.get('contract')!=path.rsplit('/',1)[-1]:
+        raise GateOrderTransportError('Position contract mismatch')
+    if '/orders/' in path and str(record.get('id'))!=path.rsplit('/',1)[-1]:
+        raise GateOrderTransportError('Order identity mismatch')
+    return record
+
+
+@app.get('/terminal/live-execution-journal')
+def terminal_live_execution_journal():
+    """Protected status view; never exposes API credentials or permits order writes."""
+    if not _terminal_permitted(): return _terminal_guard()
+    try:
+        with _db_connect() as con:
+            con.execute(_GATE_LIVE_JOURNAL_SCHEMA)
+            with con.cursor() as cur:
+                cur.execute('''SELECT event_id,contract,side,state,exchange_order_id,
+                    sl_order_id,tp_order_id,created_at,updated_at
+                    FROM luxalgo_live_execution_journal WHERE id=1''')
+                row=cur.fetchone()
+        if row:
+            row=dict(row)
+            for key in ('created_at','updated_at'):
+                row[key]=row[key].isoformat()
+        response=jsonify(journal=row,live_trading=False,orders_enabled=False,
+                         exchange_write_enabled=False)
+        response.headers['Cache-Control']='no-store'
+        return response
+    except (psycopg.Error,RuntimeError,OSError):
+        return jsonify(error='Journal unavailable; execution blocked',live_trading=False),503
+
+
+
+# === REAL GATE.IO ONE-WAY EXECUTION SAFETY CORE (NOT LIVE-WIRED) ===
+# The code below implements authenticated exchange requests, not paper orders.
+# Entry dispatch remains blocked until verified exchange mode, durable job
+# dispatch/recovery, sizing using fresh account equity, and protection readback
+# are connected. NEVER call these methods from a public webhook directly.
+
+_GATE_ONEWAY_HOST = 'https://api.gateio.ws'
+_GATE_ORDER_PATH = '/api/v4/futures/usdt/orders'
+
+
+def _gate_v4_authenticated_request(method, path, *, payload=None, timeout=8):
+    """Exchange request with EXACT signed bytes; explicit path/method allowlist.
+
+    POST is only for an explicitly requested full one-way reduce-only close.
+    This low-level routine is NOT exposed as a Flask route. Do not log headers.
+    Network errors are ambiguous: do not automatically retry a POST.
+    """
+    allowed_get = (r'/api/v4/futures/usdt/orders/[1-9][0-9]{0,19}',
+                   r'/api/v4/futures/usdt/positions/[A-Z0-9]{2,25}_USDT',
+                   r'/api/v4/futures/usdt/price_orders/[1-9][0-9]{0,19}')
+    if method == 'GET':
+        if payload is not None or not any(re.fullmatch(x,path) for x in allowed_get):
+            raise GateOrderTransportError('GET route/parameters not allowed')
+        body = ''
+    elif method == 'POST' and path == _GATE_ORDER_PATH:
+        if not isinstance(payload,dict) or set(payload) != {'contract','size','close','reduce_only','price','tif','text'}:
+            raise GateOrderTransportError('Only one-way full-close payload is allowed')
+        if (not re.fullmatch(r'[A-Z0-9]{2,25}_USDT',str(payload['contract'])) or
+            type(payload['size']) is not int or payload['size'] != 0 or
+            payload['close'] is not True or payload['reduce_only'] is not True or
+            payload['price'] != '0' or payload['tif'] != 'ioc' or
+            not re.fullmatch(r't-[a-zA-Z0-9_-]{1,25}',str(payload['text']))):
+            raise GateOrderTransportError('Invalid safe-close order')
+        body=json.dumps(payload,separators=(',',':'),ensure_ascii=True)
+    else:
+        raise GateOrderTransportError('Unapproved exchange operation')
+    key=os.getenv('GATE_API_KEY','').strip(); secret=os.getenv('GATE_API_SECRET','').strip()
+    if not key or not secret:
+        raise GateOrderTransportError('Gate API credentials unavailable')
+    stamp=str(int(time.time()))
+    digest=hashlib.sha512(body.encode('utf8')).hexdigest()
+    message='\n'.join((method,path,'',digest,stamp))
+    signature=hmac.new(secret.encode('utf8'),message.encode('utf8'),hashlib.sha512).hexdigest()
+    headers={'KEY':key,'Timestamp':stamp,'SIGN':signature,'Accept':'application/json'}
+    if method=='POST': headers['Content-Type']='application/json'
+    req=Request(_GATE_ONEWAY_HOST+path, data=(body.encode('utf8') if method=='POST' else None),
+                method=method, headers=headers)
+    try:
+        with urlopen(req,timeout=timeout) as response:
+            result=json.load(response)
+    except (HTTPError,URLError,TimeoutError,OSError,ValueError):
+        if method=='POST':
+            raise GateOrderTransportError('EMERGENCY_CLOSE_ACK_UNKNOWN: exchange reconciliation required') from None
+        raise GateOrderTransportError('Exchange readback failed') from None
+    if not isinstance(result,dict):
+        raise GateOrderTransportError('Malformed exchange response; do not retry writes')
+    return result
+
+
+def _gate_oneway_safe_close_payload(contract, event_id):
+    """Full close of an existing ONE-WAY position; never an opening order."""
+    if not re.fullmatch(r'[A-Z0-9]{2,25}_USDT',str(contract)):
+        raise GateOrderTransportError('Invalid contract')
+    if not re.fullmatch(r'[a-zA-Z0-9_.:-]{4,100}',str(event_id)):
+        raise GateOrderTransportError('Invalid trade identity')
+    text='t-c-'+hashlib.sha256(str(event_id).encode('utf8')).hexdigest()[:23]
+    return {'contract':contract,'size':0,'close':True,'reduce_only':True,
+            'price':'0','tif':'ioc','text':text}
+
+
+def _gate_close_existing_oneway_position(contract, event_id, *,
+                                        position_mode_verified=False,
+                                        durable_recovery_reserved=False):
+    """Real exchange close operation; CALLER must verify identity, mode & journal.
+
+    Sending close=TRUE is not proof of liquidation; reconcile the resulting
+    order and a fresh position snapshot. Do not retry on ambiguous responses.
+    No automatic call to this function exists yet.
+    """
+    if not (position_mode_verified is True and durable_recovery_reserved is True):
+        raise GateOrderTransportError('Close blocked: verified ONE-WAY mode and durable recovery reservation required')
+    payload=_gate_oneway_safe_close_payload(contract,event_id)
+    return _gate_v4_authenticated_request('POST',_GATE_ORDER_PATH,payload=payload)
+
+
+def _gate_reconcile_entry_and_position(contract, side, contracts, exchange_order_id):
+    """Live GET-only entry + position readback; does NOT claim SL/TP exists."""
+    if side not in ('LONG','SHORT') or type(contracts) is not int or contracts<1:
+        raise GateOrderTransportError('Invalid expected position')
+    if not re.fullmatch(r'[A-Z0-9]{2,25}_USDT',str(contract)):
+        raise GateOrderTransportError('Invalid contract')
+    if not re.fullmatch(r'[1-9][0-9]{0,19}',str(exchange_order_id)):
+        raise GateOrderTransportError('Invalid order ID')
+    order=_gate_v4_authenticated_request('GET',_GATE_ORDER_PATH+'/'+str(exchange_order_id))
+    position=_gate_v4_authenticated_request('GET','/api/v4/futures/usdt/positions/'+contract)
+    if str(order.get('id')) != str(exchange_order_id) or order.get('contract') != contract:
+        raise GateOrderTransportError('Entry identity not reconciled')
+    # Gate.io "finished" can also mean canceled/IOC; verify actual fill.
+    if order.get('status') != 'finished' or order.get('finish_as') != 'filled':
+        raise GateOrderTransportError('Entry not proven fully filled')
+    try:
+        size=Decimal(str(position['size']))
+    except (KeyError,TypeError,InvalidOperation):
+        raise GateOrderTransportError('Invalid position snapshot') from None
+    if not size.is_finite() or position.get('contract')!=contract:
+        raise GateOrderTransportError('Position identity invalid')
+    expected=Decimal(contracts if side=='LONG' else -contracts)
+    if size!=expected:
+        raise GateOrderTransportError('Position quantity or direction mismatch')
+    return {'state':'ENTRY_FILLED_POSITION_MATCH','order_id':str(exchange_order_id),
+            'protection_verified':False,'orders_enabled':False}
+
+
+def _gate_reconcile_native_protection(stop_id, take_id, *, contract):
+    """Read actual native trigger records; never assume TP/SL are active.
+
+    Detailed stop/TP direction, rule, price, quantities and freshness must be
+    checked against the execution plan in the reviewed protection auditor.
+    """
+    for value in (stop_id,take_id):
+        if not re.fullmatch(r'[1-9][0-9]{0,19}',str(value)):
+            raise GateOrderTransportError('Verified independent trigger IDs required')
+    if str(stop_id)==str(take_id):
+        raise GateOrderTransportError('SL and TP IDs are identical')
+    records=[]
+    for oid in (stop_id,take_id):
+        item=_gate_v4_authenticated_request('GET','/api/v4/futures/usdt/price_orders/'+str(oid))
+        if str(item.get('id'))!=str(oid) or item.get('status')!='open':
+            raise GateOrderTransportError('Native protection missing or inactive')
+        initial=item.get('initial') or {}
+        if initial.get('contract')!=contract:
+            raise GateOrderTransportError('Protective order contract mismatch')
+        records.append(item)
+    return {'state':'TRIGGERS_PRESENT_REVIEW_LEVELS_AND_DIRECTION',
+            'stop_order':records[0],'take_order':records[1],
+            'protection_verified':False,'orders_enabled':False}
+
+
+# === ONE-TRADE EXCHANGE READBACK AND DISPATCH-BLOCKER REVIEW ===
+# Uses REAL authenticated GETs and persisted PostgreSQL order identities.
+# Never pretends that a matching response proves guaranteed stop execution.
+# No order POST is reachable from this endpoint.
+def _gate_current_execution_assessment():
+    with _db_connect() as con:
+        con.execute(_GATE_LIVE_JOURNAL_SCHEMA)
+        with con.cursor() as cur:
+            cur.execute("""SELECT event_id,contract,side,state,exchange_order_id,
+                         sl_order_id,tp_order_id FROM luxalgo_live_execution_journal WHERE id=1""")
+            row=cur.fetchone()
+    if not row:
+        return {'status':'NO_EXECUTED_TRADE', 'readback':'NOT_APPLICABLE',
+                'execution_enabled':False,'protective_orders_verified':False,
+                'next_blocker':'No journaled exchange entry; automatic live execution not wired'}
+    result={'status':row['state'],'contract':row['contract'],
+            'exchange_order_id':row['exchange_order_id'],
+            'sl_order_id':row['sl_order_id'],'tp_order_id':row['tp_order_id'],
+            'execution_enabled':False,'protective_orders_verified':False}
+    if not row['exchange_order_id']:
+        result['readback']='NOT_AVAILABLE'
+        result['next_blocker']='Missing exchange order ID; never retry an uncertain submission'
+        return result
+    try:
+        position_record=_gate_get_execution_record('/api/v4/futures/usdt/positions/'+row['contract'])
+        order_record=_gate_get_execution_record('/api/v4/futures/usdt/orders/'+str(row['exchange_order_id']))
+        size=Decimal(str(position_record['size']))
+        if not size.is_finite() or position_record.get('contract')!=row['contract']:
+            raise GateOrderTransportError('Position readback invalid')
+        result['readback']='ORDER_AND_POSITION_OBSERVED'
+        result['position_open']=size!=0
+        result['order_finish_as']=order_record.get('finish_as')
+        if (size>0 and row['side']!='LONG') or (size<0 and row['side']!='SHORT'):
+            result['readback']='DIRECTION_MISMATCH'
+            result['next_blocker']='Position direction does not match journal; halt and investigate'
+            return result
+        if size==0:
+            result['next_blocker']='No open position observed; reconcile fills and leftover triggers'
+            return result
+        if not row['sl_order_id'] or not row['tp_order_id']:
+            result['next_blocker']='EXPOSURE_WITHOUT_JOURNALED_STOP_AND_TAKE; urgent manual review'
+            return result
+        triggers=_gate_reconcile_native_protection(row['sl_order_id'],row['tp_order_id'],contract=row['contract'])
+        if triggers['state']=='TRIGGERS_PRESENT_REVIEW_LEVELS_AND_DIRECTION':
+            result['readback']='TRIGGERS_PRESENT_NOT_FULLY_VERIFIED'
+            result['next_blocker']='Confirm trigger direction, rules and prices against actual filled trade'
+        return result
+    except (GateOrderTransportError,KeyError,TypeError,ValueError,InvalidOperation) as exc:
+        result['readback']='UNVERIFIED'
+        result['next_blocker']=str(exc)[:160]
+        return result
+
+
+@app.get('/terminal/gate-live-readback')
+def terminal_gate_live_readback():
+    if not _terminal_permitted(): return _terminal_guard()
+    try:
+        result=_gate_current_execution_assessment()
+        response=jsonify(result)
+        response.headers['Cache-Control']='no-store'
+        return response
+    except (psycopg.Error,RuntimeError,OSError):
+        return jsonify(status='UNAVAILABLE',execution_enabled=False,
+                       protective_orders_verified=False),503
+
+
+# === NATIVE PROTECTIVE ORDER VERIFICATION (EXCHANGE GET; NO SIMULATED ORDERS) ===
+def _gate_verify_protection_against_handoff():
+    """Verify native SL/TP records against the journaled signal levels.
+
+    This is a point-in-time exchange observation, not guaranteed future execution.
+    Requires an independent order and position read from Gate.io, and exact
+    existing IDs recorded in PostgreSQL. Does not generate or retry orders.
+    """
+    with _db_connect() as con:
+        con.execute(_GATE_LIVE_JOURNAL_SCHEMA)
+        con.execute(_EXECUTION_HANDOFF_SCHEMA)
+        with con.cursor() as cur:
+            cur.execute("""SELECT event_id,contract,side,state,exchange_order_id,
+                             sl_order_id,tp_order_id FROM luxalgo_live_execution_journal
+                             WHERE id=1""")
+            trade = cur.fetchone()
+            if not trade:
+                return {'status':'NO_TRADE', 'protected':False}
+            cur.execute("""SELECT entry_price,stop_loss,take_profit,symbol,side
+                             FROM luxalgo_execution_handoff WHERE event_id=%s""",
+                        (trade['event_id'],))
+            levels = cur.fetchone()
+    if not levels or levels['side'] != trade['side']:
+        return {'status':'MISSING_OR_MISMATCHED_LEVELS','protected':False}
+    ids = [trade.get(k) for k in ('exchange_order_id','sl_order_id','tp_order_id')]
+    if any(not re.fullmatch(r'[1-9][0-9]{0,19}', str(x or '')) for x in ids):
+        return {'status':'MISSING_EXCHANGE_IDS','protected':False}
+    if len(set(map(str,ids))) != 3:
+        return {'status':'DUPLICATE_EXCHANGE_IDS','protected':False}
+    contract=trade['contract']
+    if (levels['symbol'].replace('/','').replace('_','').upper() !=
+            contract.replace('_','')):
+        return {'status':'CONTRACT_MISMATCH','protected':False}
+    side=trade['side']
+    try:
+        entry=_gate_get_execution_record('/api/v4/futures/usdt/orders/'+str(ids[0]))
+        position=_gate_get_execution_record('/api/v4/futures/usdt/positions/'+contract)
+        stop=_gate_get_execution_record('/api/v4/futures/usdt/price_orders/'+str(ids[1]))
+        take=_gate_get_execution_record('/api/v4/futures/usdt/price_orders/'+str(ids[2]))
+        if entry.get('contract') != contract or entry.get('finish_as') != 'filled':
+            raise GateOrderTransportError('Entry is not confirmed filled')
+        qty=Decimal(str(position['size']))
+        if not qty.is_finite() or qty == 0 or (qty > 0) != (side == 'LONG'):
+            raise GateOrderTransportError('Position direction or quantity differs')
+        order_type='close-long-position' if side=='LONG' else 'close-short-position'
+        expected = [(stop,Decimal(str(levels['stop_loss'])),
+                     2 if side=='LONG' else 1),
+                    (take,Decimal(str(levels['take_profit'])),
+                     1 if side=='LONG' else 2)]
+        for record, price, rule in expected:
+            initial=record.get('initial') or {}
+            trigger=record.get('trigger') or {}
+            if record.get('status')!='open' or record.get('order_type')!=order_type:
+                raise GateOrderTransportError('Protective trigger inactive or wrong direction')
+            if (initial.get('contract')!=contract or str(initial.get('size'))!='0'
+                    or initial.get('close') is not True or str(initial.get('price'))!='0'):
+                raise GateOrderTransportError('Protective trigger does not fully close position')
+            if Decimal(str(trigger.get('price'))) != price or int(trigger.get('rule')) != rule:
+                raise GateOrderTransportError('Protective trigger levels or direction do not match')
+        return {'status':'EXCHANGE_PROTECTION_OBSERVED','protected':True,
+                'note':'Observed at query time only; does not guarantee stop fill or ongoing protection'}
+    except (GateOrderTransportError, ValueError, KeyError, TypeError,
+            InvalidOperation, psycopg.Error, OSError):
+        return {'status':'PROTECTION_NOT_VERIFIED','protected':False}
+
+
+@app.get('/terminal/gate-protection-verification')
+def terminal_gate_protection_verification():
+    if not _terminal_permitted():
+        return _terminal_guard()
+    try:
+        result=_gate_verify_protection_against_handoff()
+        result.update(live_trading=False, orders_enabled=False,
+                      automatic_execution_connected=False)
+        response=jsonify(result)
+        response.headers['Cache-Control']='no-store'
+        return response
+    except (psycopg.Error, RuntimeError, OSError):
+        return jsonify(status='UNAVAILABLE', protected=False,
+                       orders_enabled=False), 503
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=int(os.getenv('PORT', '8080')))
