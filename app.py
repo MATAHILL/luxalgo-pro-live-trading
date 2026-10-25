@@ -1586,7 +1586,55 @@ workspace.addEventListener('click',e=>{
 new MutationObserver(()=>{if(!demo)draw()}).observe(table,{childList:true,subtree:true,characterData:true});
 draw(true);
 })();
-</script></body></html>'''
+</script>
+<script>
+/* PAPER HISTORY v1 — isolated read-only panel; never modifies live/paper positions. */
+(function(){
+ 'use strict';
+ const workspace=document.getElementById('v4Workspace');
+ if(!workspace)return;
+ const panel=document.createElement('section');
+ panel.className='panel'; panel.id='paperClosedHistoryPanel';
+ panel.innerHTML='<div class="panel-heading"><h2>PAPER TRADE HISTORY · COMPLETED</h2><span class="label-muted">SIMULATED RESULTS ONLY · NO EXCHANGE FILLS</span></div>'+
+ '<div class="perf-grid" id="paperHistoryMetrics"><div><span>Closed Paper Trades</span><strong id="paperHistoryClosed">—</strong></div><div><span>TP</span><strong id="paperHistoryWins">—</strong></div><div><span>SL</span><strong id="paperHistoryLosses">—</strong></div><div><span>Win Rate (Paper)</span><strong id="paperHistoryRate">—</strong></div><div><span>Estimated Closed P&amp;L (USDT)</span><strong id="paperHistoryPnl">—</strong></div></div>'+
+ '<p class="light" id="paperHistoryStatus" role="status">Loading closed paper trade records…</p>'+
+ '<div class="tablewrap"><table><thead><tr><th>CREATED (UTC)</th><th>PAIR</th><th>SIDE</th><th>SIM ENTRY</th><th>SIM EXIT</th><th>RESULT</th><th>EST. P&amp;L (USDT)</th></tr></thead><tbody id="paperHistoryBody"><tr><td colspan="7">Loading…</td></tr></tbody></table></div>'+
+ '<p class="light">Historical candle-based outcomes only. Excludes fees, funding and slippage. Not actual exchange fills or verified realized P&amp;L. Latest 100 closed paper trades.</p>';
+ workspace.after(panel);
+ let busy=false;
+ const put=(id,value)=>{const el=document.getElementById(id);if(el)el.textContent=String(value??'—')};
+ async function refresh(){
+  if(busy||document.hidden)return;busy=true;
+  try{
+   const ctl=new AbortController();const timer=setTimeout(()=>ctl.abort(),9000);
+   let response;
+   try{response=await fetch('/terminal/paper-history',{cache:'no-store',signal:ctl.signal})}
+   finally{clearTimeout(timer)}
+   if(!response.ok)throw Error('History endpoint unavailable');
+   const d=await response.json();const trades=Array.isArray(d.trades)?d.trades:[];const a=d.summary||{};
+   put('paperHistoryClosed',a.closed??0);put('paperHistoryWins',a.tp??0);put('paperHistoryLosses',a.sl??0);
+   put('paperHistoryRate',a.win_rate_pct===null||a.win_rate_pct===undefined?'—':a.win_rate_pct+'%');
+   put('paperHistoryPnl',a.estimated_pnl_usdt??'—');
+   const body=document.getElementById('paperHistoryBody');body.replaceChildren();
+   if(!trades.length){const r=body.insertRow();const c=r.insertCell();c.colSpan=7;c.textContent='No closed simulated trades yet.'}
+   for(const x of trades){
+    const row=body.insertRow();
+    for(const value of [x.created_at,x.symbol,x.side,x.entry,x.exit_price,x.state,x.estimated_pnl_usdt]){
+     const cell=row.insertCell();cell.textContent=String(value??'—');
+    }
+    row.cells[5].classList.add(x.state==='TP'?'positive':'negative');
+    const pnl=Number(x.estimated_pnl_usdt);
+    if(x.estimated_pnl_usdt!==null&&Number.isFinite(pnl))row.cells[6].classList.add(pnl>=0?'positive':'negative');
+   }
+   put('paperHistoryStatus',trades.length+' completed paper records shown · figures are estimates, not Gate.io fills.');
+  }catch(err){put('paperHistoryStatus','Paper history temporarily unavailable; existing trades and cards are unaffected.');}
+  finally{busy=false;}
+ }
+ refresh();setInterval(refresh,60000);
+ document.addEventListener('visibilitychange',()=>{if(!document.hidden)refresh()});
+})();
+</script>
+</body></html>'''
 
 
 # Curated public publisher feeds. This UI is editorial news, not verified trade signals.
@@ -4489,6 +4537,48 @@ def terminal_paper_trades():
         app.logger.exception('Paper tracking database unavailable')
         return jsonify(error='Paper tracking DB unavailable',orders_placed=0),503
 
+
+
+@app.get('/terminal/paper-history')
+def terminal_paper_history():
+    """Closed simulated trades only. Read-only and separate from verified exchange fills."""
+    if not _terminal_permitted():
+        return _terminal_guard()
+    try:
+        with _db_connect() as con:
+            with con.cursor() as cur:
+                cur.execute("""
+                    SELECT o.event_id,o.created_at,o.symbol,o.side,o.timeframe,
+                           o.details->>'reference_entry' AS entry,
+                           o.details->>'stop_loss' AS stop_loss,
+                           o.details->>'take_profit' AS take_profit,
+                           t.state,t.exit_price,t.estimated_pnl_usdt,t.checked_at
+                    FROM luxalgo_paper_tracking t
+                    JOIN luxalgo_simulated_orders o ON o.event_id=t.event_id
+                    WHERE t.state IN ('SL','TP')
+                    ORDER BY o.created_at DESC LIMIT 100
+                """)
+                rows=cur.fetchall()
+        trades=[dict(event_id=r['event_id'],created_at=r['created_at'].isoformat(),
+                     symbol=r['symbol'],side=r['side'],timeframe=r['timeframe'],
+                     entry=r['entry'],stop_loss=r['stop_loss'],take_profit=r['take_profit'],
+                     state=r['state'],exit_price=str(r['exit_price']) if r['exit_price'] is not None else None,
+                     estimated_pnl_usdt=str(r['estimated_pnl_usdt']) if r['estimated_pnl_usdt'] is not None else None,
+                     checked_at=r['checked_at'].isoformat() if r['checked_at'] is not None else None)
+                for r in rows]
+        wins=sum(x['state']=='TP' for x in trades)
+        losses=sum(x['state']=='SL' for x in trades)
+        pnl_values=[Decimal(x['estimated_pnl_usdt']) for x in trades if x['estimated_pnl_usdt'] is not None]
+        response=jsonify(mode='PAPER_HISTORICAL_ESTIMATES_ONLY',real_orders=0,
+                         trades=trades,summary=dict(closed=len(trades),tp=wins,sl=losses,
+                         win_rate_pct=round(100*wins/len(trades),2) if trades else None,
+                         estimated_pnl_usdt=str(sum(pnl_values,Decimal('0'))) if pnl_values else None,
+                         pnl_records=len(pnl_values),limit=100))
+        response.headers['Cache-Control']='no-store'
+        return response
+    except (psycopg.Error,RuntimeError,OSError,ValueError):
+        app.logger.warning('Paper history temporarily unavailable',exc_info=False)
+        return jsonify(error='Paper history unavailable',real_orders=0),503
 
 @app.post('/gate/plan')
 def gate_plan():
