@@ -5811,24 +5811,55 @@ def _gate_live_risk_size(contract, side, entry, stop):
 
 @app.get('/terminal/gate-live-risk-check')
 def terminal_gate_live_risk_check():
-    if not _terminal_permitted(): return _terminal_guard()
+    """Build an exchange-sized, unsubmitted order preview for a reserved 15m signal.
+
+    Uses fresh Gate.io market/account reads and the same validated payload
+    builder as the reviewed transport. This route has NO order-write path.
+    It is deliberately NOT an authorization to trade.
+    """
+    if not _terminal_permitted():
+        return _terminal_guard()
     try:
         with _db_connect() as con:
             con.execute(_EXECUTION_HANDOFF_SCHEMA)
             with con.cursor() as cur:
-                cur.execute("""SELECT symbol,side,entry_price,stop_loss FROM luxalgo_execution_handoff
-                               ORDER BY created_at DESC LIMIT 1""")
+                cur.execute("""SELECT event_id,symbol,side,timeframe,entry_price,
+                              stop_loss,take_profit,state FROM luxalgo_execution_handoff
+                              ORDER BY created_at DESC LIMIT 1""")
                 row=cur.fetchone()
         if not row:
-            return jsonify(status='NO_SIGNAL',orders_enabled=False),404
+            return jsonify(status='NO_SIGNAL', orders_enabled=False,live_trading=False),404
+        if row['timeframe']!='15m' or row['state']!='AWAITING_SAFE_EXECUTOR':
+            raise GateOrderTransportError('Signal is not awaiting an executor')
         symbol=str(row['symbol']).upper().replace('/','').replace('_','')
         if not re.fullmatch(r'[A-Z0-9]{2,25}USDT',symbol):
             raise GateOrderTransportError('Invalid symbol')
-        result=_gate_live_risk_size(symbol[:-4]+'_USDT',row['side'],row['entry_price'],row['stop_loss'])
-        result.update(status='EXCHANGE_RISK_CHECK_ONLY',orders_enabled=False)
-        return jsonify(result)
-    except (GateOrderTransportError,psycopg.Error,RuntimeError,OverflowError,OSError):
-        return jsonify(status='RISK_NOT_VERIFIED',orders_enabled=False,live_trading=False),503
+        contract=symbol[:-4]+'_USDT'
+        sizing=_gate_live_risk_size(contract,row['side'],row['entry_price'],row['stop_loss'])
+        envelope=_gate_protected_entry_payload(
+            event_id=row['event_id'],contract=contract,side=row['side'],
+            contracts=sizing['contracts'],entry=row['entry_price'],
+            sl=row['stop_loss'],tp=row['take_profit'])
+        # The underscore-prefixed event ID is solely local transport metadata.
+        # Neither secrets nor authenticated Gate.io request headers are returned.
+        wire={k:v for k,v in envelope.items() if k!='_event_id'}
+        result={**sizing,'status':'VALIDATED_ORDER_PREVIEW_ONLY',
+                'order_preview':wire,'orders_enabled':False,
+                'live_trading':False,'order_submitted':False,
+                'protection_verified':False,'executor_connected':False,
+                'remaining_blockers':[
+                    'One-way position mode has not been independently verified for entry',
+                    'Durable trade execution and crash recovery are not wired to webhook',
+                    'Exchange fill and both protective triggers need post-submit verification',
+                    'Automated emergency close and account-owner approval remain required',
+                ]}
+        response=jsonify(result)
+        response.headers['Cache-Control']='no-store'
+        return response
+    except (GateOrderTransportError,psycopg.Error,RuntimeError,OverflowError,
+            OSError,ValueError,TypeError,KeyError):
+        return jsonify(status='RISK_OR_PREVIEW_NOT_VERIFIED',orders_enabled=False,
+                       live_trading=False,order_submitted=False),503
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=int(os.getenv('PORT', '8080')))
