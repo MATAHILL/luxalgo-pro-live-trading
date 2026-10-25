@@ -5084,7 +5084,7 @@ def _gate_protected_entry_payload(*, event_id, contract, side, contracts, entry,
     if not re.fullmatch(r'[a-zA-Z0-9_.:-]{4,100}', str(event_id)):
         raise GateOrderTransportError('Invalid idempotency event ID')
     unique='t-lux-'+hashlib.sha256(str(event_id).encode()).hexdigest()[:24]
-    return {'contract':contract,'size':str(contracts if side=='LONG' else -contracts),
+    return {'_event_id':str(event_id),'contract':contract,'size':str(contracts if side=='LONG' else -contracts),
             'price':'0','tif':'ioc','text':unique,
             'tpsl_tp_trigger_price':str(take), 'tpsl_sl_trigger_price':str(stop)}
 
