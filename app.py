@@ -5084,7 +5084,7 @@ def _gate_protected_entry_payload(*, event_id, contract, side, contracts, entry,
     if not re.fullmatch(r'[a-zA-Z0-9_.:-]{4,100}', str(event_id)):
         raise GateOrderTransportError('Invalid idempotency event ID')
     unique='t-lux-'+hashlib.sha256(str(event_id).encode()).hexdigest()[:24]
-    return {'_event_id':str(event_id),'contract':contract,'size':contracts if side=='LONG' else -contracts
+    return {'_event_id':str(event_id),'contract':contract,'size':contracts if side=='LONG' else -contracts,
             'price':'0','tif':'ioc','text':unique,
             'tpsl_tp_trigger_price':str(take), 'tpsl_sl_trigger_price':str(stop)}
 
@@ -5757,34 +5757,57 @@ def _gate_live_sizing_inputs(contract):
 
 
 def _gate_live_risk_size(contract, side, entry, stop):
-    """Calculate 0.5% equity stop-distance sizing; does not authorize a trade."""
-    if side not in ('LONG','SHORT'):
+    """Read-only position sizing: 3–5% allocated margin; 3–5% risk ceiling.
+
+    A larger risk budget does NOT widen the stop. Position allocation and
+    stop-loss risk are separate constraints; whichever caps size first wins.
+    No orders are submitted here.
+    """
+    if side not in ('LONG', 'SHORT'):
         raise GateOrderTransportError('Invalid side')
     try:
-        entry=Decimal(str(entry)); stop=Decimal(str(stop))
-        if not entry.is_finite() or not stop.is_finite() or min(entry,stop)<=0 or entry==stop:
+        entry = Decimal(str(entry)); stop = Decimal(str(stop))
+        if not entry.is_finite() or not stop.is_finite() or min(entry, stop) <= 0 or entry == stop:
             raise ValueError()
-        if (side=='LONG' and stop>=entry) or (side=='SHORT' and stop<=entry):
+        if (side == 'LONG' and stop >= entry) or (side == 'SHORT' and stop <= entry):
             raise ValueError()
-    except (InvalidOperation,ValueError,TypeError):
-        raise GateOrderTransportError('Invalid entry/stop for direction') from None
-    x=_gate_live_sizing_inputs(contract)
-    if abs(x['last']-entry)/entry > Decimal('0.01'):
+        # Both settings are percentages of account equity, not price distance.
+        risk_percent = Decimal(os.getenv('GATE_LIVE_RISK_PERCENT', '3'))
+        allocation_percent = Decimal(os.getenv('GATE_LIVE_POSITION_PERCENT', '3'))
+        leverage = Decimal(os.getenv('GATE_LIVE_MAX_LEVERAGE', '5'))
+        if (not all(v.is_finite() for v in (risk_percent, allocation_percent, leverage))
+                or not (Decimal('3') <= risk_percent <= Decimal('5'))
+                or not (Decimal('3') <= allocation_percent <= Decimal('5'))
+                or not (Decimal('1') <= leverage <= Decimal('5'))):
+            raise ValueError()
+    except (InvalidOperation, ValueError, TypeError):
+        raise GateOrderTransportError('Invalid entry/stop or 3–5% sizing configuration') from None
+    x = _gate_live_sizing_inputs(contract)
+    if abs(x['last'] - entry) / entry > Decimal('0.01'):
         raise GateOrderTransportError('Entry is stale versus current market')
-    budget=x['equity']*Decimal('0.005')
-    per_contract=abs(entry-stop)*x['multiplier']
-    qty=min(int(budget/per_contract),x['max_qty'])
-    if qty<x['min_qty'] or qty<1:
-        raise GateOrderTransportError('Minimum contract size exceeds 0.5% stop risk')
-    # Hard maximum of 5x effective exposure; does not set exchange leverage.
-    notional=qty*x['multiplier']*x['last']
-    if notional > x['equity']*Decimal(5):
-        raise GateOrderTransportError('Position exposure exceeds 5x equity')
-    return {'contract':contract,'side':side,'contracts':qty,
-            'risk_budget_usdt':str(budget),'stop_distance_risk_usdt':str(qty*per_contract),
-            'reference_market_price':str(x['last']), 'risk_passed':True,
-            'order_submitted':False,'protection_verified':False,
-            'live_trading':False}
+    budget = x['equity'] * risk_percent / Decimal('100')
+    allocated_margin = x['equity'] * allocation_percent / Decimal('100')
+    per_contract = abs(entry - stop) * x['multiplier']
+    # A margin allocation of 3–5% with up to 5x leverage implies
+    # notional of up to 15–25% of equity, NOT a 3–5% loss target.
+    max_by_allocation = int((allocated_margin * leverage) / (x['multiplier'] * x['last']))
+    max_by_risk = int(budget / per_contract)
+    qty = min(max_by_allocation, max_by_risk, x['max_qty'])
+    if qty < x['min_qty'] or qty < 1:
+        raise GateOrderTransportError('Minimum contracts exceed allocated margin or stop-loss risk')
+    notional = qty * x['multiplier'] * x['last']
+    actual_stop_risk = qty * per_contract
+    return {'contract': contract, 'side': side, 'contracts': qty,
+            'risk_percent_ceiling': str(risk_percent),
+            'position_margin_percent': str(allocation_percent),
+            'leverage_cap': str(leverage),
+            'allocated_margin_usdt': str(allocated_margin),
+            'position_notional_usdt': str(notional),
+            'risk_budget_usdt': str(budget),
+            'stop_distance_risk_usdt': str(actual_stop_risk),
+            'reference_market_price': str(x['last']),
+            'risk_passed': True, 'order_submitted': False,
+            'protection_verified': False, 'live_trading': False}
 
 @app.get('/terminal/gate-live-risk-check')
 def terminal_gate_live_risk_check():
