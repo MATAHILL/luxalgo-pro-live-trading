@@ -3875,7 +3875,7 @@ def terminal_live_risk_check():
     checks.append(dict(name='Exchange protective stops and take profit',passed=False,
                        detail='No verified exchange-side SL/TP placement or recovery'))
     response=jsonify(status='BLOCKED',safe_to_trade=False,orders_placed=0,live_trading=False,
-                     limits=dict(max_new_positions=1,max_leverage=5,risk_percent=3),
+                     limits=dict(max_new_positions=1,max_leverage=5,risk_percent=0.5),
                      snapshot=dict(verified_equity_usdt=equity,verified_available_usdt=available,
                                    risk_budget_usdt=risk_budget,open_positions=position_count),
                      checks=checks,
@@ -3996,8 +3996,8 @@ def _execution_dry_run_preview(symbol, side, tf, hypothetical_equity, risk_perce
         risk = Decimal(str(risk_percent))
     except (InvalidOperation, ValueError, TypeError):
         raise ValueError('Invalid risk percentage')
-    if not risk.is_finite() or risk < Decimal('0.5') or risk > Decimal('5') or (risk * 2) != (risk * 2).to_integral_value():
-        raise ValueError('Risk percentage must be 0.5 to 5 in 0.5% steps')
+    if not risk.is_finite() or risk <= 0 or risk > Decimal('0.5'):
+        raise ValueError('Risk percentage must be greater than 0 and no more than 0.5%')
     plan = _gate_atr_plan(symbol, side, tf)
     contract = plan['contract']
     path = '/api/v4/futures/usdt/contracts/' + contract
@@ -4086,7 +4086,7 @@ def terminal_execution_preview():
     if not re.fullmatch(r'[A-Z0-9]{3,25}USDT',symbol) or side not in ('LONG','SHORT') or tf not in ('5m','15m'):
         return jsonify(error='Invalid symbol, side or timeframe'),422
     try:
-        preview=_execution_dry_run_preview(symbol,side,tf,data.get('hypothetical_equity_usdt'),data.get('risk_percent',1))
+        preview=_execution_dry_run_preview(symbol,side,tf,data.get('hypothetical_equity_usdt'),data.get('risk_percent',0.5))
         response=jsonify(preview=preview, mode='DRY_RUN_ONLY',live_trading=False,orders_enabled=False)
         response.headers['Cache-Control']='no-store'
         return response
@@ -4112,11 +4112,11 @@ def terminal_execution_precheck():
         return jsonify(error='Invalid stored event ID', orders_placed=0), 422
     from decimal import Decimal, InvalidOperation
     try:
-        risk_percent = Decimal(os.getenv('DEFAULT_RISK_PERCENT', '3'))
-        if not risk_percent.is_finite() or risk_percent < Decimal('0.5') or risk_percent > Decimal('5'):
+        risk_percent = Decimal(os.getenv('DEFAULT_RISK_PERCENT', '0.5'))
+        if not risk_percent.is_finite() or risk_percent <= 0 or risk_percent > Decimal('0.5'):
             raise InvalidOperation()
     except (InvalidOperation, TypeError, ValueError):
-        return jsonify(error='Invalid DEFAULT_RISK_PERCENT (expected 0.5 to 5)', orders_placed=0), 503
+        return jsonify(error='Invalid DEFAULT_RISK_PERCENT (expected greater than 0 and no more than 0.5)', orders_placed=0), 503
     try:
         with _db_connect() as con:
             _ensure_schema(con)
@@ -5783,7 +5783,7 @@ def _gate_live_sizing_inputs(contract):
 
 
 def _gate_live_risk_size(contract, side, entry, stop):
-    """Read-only position sizing: 3–5% allocated margin; 3–5% risk ceiling.
+    """Read-only position sizing: 3–5% allocated margin; maximum 0.5% stop-loss risk.
 
     A larger risk budget does NOT widen the stop. Position allocation and
     stop-loss risk are separate constraints; whichever caps size first wins.
@@ -5798,16 +5798,16 @@ def _gate_live_risk_size(contract, side, entry, stop):
         if (side == 'LONG' and stop >= entry) or (side == 'SHORT' and stop <= entry):
             raise ValueError()
         # Both settings are percentages of account equity, not price distance.
-        risk_percent = Decimal(os.getenv('GATE_LIVE_RISK_PERCENT', '3'))
+        risk_percent = Decimal(os.getenv('GATE_LIVE_RISK_PERCENT', '0.5'))
         allocation_percent = Decimal(os.getenv('GATE_LIVE_POSITION_PERCENT', '3'))
         leverage = Decimal(os.getenv('GATE_LIVE_MAX_LEVERAGE', '5'))
         if (not all(v.is_finite() for v in (risk_percent, allocation_percent, leverage))
-                or not (Decimal('3') <= risk_percent <= Decimal('5'))
+                or not (Decimal('0') < risk_percent <= Decimal('0.5'))
                 or not (Decimal('3') <= allocation_percent <= Decimal('5'))
                 or not (Decimal('1') <= leverage <= Decimal('5'))):
             raise ValueError()
     except (InvalidOperation, ValueError, TypeError):
-        raise GateOrderTransportError('Invalid entry/stop or 3–5% sizing configuration') from None
+        raise GateOrderTransportError('Invalid entry/stop or 0.5% maximum risk configuration') from None
     x = _gate_live_sizing_inputs(contract)
     if abs(x['last'] - entry) / entry > Decimal('0.01'):
         raise GateOrderTransportError('Entry is stale versus current market')
