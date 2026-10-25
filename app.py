@@ -5850,7 +5850,7 @@ def terminal_gate_live_risk_check():
             con.execute(_EXECUTION_HANDOFF_SCHEMA)
             with con.cursor() as cur:
                 cur.execute("""SELECT event_id,symbol,side,timeframe,entry_price,
-                              stop_loss,take_profit,state FROM luxalgo_execution_handoff
+                              stop_loss,take_profit,state,created_at FROM luxalgo_execution_handoff
                               ORDER BY created_at DESC LIMIT 1""")
                 row=cur.fetchone()
         if not row:
