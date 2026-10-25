@@ -2181,7 +2181,7 @@ def _oneway_candidate_gate_review(candidate):
         'event_id': candidate['event_id'],
         'contract': symbol[:-4] + '_USDT', 'side': candidate['side'],
         'timeframe': '15m',
-        'risk_percent': '0.5', 'max_leverage': 5,
+        'risk_percent': '3', 'max_risk_percent': '5', 'max_leverage': 5,
         'reason': 'Needs explicit TP2, current authenticated equity, fresh contract metadata, '
                   'one-way mode verification, durable exchange order IDs and automatic recovery',
         'gateway_connected': False, 'exchange_orders_submitted': False,
@@ -2502,8 +2502,8 @@ def _live_candidate_dry_run(payload):
                 raise ValueError(name)
             return n
         entry, stop, tp, equity = [positive(k) for k in ('entry','sl','tp1','equity_usdt')]
-        risk_percent = Decimal(str(payload.get('risk_percent', '0.5')))
-        if not risk_percent.is_finite() or risk_percent <= 0 or risk_percent > Decimal('0.5'):
+        risk_percent = Decimal(str(payload.get('risk_percent', '3')))
+        if not risk_percent.is_finite() or risk_percent <= 0 or risk_percent > Decimal('5'):
             raise ValueError('risk_percent')
         if equity > Decimal('1000000000'):
             raise ValueError('equity_usdt')
@@ -2582,8 +2582,8 @@ def _risk_gate_inputs(payload):
     risk = decimal_field('risk_percent')
     leverage = decimal_field('leverage')
     equity = decimal_field('hypothetical_equity_usdt')
-    if risk > Decimal('0.5'):
-        raise ValueError('Risk exceeds 0.5% sandbox ceiling')
+    if risk > Decimal('5'):
+        raise ValueError('Risk exceeds 5% sandbox ceiling')
     if leverage > Decimal('5'):
         raise ValueError('Leverage exceeds 5x sandbox ceiling')
     if equity > Decimal('1000000000'):
@@ -3876,7 +3876,7 @@ def terminal_live_risk_check():
     checks.append(dict(name='Exchange protective stops and take profit',passed=False,
                        detail='No verified exchange-side SL/TP placement or recovery'))
     response=jsonify(status='BLOCKED',safe_to_trade=False,orders_placed=0,live_trading=False,
-                     limits=dict(max_new_positions=1,max_leverage=5,risk_percent=0.5),
+                     limits=dict(max_new_positions=1,max_leverage=5,risk_percent=3,max_risk_percent=5),
                      snapshot=dict(verified_equity_usdt=equity,verified_available_usdt=available,
                                    risk_budget_usdt=risk_budget,open_positions=position_count),
                      checks=checks,
@@ -3975,7 +3975,7 @@ def _gate_atr_plan(symbol, direction, tf="15m"):
         'reference_entry':entry, 'atr_14_wilder':atr,
         'stop_loss_1_5_atr':sl, 'take_profit_1_2_atr':tp1,
         'planned_leverage':5,
-        'intended_risk_fraction':0.005,
+        'intended_risk_fraction':0.03,
         'margin_mode':'CROSS', 'position_mode':'HEDGE',
         'position_size':'NOT_CALCULATED', 'exchange_orders_sent':0,
         'warning':'Planning only; prices are not executable quotes. No SL/TP orders exist.'
@@ -3997,8 +3997,8 @@ def _execution_dry_run_preview(symbol, side, tf, hypothetical_equity, risk_perce
         risk = Decimal(str(risk_percent))
     except (InvalidOperation, ValueError, TypeError):
         raise ValueError('Invalid risk percentage')
-    if not risk.is_finite() or risk <= 0 or risk > Decimal('0.5'):
-        raise ValueError('Risk percentage must be greater than 0 and no more than 0.5%')
+    if not risk.is_finite() or risk <= 0 or risk > Decimal('5'):
+        raise ValueError('Risk percentage must be greater than 0 and no more than 5%')
     plan = _gate_atr_plan(symbol, side, tf)
     contract = plan['contract']
     path = '/api/v4/futures/usdt/contracts/' + contract
@@ -4087,7 +4087,7 @@ def terminal_execution_preview():
     if not re.fullmatch(r'[A-Z0-9]{3,25}USDT',symbol) or side not in ('LONG','SHORT') or tf not in ('5m','15m'):
         return jsonify(error='Invalid symbol, side or timeframe'),422
     try:
-        preview=_execution_dry_run_preview(symbol,side,tf,data.get('hypothetical_equity_usdt'),data.get('risk_percent',0.5))
+        preview=_execution_dry_run_preview(symbol,side,tf,data.get('hypothetical_equity_usdt'),data.get('risk_percent',3))
         response=jsonify(preview=preview, mode='DRY_RUN_ONLY',live_trading=False,orders_enabled=False)
         response.headers['Cache-Control']='no-store'
         return response
@@ -4113,11 +4113,11 @@ def terminal_execution_precheck():
         return jsonify(error='Invalid stored event ID', orders_placed=0), 422
     from decimal import Decimal, InvalidOperation
     try:
-        risk_percent = Decimal(os.getenv('DEFAULT_RISK_PERCENT', '0.5'))
-        if not risk_percent.is_finite() or risk_percent <= 0 or risk_percent > Decimal('0.5'):
+        risk_percent = Decimal(os.getenv('DEFAULT_RISK_PERCENT', '3'))
+        if not risk_percent.is_finite() or risk_percent <= 0 or risk_percent > Decimal('5'):
             raise InvalidOperation()
     except (InvalidOperation, TypeError, ValueError):
-        return jsonify(error='Invalid DEFAULT_RISK_PERCENT (expected greater than 0 and no more than 0.5)', orders_placed=0), 503
+        return jsonify(error='Invalid DEFAULT_RISK_PERCENT (expected greater than 0 and no more than 5)', orders_placed=0), 503
     try:
         with _db_connect() as con:
             _ensure_schema(con)
@@ -4206,9 +4206,9 @@ def terminal_simulate_order():
                     return jsonify(error='Signal is older than 120 seconds. Cannot simulate a fresh entry from stale data',orders_placed=0),422
                 try:
                     from decimal import Decimal
-                    risk=Decimal(os.getenv('DEFAULT_RISK_PERCENT','0.5'))
-                    if not risk.is_finite() or not Decimal('0')<risk<=Decimal('0.5'):
-                        raise ValueError('Risk setting must be above 0 and at most 0.5%')
+                    risk=Decimal(os.getenv('DEFAULT_RISK_PERCENT','3'))
+                    if not risk.is_finite() or not Decimal('0')<risk<=Decimal('5'):
+                        raise ValueError('Risk setting must be above 0 and at most 5%')
                 except (ValueError,ArithmeticError):
                     return jsonify(error='Invalid risk configuration',orders_placed=0),503
                 if os.getenv('LIVE_TRADING_ENABLED','false').strip().lower() != 'false':
@@ -4403,8 +4403,8 @@ def _auto_paper_process(max_items=5):
             note='Signal expired before paper simulation; no retrospective entry assumed'
         else:
             try:
-                risk=Decimal(os.getenv('DEFAULT_RISK_PERCENT','0.5'))
-                if not risk.is_finite() or not Decimal('0')<risk<=Decimal('0.5'):
+                risk=Decimal(os.getenv('DEFAULT_RISK_PERCENT','3'))
+                if not risk.is_finite() or not Decimal('0')<risk<=Decimal('5'):
                     note='Risk configuration invalid'
                 else:
                     preview=_execution_dry_run_preview(item['symbol'],item['side'],item['timeframe'],100,str(risk))
@@ -5085,7 +5085,7 @@ def _gate_protected_entry_payload(*, event_id, contract, side, contracts, entry,
     if not re.fullmatch(r'[a-zA-Z0-9_.:-]{4,100}', str(event_id)):
         raise GateOrderTransportError('Invalid idempotency event ID')
     unique='t-lux-'+hashlib.sha256(str(event_id).encode()).hexdigest()[:24]
-    return {'_event_id':str(event_id),'contract':contract,'size':contracts if side=='LONG' else -contracts,
+    return {'_event_id':str(event_id),'_reference_entry':str(ref),'contract':contract,'size':contracts if side=='LONG' else -contracts,
             'price':'0','tif':'ioc','text':unique,
             'tpsl_tp_trigger_price':str(take), 'tpsl_sl_trigger_price':str(stop)}
 
@@ -5123,6 +5123,22 @@ def _gate_send_protected_entry(payload, *, durable_reservation_confirmed=False,
     except (ValueError,TypeError):
         raise GateOrderTransportError('Invalid signed entry quantity') from None
     side='LONG' if size>0 else 'SHORT'
+    # Recompute size limits on the server using fresh authenticated market and
+    # futures equity data. Never trust a pre-assembled payload for risk sizing.
+    # This check is intentionally performed immediately before the irreversible
+    # journal transition and it fails closed on any unavailable exchange data.
+    try:
+        entry = Decimal(str(payload.get('_reference_entry')))
+        stop = Decimal(str(payload.get('tpsl_sl_trigger_price')))
+        allowed_size = _gate_live_risk_size(contract, side, entry, stop)
+    except (InvalidOperation, ValueError, TypeError, GateOrderTransportError) as exc:
+        raise GateOrderTransportError('Fresh server-side sizing not verified') from exc
+    if abs(size) > allowed_size['contracts']:
+        raise GateOrderTransportError('Entry size exceeds current exchange-backed risk limits')
+    # Only clean, one-way accounts are supported by this transport. Existing
+    # positions require a separately reconciled hedge-mode coordinator.
+    if _gate_read_only_positions():
+        raise GateOrderTransportError('Existing positions detected; new entry blocked')
     # Lock and persist irreversible dispatch uncertainty BEFORE the HTTP call.
     with _db_connect() as con:
         con.execute(_GATE_LIVE_JOURNAL_SCHEMA)
@@ -5136,7 +5152,7 @@ def _gate_send_protected_entry(payload, *, durable_reservation_confirmed=False,
                 raise GateOrderTransportError('Journal not PREPARED for exactly this order')
             cur.execute("UPDATE luxalgo_live_execution_journal SET state='DISPATCH_UNCERTAIN',updated_at=NOW() WHERE id=1")
     # No retry if process crashes or if the HTTP response is lost.
-    wire={k:v for k,v in payload.items() if k!='_event_id'}
+    wire={k:v for k,v in payload.items() if k not in ('_event_id','_reference_entry')}
     try:
         acknowledgement=_gate_post_transport_implementation(wire)
     except Exception:
@@ -5165,8 +5181,8 @@ def _gate_post_transport_implementation(payload):
     if not (os.getenv('LIVE_TRADING_ENABLED', 'false').strip().lower() == 'true'
             and os.getenv('ORDERS_ENABLED', 'false').strip().lower() == 'true'):
         raise GateOrderTransportError('Gate.io exchange writes are disabled')
-    if payload.get('_event_id') is not None:
-        raise GateOrderTransportError('Internal event metadata must not be sent to Gate.io')
+    if payload.get('_event_id') is not None or payload.get('_reference_entry') is not None:
+        raise GateOrderTransportError('Internal metadata must not be sent to Gate.io')
     if not isinstance(payload,dict) or not {'contract','size','price','tif','text','tpsl_tp_trigger_price','tpsl_sl_trigger_price'} <= payload.keys():
         raise GateOrderTransportError('Protected entry fields are missing')
     key=os.getenv('GATE_API_KEY','').strip()
@@ -5784,7 +5800,7 @@ def _gate_live_sizing_inputs(contract):
 
 
 def _gate_live_risk_size(contract, side, entry, stop):
-    """Read-only position sizing: 3–5% allocated margin; maximum 0.5% stop-loss risk.
+    """Read-only position sizing: 3–5% allocated margin; maximum 5% account stop-loss risk.
 
     A larger risk budget does NOT widen the stop. Position allocation and
     stop-loss risk are separate constraints; whichever caps size first wins.
@@ -5799,16 +5815,16 @@ def _gate_live_risk_size(contract, side, entry, stop):
         if (side == 'LONG' and stop >= entry) or (side == 'SHORT' and stop <= entry):
             raise ValueError()
         # Both settings are percentages of account equity, not price distance.
-        risk_percent = Decimal(os.getenv('GATE_LIVE_RISK_PERCENT', '0.5'))
+        risk_percent = Decimal(os.getenv('GATE_LIVE_RISK_PERCENT', '3'))
         allocation_percent = Decimal(os.getenv('GATE_LIVE_POSITION_PERCENT', '3'))
         leverage = Decimal(os.getenv('GATE_LIVE_MAX_LEVERAGE', '5'))
         if (not all(v.is_finite() for v in (risk_percent, allocation_percent, leverage))
-                or not (Decimal('0') < risk_percent <= Decimal('0.5'))
+                or not (Decimal('0') < risk_percent <= Decimal('5'))
                 or not (Decimal('3') <= allocation_percent <= Decimal('5'))
                 or not (Decimal('1') <= leverage <= Decimal('5'))):
             raise ValueError()
     except (InvalidOperation, ValueError, TypeError):
-        raise GateOrderTransportError('Invalid entry/stop or 0.5% maximum risk configuration') from None
+        raise GateOrderTransportError('Invalid entry/stop or 5% maximum risk configuration') from None
     x = _gate_live_sizing_inputs(contract)
     if abs(x['last'] - entry) / entry > Decimal('0.01'):
         raise GateOrderTransportError('Entry is stale versus current market')
@@ -5881,7 +5897,7 @@ def terminal_gate_live_risk_check():
             sl=row['stop_loss'],tp=row['take_profit'])
         # The underscore-prefixed event ID is solely local transport metadata.
         # Neither secrets nor authenticated Gate.io request headers are returned.
-        wire={k:v for k,v in envelope.items() if k!='_event_id'}
+        wire={k:v for k,v in envelope.items() if k not in ('_event_id','_reference_entry')}
         result={**sizing,'status':'VALIDATED_ORDER_PREVIEW_ONLY',
                 'exchange_position_snapshot':'NO_OPEN_POSITIONS_OBSERVED',
                 'order_preview':wire,'orders_enabled':False,
