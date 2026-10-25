@@ -5156,6 +5156,9 @@ def _gate_post_transport_implementation(payload):
     It is NOT authorization to submit a trade and must only be used in a
     reviewed failure-safe transaction coordinator.
     """
+    if not (os.getenv('LIVE_TRADING_ENABLED', 'false').strip().lower() == 'true' and
+            os.getenv('ORDERS_ENABLED', 'false').strip().lower() == 'true'):
+        raise GateOrderTransportError('Exchange entry transport disabled')
     if not isinstance(payload,dict) or not {'contract','size','price','tif','text','tpsl_tp_trigger_price','tpsl_sl_trigger_price'} <= payload.keys():
         raise GateOrderTransportError('Protected entry fields are missing')
     key=os.getenv('GATE_API_KEY','').strip()
@@ -5831,6 +5834,18 @@ def terminal_gate_live_risk_check():
             return jsonify(status='NO_SIGNAL', orders_enabled=False,live_trading=False),404
         if row['timeframe']!='15m' or row['state']!='AWAITING_SAFE_EXECUTOR':
             raise GateOrderTransportError('Signal is not awaiting an executor')
+        # Fail closed on stale signals; previews are NOT execution authorization.
+        if (datetime.now(timezone.utc) - row['created_at']).total_seconds() > 900:
+            return jsonify(status='STALE_SIGNAL_NO_ORDER',orders_enabled=False,
+                           live_trading=False,order_submitted=False),409
+        # Fresh authenticated exchange snapshot: existing exposure prevents a
+        # one-trade order preview from being mistaken for an eligible entry.
+        open_positions = _gate_read_only_positions()
+        if open_positions:
+            return jsonify(status='EXISTING_GATE_POSITION_NO_ORDER',
+                           open_position_count=len(open_positions),
+                           orders_enabled=False,live_trading=False,
+                           order_submitted=False),409
         symbol=str(row['symbol']).upper().replace('/','').replace('_','')
         if not re.fullmatch(r'[A-Z0-9]{2,25}USDT',symbol):
             raise GateOrderTransportError('Invalid symbol')
@@ -5844,6 +5859,7 @@ def terminal_gate_live_risk_check():
         # Neither secrets nor authenticated Gate.io request headers are returned.
         wire={k:v for k,v in envelope.items() if k!='_event_id'}
         result={**sizing,'status':'VALIDATED_ORDER_PREVIEW_ONLY',
+                'exchange_position_snapshot':'NO_OPEN_POSITIONS_OBSERVED',
                 'order_preview':wire,'orders_enabled':False,
                 'live_trading':False,'order_submitted':False,
                 'protection_verified':False,'executor_connected':False,
