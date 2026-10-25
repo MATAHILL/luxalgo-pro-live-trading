@@ -1,9 +1,10 @@
-"""LuxAlgo PRO: authenticated signal intake + READ-ONLY Gate.io and Binance API connectivity.
+"""LuxAlgo PRO development build: signal intake, dashboards and read-only exchange integration.
 
-NO order submission, funds transfer, or withdrawal functions exist.
-Authenticated /bot/status reports PostgreSQL-backed DRY RUN intent records only.
-The /gate/plan endpoint only calculates indicative ATR levels; no orders are placed.
-Exchange credentials must be supplied via hosting environment variables only.
+Contains a private, disabled Gate.io order-transport implementation for review.
+The webhook records durable handoffs but NEVER dispatches a real exchange order.
+Real SL/TP fill verification and autonomous emergency recovery are NOT live-ready.
+Keep LIVE_TRADING_ENABLED=false and ORDERS_ENABLED=false.
+Exchange credentials must come from deployment environment variables only.
 """
 import hmac
 import hashlib
@@ -2581,8 +2582,8 @@ def _risk_gate_inputs(payload):
     risk = decimal_field('risk_percent')
     leverage = decimal_field('leverage')
     equity = decimal_field('hypothetical_equity_usdt')
-    if risk > Decimal('3'):
-        raise ValueError('Risk exceeds 3% sandbox ceiling')
+    if risk > Decimal('0.5'):
+        raise ValueError('Risk exceeds 0.5% sandbox ceiling')
     if leverage > Decimal('5'):
         raise ValueError('Leverage exceeds 5x sandbox ceiling')
     if equity > Decimal('1000000000'):
@@ -2724,7 +2725,7 @@ def _stage3_contract_sizing(spec, equity, entry, stop, risk_pct, leverage=5):
     en=pos(entry,'reference entry')
     sl=pos(stop,'reference stop')
     risk=pos(risk_pct,'risk percentage')
-    if risk>Decimal('3') or lev>Decimal('5') or lev>max_lev or en==sl:
+    if risk>Decimal('0.5') or lev>Decimal('5') or lev>max_lev or en==sl:
         raise ValueError('Risk, leverage or stop geometry invalid')
     if reported_min!=reported_min.to_integral_value() or maximum!=maximum.to_integral_value():
         raise ValueError('Contract lot precision not yet supported')
@@ -4205,9 +4206,9 @@ def terminal_simulate_order():
                     return jsonify(error='Signal is older than 120 seconds. Cannot simulate a fresh entry from stale data',orders_placed=0),422
                 try:
                     from decimal import Decimal
-                    risk=Decimal(os.getenv('DEFAULT_RISK_PERCENT','1'))
-                    if not risk.is_finite() or not Decimal('0.5')<=risk<=Decimal('5'):
-                        raise ValueError('Risk setting outside 0.5%-5%')
+                    risk=Decimal(os.getenv('DEFAULT_RISK_PERCENT','0.5'))
+                    if not risk.is_finite() or not Decimal('0')<risk<=Decimal('0.5'):
+                        raise ValueError('Risk setting must be above 0 and at most 0.5%')
                 except (ValueError,ArithmeticError):
                     return jsonify(error='Invalid risk configuration',orders_placed=0),503
                 if os.getenv('LIVE_TRADING_ENABLED','false').strip().lower() != 'false':
@@ -4402,8 +4403,8 @@ def _auto_paper_process(max_items=5):
             note='Signal expired before paper simulation; no retrospective entry assumed'
         else:
             try:
-                risk=Decimal(os.getenv('DEFAULT_RISK_PERCENT','1'))
-                if not risk.is_finite() or not Decimal('0.5')<=risk<=Decimal('5'):
+                risk=Decimal(os.getenv('DEFAULT_RISK_PERCENT','0.5'))
+                if not risk.is_finite() or not Decimal('0')<risk<=Decimal('0.5'):
                     note='Risk configuration invalid'
                 else:
                     preview=_execution_dry_run_preview(item['symbol'],item['side'],item['timeframe'],100,str(risk))
