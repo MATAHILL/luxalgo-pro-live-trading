@@ -97,5 +97,12 @@ class FivePositionOrderBoundary(unittest.TestCase):
         self.assertIn('take<entry<stop',src)
         self.assertIn('Invalid dispatch contract',src)
 
+    def test_atomic_claim_excludes_unresolved_dispatch(self):
+        src=source('_five_journal_mark_dispatch_uncertain')
+        self.assertIn('pg_advisory_xact_lock',src)
+        self.assertIn("'DISPATCH_UNCERTAIN','ACKNOWLEDGED'",src)
+        self.assertIn("'PROTECTION_UNVERIFIED','RECOVERY_REQUIRED'",src)
+        self.assertLess(src.index("if cur.fetchone()['n']:"),src.index("state='DISPATCH_UNCERTAIN'"))
+
 if __name__=='__main__':
     unittest.main()
