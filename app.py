@@ -2219,11 +2219,19 @@ def _gate_read_only_positions():
             raise ValueError('Unexpected position mode')
         side = ('LONG' if mode == 'dual_long' else 'SHORT' if mode == 'dual_short'
                 else 'LONG' if size > 0 else 'SHORT')
-        entry = number(p['entry_price'])
-        mark = number(p['mark_price'])
-        unrealized = number(p['unrealised_pnl'])
-        if entry <= 0 or mark <= 0:
-            raise ValueError('Invalid position prices')
+        # Some position modes return null or absent mark/PnL values.
+        # Preserve a genuine open position while labeling unverifiable
+        # financial fields as unavailable; never invent a zero PnL.
+        def optional_number(name):
+            value=p.get(name)
+            return None if value is None or value=='' else number(value)
+        entry=optional_number('entry_price')
+        mark=optional_number('mark_price')
+        unrealized=optional_number('unrealised_pnl')
+        if entry is not None and entry<=0:
+            entry=None
+        if mark is not None and mark<=0:
+            mark=None
         margin_mode = str(p.get('pos_margin_mode') or '').lower()
         leverage = str(p.get('lever') or '').strip()
         if not leverage or leverage == '0':
@@ -2242,7 +2250,8 @@ def _gate_read_only_positions():
         margin = optional_nonnegative('margin')
         position_value = optional_nonnegative('value')
         liquidation = optional_nonnegative('liq_price')
-        roi = round(unrealized / margin * 100, 4) if margin is not None and margin > 0 else None
+        roi = (round(unrealized / margin * 100, 4)
+               if unrealized is not None and margin is not None and margin > 0 else None)
         positions.append(dict(contract=contract, side=side, size_contracts=abs(size),
                               entry_price=entry, mark_price=mark, unrealized_pnl=unrealized,
                               leverage_label=leverage_label, position_mode=mode,
@@ -3763,7 +3772,9 @@ def terminal_positions():
     try:
         positions = _gate_read_only_positions()
         response = jsonify(positions=positions, count=len(positions),
-                           unrealized_pnl_usdt=round(sum(p['unrealized_pnl'] for p in positions), 8),
+                           unrealized_pnl_usdt=(round(sum(p['unrealized_pnl'] for p in positions), 8)
+                                               if all(p['unrealized_pnl'] is not None for p in positions)
+                                               else None),
                            fetched_at=int(time.time()), orders_enabled=False, live_trading=False)
         response.headers['Cache-Control'] = 'no-store'
         return response
