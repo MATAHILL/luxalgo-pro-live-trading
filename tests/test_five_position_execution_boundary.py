@@ -104,5 +104,13 @@ class FivePositionOrderBoundary(unittest.TestCase):
         self.assertIn("'PROTECTION_UNVERIFIED','RECOVERY_REQUIRED'",src)
         self.assertLess(src.index("if cur.fetchone()['n']:"),src.index("state='DISPATCH_UNCERTAIN'"))
 
+    def test_recovery_classifier_is_fail_closed(self):
+        src=source('_five_recovery_decision')
+        self.assertIn('ORDER_ACK_UNKNOWN_DO_NOT_RETRY',src)
+        self.assertIn('URGENT_OPERATOR_REVIEW',src)
+        self.assertIn('HALT_AND_RECONCILE',src)
+        audit=source('_five_position_recovery_audit')
+        self.assertIn('_five_recovery_decision(',audit)
+
 if __name__=='__main__':
     unittest.main()
