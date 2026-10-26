@@ -1,0 +1,38 @@
+import unittest
+from gate_testnet_execution import (
+    TestnetExecutionDisabled, order_payload, prepare_order_for_review,
+    send_protected_order, signing_message,
+)
+
+class TestnetExecutionSafetyTests(unittest.TestCase):
+    def test_market_order_envelope(self):
+        p=order_payload("BTC_USDT", 1, "MARKET", None, "t-test123")
+        self.assertEqual((p["price"],p["tif"]),("0","ioc"))
+    def test_limit_order_envelope(self):
+        p=order_payload("BTC_USDT", -2, "LIMIT", "100", "t-test123")
+        self.assertEqual((p["price"],p["tif"]),("100","gtc"))
+    def test_market_rejects_limit_price(self):
+        with self.assertRaises(ValueError):
+            order_payload("BTC_USDT", 1, "MARKET", "100", "t-test123")
+    def test_size_must_be_integer_nonzero(self):
+        for size in (0, True, 1.5, "1"):
+            with self.subTest(size=size), self.assertRaises(ValueError):
+                order_payload("BTC_USDT", size, "MARKET", None, "t-test123")
+    def test_invalid_limit_price(self):
+        for price in ("NaN", "-1", "0", None):
+            with self.subTest(price=price), self.assertRaises(ValueError):
+                order_payload("BTC_USDT", 1, "LIMIT", price, "t-test123")
+    def test_signing_message_blocks_spot_path(self):
+        with self.assertRaises(ValueError):
+            signing_message("POST", "/api/v4/spot/orders", "", b"{}", "123")
+    def test_preview_never_executes(self):
+        p=prepare_order_for_review(dict(contract="BTC_USDT",size=1,
+            order_type="MARKET",client_id="t-test123"))
+        self.assertFalse(p["submitted"])
+        self.assertFalse(p["protective_orders_verified"])
+    def test_submit_disabled(self):
+        with self.assertRaises(TestnetExecutionDisabled):
+            send_protected_order()
+
+if __name__=="__main__":
+    unittest.main()
