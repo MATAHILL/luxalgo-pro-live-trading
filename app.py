@@ -5809,6 +5809,34 @@ def _five_verify_native_tpsl(event_id):
             'warning':'Read-only observation; trigger execution and future coverage not guaranteed'}
 
 
+def _five_recovery_close_shape(contract, side, account_mode):
+    """Strictly classify a potential Gate.io emergency-close instruction.
+
+    Gate API v4 requires different full-close parameters for one-way and
+    dual/hedge positions. This is a REVIEW ONLY envelope: it cannot submit.
+    Account mode must come from independently authenticated account state.
+    """
+    if not isinstance(contract,str) or not re.fullmatch(r'[A-Z0-9]{2,25}_USDT',contract):
+        raise GateOrderTransportError('Invalid recovery contract')
+    if side not in ('LONG','SHORT'):
+        raise GateOrderTransportError('Invalid recovery side')
+    if account_mode not in ('single','dual_long','dual_short'):
+        raise GateOrderTransportError('ACCOUNT_MODE_UNVERIFIED')
+    if account_mode=='dual_long' and side!='LONG':
+        raise GateOrderTransportError('HEDGE_CLOSE_SIDE_MISMATCH')
+    if account_mode=='dual_short' and side!='SHORT':
+        raise GateOrderTransportError('HEDGE_CLOSE_SIDE_MISMATCH')
+    order={'contract':contract,'size':0,'price':'0','tif':'ioc',
+           'reduce_only':True}
+    if account_mode=='single':
+        order['close']=True
+    else:
+        order['auto_size']='close_long' if side=='LONG' else 'close_short'
+    return {'state':'CLOSE_SHAPE_REVIEW_ONLY','mode':account_mode,
+            'payload_preview':order,'exchange_write_enabled':False,
+            'close_orders_submitted':0}
+
+
 def _five_recovery_decision(journal_state, fill_verified, protection_verified):
     """Pure fail-closed recovery classifier. No exchange writes or retries."""
     if journal_state == 'DISPATCH_UNCERTAIN':
