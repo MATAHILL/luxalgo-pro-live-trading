@@ -4176,6 +4176,67 @@ def _completed_gate_candles_after(symbol, tf, after):
 
 
 # Read-only per-signal market outcome. Never implies a filled exchange order.
+@app.get('/terminal/signal-diagnostics/<event_id>')
+def terminal_signal_diagnostics(event_id):
+    """Read-only reason a received signal did not become a paper intent.
+
+    Neither this route nor its queries place exchange or simulated orders.
+    """
+    if not _terminal_permitted():
+        return _terminal_guard()
+    if not re.fullmatch(r'[a-f0-9]{20}', event_id):
+        return jsonify(error='Invalid signal ID', orders_placed=0), 400
+    try:
+        with _db_connect() as con:
+            with con.cursor() as cur:
+                cur.execute('''SELECT i.received_at,i.symbol,i.side,i.timeframe,
+                    l.status AS level_status,l.reason AS level_reason,
+                    q.state AS queue_state,q.note AS queue_note,
+                    s.status AS simulated_status,
+                    b.enabled AS bot_enabled
+                    FROM luxalgo_dry_run_intents i
+                    LEFT JOIN luxalgo_signal_levels l ON l.event_id=i.event_id
+                    LEFT JOIN luxalgo_auto_paper_queue q ON q.event_id=i.event_id
+                    LEFT JOIN luxalgo_simulated_orders s ON s.event_id=i.event_id
+                    LEFT JOIN luxalgo_bot_control b ON b.id=1
+                    WHERE i.event_id=%s''', (event_id,))
+                signal=cur.fetchone()
+        if signal is None:
+            return jsonify(error='Signal not found', orders_placed=0), 404
+        age=(datetime.now(timezone.utc)-signal['received_at']).total_seconds()
+        if signal['simulated_status']=='SIMULATED_ONLY':
+            reason='PAPER_CREATED'
+        elif signal['queue_state']=='REJECTED':
+            note=(signal['queue_note'] or '').lower()
+            if 'expired' in note:
+                reason='SIGNAL_EXPIRED'
+            elif 'entry/sl/tp' in note or 'missing' in note or 'invalid' in note and 'level' in note:
+                reason='MISSING_OR_INVALID_SL_TP'
+            elif 'switched off' in note:
+                reason='BOT_OFF'
+            else:
+                reason='RISK_OR_DATA_REJECTED'
+        elif signal['queue_state']=='PENDING':
+            reason='SIGNAL_EXPIRED' if age>120 else 'PAPER_PENDING'
+        elif signal['level_status'] in ('MISSING','INVALID'):
+            reason='MISSING_OR_INVALID_SL_TP'
+        elif not signal['bot_enabled']:
+            reason='BOT_OFF'
+        else:
+            reason='NOT_QUEUED_OR_DUPLICATE'
+        response=jsonify(event_id=event_id,symbol=signal['symbol'],side=signal['side'],
+            timeframe=signal['timeframe'],received_at=signal['received_at'].isoformat(),
+            reason=reason,level_status=signal['level_status'] or 'UNKNOWN',
+            level_reason=signal['level_reason'] or '',queue_state=signal['queue_state'] or 'NOT_QUEUED',
+            queue_note=signal['queue_note'] or '',paper_intent_created=bool(signal['simulated_status']),
+            bot_enabled=bool(signal['bot_enabled']),orders_placed=0,live_trading=False)
+        response.headers['Cache-Control']='no-store'
+        return response
+    except (psycopg.Error, RuntimeError, OSError):
+        app.logger.exception('Signal diagnostic read failed')
+        return jsonify(error='Signal diagnostics unavailable',orders_placed=0),503
+
+
 @app.get('/terminal/call-status/<event_id>')
 def terminal_call_status(event_id):
     if not _terminal_permitted(): return _terminal_guard()
