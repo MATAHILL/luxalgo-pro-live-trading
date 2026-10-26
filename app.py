@@ -5543,6 +5543,18 @@ def _five_position_entry_preflight(event_id):
     contract=row['symbol'][:-4]+'_USDT'
     if row['contract']!=contract or row['client_order_text']!=_gate_client_order_text(event_id):
         raise GateOrderTransportError('Reservation and journal mismatch')
+    # Outstanding ambiguous dispatches can represent real exposure even when
+    # a momentary exchange snapshot appears empty. Never size another entry
+    # while any unclosed five-position dispatch requires reconciliation.
+    with _db_connect() as con:
+        con.execute(_EXECUTION_FIVE_JOURNAL_SCHEMA)
+        with con.cursor() as cur:
+            cur.execute("""SELECT COUNT(*) AS n FROM luxalgo_execution_five_journal
+                WHERE state IN ('DISPATCH_UNCERTAIN','ACKNOWLEDGED',
+                   'PROTECTION_UNVERIFIED','RECOVERY_REQUIRED')""")
+            unresolved=cur.fetchone()['n']
+    if unresolved:
+        raise GateOrderTransportError('Unresolved exchange dispatch or protection: entry blocked')
     # Read the entire exchange exposure, not just the local five slots.
     positions=_gate_read_only_positions()
     if len(positions)>=5 or any(p.get('contract')==contract for p in positions):
