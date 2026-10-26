@@ -5586,6 +5586,44 @@ def _five_position_entry_preflight(event_id):
             'order_submitted':False,'exchange_write_enabled':False}
 
 
+def _five_dispatch_plan(event_id, preview):
+    """Build a non-executable, deterministic per-event dispatch record.
+
+    This is the last purely local boundary before exchange write capability.
+    It intentionally cannot claim the journal or contact Gate.io. A preview
+    is never equivalent to approval for real-money orders.
+    """
+    if not isinstance(preview, dict) or preview.get('state')!='PREFLIGHT_VALIDATED_NO_ORDER':
+        raise GateOrderTransportError('Unverified futures preflight')
+    payload=preview.get('order_preview')
+    if not isinstance(payload,dict):
+        raise GateOrderTransportError('Missing exchange entry preview')
+    required={'contract','size','price','tif','text',
+              'tpsl_tp_trigger_price','tpsl_sl_trigger_price'}
+    if set(payload)!=required or payload['price']!='0' or payload['tif']!='ioc':
+        raise GateOrderTransportError('Invalid protected futures dispatch envelope')
+    if not re.fullmatch(r'[A-Za-z0-9_.:-]{4,100}',str(event_id)):
+        raise GateOrderTransportError('Invalid dispatch identity')
+    if payload['text']!=_gate_client_order_text(event_id):
+        raise GateOrderTransportError('Dispatch client identity mismatch')
+    size=payload['size']
+    if type(size) is not int or size==0:
+        raise GateOrderTransportError('Invalid signed futures size')
+    try:
+        stop=Decimal(str(payload['tpsl_sl_trigger_price']))
+        take=Decimal(str(payload['tpsl_tp_trigger_price']))
+        if not (stop.is_finite() and take.is_finite() and stop>0 and take>0):
+            raise ValueError()
+    except (InvalidOperation,TypeError,ValueError):
+        raise GateOrderTransportError('Invalid native protection levels') from None
+    return {'event_id':event_id,'client_order_text':payload['text'],
+            'contract':payload['contract'],'side':'LONG' if size>0 else 'SHORT',
+            'contracts':abs(size),'state':'READY_FOR_OFFLINE_REVIEW',
+            'exchange_write_enabled':False,'orders_placed':0,
+            'requires':['verified_exchange_mode','durable_atomic_dispatch',
+                        'native_sl_tp_readback','automatic_emergency_recovery']}
+
+
 def _five_position_execution_coordinator(event_id):
     """Webhook-connected five-position coordinator; ALWAYS blocks exchange writes.
 
@@ -5622,9 +5660,14 @@ def _five_position_execution_coordinator(event_id):
                 ValueError,TypeError,KeyError):
             return {'state':'BLOCKED_EXCHANGE_PREFLIGHT_FAILED','orders_placed':0,
                     'exchange_write_enabled':False}
+        try:
+            dispatch_plan=_five_dispatch_plan(event_id,preview)
+        except (GateOrderTransportError,ValueError,TypeError,KeyError):
+            return {'state':'BLOCKED_DISPATCH_ENVELOPE_INVALID','orders_placed':0,
+                    'exchange_write_enabled':False}
         return {'state':'PREFLIGHT_PASSED_DISPATCH_NOT_ARMED','orders_placed':0,
                 'exchange_write_enabled':False,
-                'preflight':preview,
+                'dispatch_plan':dispatch_plan,'preflight':preview,
                 'blockers':['Per-event exchange POST sender is not integrated',
                             'Native exchange SL/TP after fill is unverified',
                             'Automated emergency close is unverified']}
