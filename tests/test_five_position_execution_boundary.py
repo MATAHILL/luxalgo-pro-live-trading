@@ -165,5 +165,12 @@ class FivePositionOrderBoundary(unittest.TestCase):
         self.assertIn('POSITION_MODE_UNVERIFIED',src)
         self.assertIn('POSITION_MODE_SIDE_MISMATCH',src)
 
+    def test_recovery_reports_unprotected_fills_without_authorizing_entry(self):
+        src=source('_five_position_recovery_audit')
+        self.assertIn("'unprotected_filled_events':unprotected",src)
+        self.assertIn("status['protection_observation']",src)
+        self.assertIn("item.get('fill_verified') is True",src)
+        self.assertIn("'safe_to_enable_new_entries':False",src)
+
 if __name__=='__main__':
     unittest.main()
