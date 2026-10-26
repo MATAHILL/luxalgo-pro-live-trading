@@ -157,5 +157,13 @@ class FivePositionOrderBoundary(unittest.TestCase):
         src=source('_five_journal_verify_exchange_order')
         self.assertIn("order.get('id_string') or order.get('id')",src)
 
+    def test_native_tpsl_validates_oneway_and_hedge_closing_modes(self):
+        src=source('_five_verify_native_tpsl')
+        self.assertIn('_gate_read_only_positions()',src)
+        self.assertIn("mode=='single' and initial.get('close') is not True",src)
+        self.assertIn("mode!='single' and str(initial.get('auto_size')",src)
+        self.assertIn('POSITION_MODE_UNVERIFIED',src)
+        self.assertIn('POSITION_MODE_SIDE_MISMATCH',src)
+
 if __name__=='__main__':
     unittest.main()
