@@ -5416,6 +5416,50 @@ def _five_journal_verify_exchange_order(event_id, exchange_order_id):
     return {'state':'ACKNOWLEDGED','duplicate_ack':True,'orders_placed':0}
 
 
+def _five_journal_read_fill_evidence(event_id):
+    """Read-only fill/position evidence; NEVER assumes protection from an ACK.
+
+    No journal state is promoted by this function. Exchange sizes can use
+    different conventions, so contradictory or incomplete data fails closed.
+    """
+    if not isinstance(event_id,str) or not re.fullmatch(r'[A-Za-z0-9_.:-]{4,100}',event_id):
+        raise GateOrderTransportError('Invalid event ID')
+    with _db_connect() as con:
+        con.execute(_EXECUTION_HANDOFF_FIVE_SCHEMA)
+        con.execute(_EXECUTION_FIVE_JOURNAL_SCHEMA)
+        with con.cursor() as cur:
+            cur.execute("""SELECT j.contract,j.side,j.exchange_order_id,j.state
+                FROM luxalgo_execution_five_journal j WHERE j.event_id=%s""",(event_id,))
+            row=cur.fetchone()
+    if not row or row['state'] not in ('ACKNOWLEDGED','PROTECTION_UNVERIFIED',
+                                     'PROTECTED','RECOVERY_REQUIRED'):
+        return {'state':'NOT_ACKNOWLEDGED','fill_verified':False,'protection_verified':False}
+    order_id=row['exchange_order_id']
+    if not order_id or not re.fullmatch(r'[1-9][0-9]{0,19}',str(order_id)):
+        return {'state':'MISSING_EXCHANGE_ORDER_ID','fill_verified':False,'protection_verified':False}
+    order=_gate_v4_authenticated_request('GET','/api/v4/futures/usdt/orders/'+str(order_id))
+    if str(order.get('id'))!=str(order_id) or order.get('contract')!=row['contract']:
+        raise GateOrderTransportError('Order readback identity mismatch')
+    # Gate.io can report filled_size and left with different endpoint semantics.
+    # Do not guess an actual fill from a zero remaining-size field alone.
+    try:
+        size=Decimal(str(order['size']))
+        filled=Decimal(str(order['fill_size']))
+    except (KeyError,InvalidOperation,ValueError,TypeError):
+        return {'state':'FILL_FIELDS_UNAVAILABLE','fill_verified':False,'protection_verified':False}
+    if not all(x.is_finite() for x in (size,filled)) or size==0 or filled<0 or filled>abs(size):
+        raise GateOrderTransportError('Invalid exchange fill quantities')
+    if (size>0)!=(row['side']=='LONG'):
+        raise GateOrderTransportError('Exchange trade side mismatch')
+    positions=_gate_read_only_positions()
+    matching=[p for p in positions if p.get('contract')==row['contract'] and p.get('side')==row['side']]
+    verified=(filled>0 and len(matching)==1 and
+              Decimal(str(matching[0].get('size_contracts','0')))>0)
+    return {'state':'POSITION_OBSERVED' if verified else 'FILL_NOT_CONFIRMED',
+            'fill_verified':bool(verified),'protection_verified':False,
+            'exchange_order_id':str(order_id)}
+
+
 @app.get('/terminal/execution-handoff')
 def terminal_execution_handoff():
     if not _terminal_permitted():
