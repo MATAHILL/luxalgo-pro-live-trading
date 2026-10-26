@@ -5804,7 +5804,9 @@ def _five_verify_native_tpsl(event_id):
     except (GateOrderTransportError,ValueError,TypeError,InvalidOperation):
         return {'protection_verified':False,'reason':'EXCHANGE_TRIGGER_READBACK_FAILED'}
     return {'protection_verified':True,'reason':'TWO_ACTIVE_TRIGGER_ORDERS_VERIFIED',
-            'sl_order_id':str(sl_id),'tp_order_id':str(tp_id)}
+            'sl_order_id':str(sl_id),'tp_order_id':str(tp_id),
+            'execution_authorized':False,
+            'warning':'Read-only observation; trigger execution and future coverage not guaranteed'}
 
 
 def _five_recovery_decision(journal_state, fill_verified, protection_verified):
@@ -5878,9 +5880,13 @@ def _five_position_recovery_audit(limit=5):
         except (GateOrderTransportError,psycopg.Error,RuntimeError,OSError,
                 ValueError,TypeError,KeyError):
             status['reason']='EXCHANGE_OR_DATABASE_READBACK_UNAVAILABLE'
+            status['recovery_action']='HALT_AND_RECONCILE'
         result.append(status)
+    unsafe=any(item['recovery_action'] not in ('NONE_OBSERVED_PROTECTED',)
+               for item in result)
     return {'audited':len(result),'orders_placed':0,'close_orders_submitted':0,
-            'live_recovery_enabled':False,'results':result}
+            'live_recovery_enabled':False,'needs_operator_attention':unsafe,
+            'safe_to_enable_new_entries':False,'results':result}
 
 
 @app.get('/terminal/execution-handoff')
