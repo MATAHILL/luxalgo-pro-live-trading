@@ -5762,6 +5762,25 @@ def _five_verify_native_tpsl(event_id):
             'sl_order_id':str(sl_id),'tp_order_id':str(tp_id)}
 
 
+def _five_recovery_decision(journal_state, fill_verified, protection_verified):
+    """Pure fail-closed recovery classifier. No exchange writes or retries."""
+    if journal_state == 'DISPATCH_UNCERTAIN':
+        return {'reason':'ORDER_ACK_UNKNOWN_DO_NOT_RETRY',
+                'recovery_action':'MANUAL_EXCHANGE_RECONCILIATION'}
+    if journal_state not in ('ACKNOWLEDGED','PROTECTION_UNVERIFIED',
+                             'PROTECTED','RECOVERY_REQUIRED'):
+        return {'reason':'UNKNOWN_JOURNAL_STATE',
+                'recovery_action':'HALT_AND_REVIEW'}
+    if fill_verified is not True:
+        return {'reason':'FILL_NOT_VERIFIED',
+                'recovery_action':'HALT_AND_RECONCILE'}
+    if protection_verified is not True:
+        return {'reason':'POSITION_WITHOUT_VERIFIED_SL_TP',
+                'recovery_action':'URGENT_OPERATOR_REVIEW'}
+    return {'reason':'EXCHANGE_PROTECTION_OBSERVED',
+            'recovery_action':'NONE_OBSERVED_PROTECTED'}
+
+
 def _five_position_recovery_audit(limit=5):
     """Exchange read-only audit across five journals; never submits a close.
 
@@ -5799,19 +5818,18 @@ def _five_position_recovery_audit(limit=5):
                 'recovery_action':'REVIEW_REQUIRED'}
         try:
             if row['state']=='DISPATCH_UNCERTAIN':
-                status['reason']='ORDER_ACK_UNKNOWN_DO_NOT_RETRY'
+                status.update(_five_recovery_decision(row['state'],False,False))
             else:
                 fill=_five_journal_read_fill_evidence(event_id)
                 status['fill_verified']=fill.get('fill_verified') is True
                 if fill.get('fill_verified') is True:
                     triggers=_five_verify_native_tpsl(event_id)
                     status['protection_verified']=triggers.get('protection_verified') is True
-                    status['reason']=('EXCHANGE_PROTECTION_OBSERVED'
-                        if status['protection_verified'] else 'POSITION_WITHOUT_VERIFIED_SL_TP')
-                    if status['protection_verified']:
-                        status['recovery_action']='NONE_OBSERVED_PROTECTED'
+                    status.update(_five_recovery_decision(
+                        row['state'],True,status['protection_verified']))
                 else:
-                    status['reason']=str(fill.get('state','FILL_UNKNOWN'))[:80]
+                    status.update(_five_recovery_decision(row['state'],False,False))
+                    status['exchange_observation']=str(fill.get('state','FILL_UNKNOWN'))[:80]
         except (GateOrderTransportError,psycopg.Error,RuntimeError,OSError,
                 ValueError,TypeError,KeyError):
             status['reason']='EXCHANGE_OR_DATABASE_READBACK_UNAVAILABLE'
