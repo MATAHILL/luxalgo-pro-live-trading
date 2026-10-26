@@ -5006,7 +5006,7 @@ def _gate_v4_authenticated_request(method, path, *, payload=None, timeout=8):
         raise RuntimeError('Gate.io credentials unavailable')
     stamp=str(int(time.time()))
     hashed=hashlib.sha512(b'').hexdigest()
-    msg='\\n'.join(('GET',path,'',hashed,stamp))
+    msg='\n'.join(('GET',path,'',hashed,stamp))
     sign=hmac.new(secret.encode(),msg.encode(),hashlib.sha512).hexdigest()
     req=Request('https://api.gateio.ws'+path,method='GET',
         headers={'KEY':key,'Timestamp':stamp,'SIGN':sign,'Accept':'application/json'})
