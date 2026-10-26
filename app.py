@@ -721,6 +721,11 @@ header.terminal-header{border-radius:17px!important}
 <p class="light">Separate Testnet account readback · Not production · No automatic order submission enabled</p>
 <div class="panel-heading"><span id="gateTestnetPositionStatus" class="light">Checking Testnet positions…</span><button class="btn gloss-action" id="gateTestnetPositionRefresh" type="button">↻ Refresh Testnet</button></div>
 <div class="tablewrap"><table style="width:100%;min-width:700px"><thead><tr><th>CONTRACT</th><th>SIDE</th><th>SIZE (CONTRACTS)</th><th>ENTRY</th><th>MARK</th><th>UNREALIZED PNL</th><th>LEVERAGE</th></tr></thead><tbody id="gateTestnetPositionRows"><tr><td colspan="7">Loading…</td></tr></tbody></table></div></details>
+<details id="testnetOrdersPanel" class="panel" style="width:100%;margin:14px 0;max-width:none">
+<summary style="cursor:pointer;font-size:16px;font-weight:850">OPEN ORDERS · GATE.IO FUTURES TESTNET — Click to expand / minimize</summary>
+<p class="light">Actual unfilled Testnet exchange orders only · No simulated signals</p>
+<div class="panel-heading"><span class="light" id="testnetOrdersStatus">Not checked</span><button class="btn gloss-action" id="testnetOrdersRefresh" type="button">↻ Refresh Testnet Orders</button></div>
+<div class="tablewrap"><table style="width:100%;min-width:600px"><thead><tr><th>CONTRACT</th><th>ORDER ID</th><th>SIZE</th><th>PRICE</th><th>REMAINING</th><th>TIME IN FORCE</th><th>STATUS</th></tr></thead><tbody id="testnetOrdersRows"><tr><td colspan="7">Expand to load</td></tr></tbody></table></div></details>
 <details id="incomingLuxPanel" class="panel" open style="width:100%;margin:14px 0;max-width:none">
 <summary style="cursor:pointer;font-size:16px;font-weight:850;padding:2px 0 12px">INCOMING LUXALGO ORDERS · WEBHOOK SIGNALS <span class="light" style="font-size:12px">— Click to minimize / maximize</span></summary>
 <p class="light">Received signals and paper processing only. Not Gate.io exchange orders. Market/Limit is shown only when explicitly supplied in the webhook. No exchange orders are submitted.</p>
@@ -1559,6 +1564,18 @@ draw(true);
   finally{button.disabled=false;}}
  button.addEventListener('click',refresh);pane.addEventListener('toggle',()=>{if(pane.open)refresh()});refresh();
  setInterval(()=>{if(pane.open&&!document.hidden)refresh()},60000);
+})();
+</script>
+<script>
+(function(){'use strict';
+const pane=document.getElementById('testnetOrdersPanel'),rows=document.getElementById('testnetOrdersRows'),status=document.getElementById('testnetOrdersStatus'),btn=document.getElementById('testnetOrdersRefresh');
+if(!pane||!rows||!status||!btn)return;
+async function refresh(){if(btn.disabled)return;btn.disabled=true;
+try{const res=await fetch('/terminal/testnet-open-orders',{cache:'no-store'}),data=await res.json();if(!res.ok)throw Error(data.error||'Unavailable');
+rows.replaceChildren();for(const o of data.orders){const tr=document.createElement('tr');for(const key of ['contract','order_id','size','price','remaining','tif','status']){const td=document.createElement('td');td.textContent=o[key]||'—';tr.appendChild(td);}rows.appendChild(tr);}
+if(!data.orders.length){const tr=document.createElement('tr'),td=document.createElement('td');td.colSpan=7;td.textContent='Gate.io reports no unfilled Testnet orders';tr.appendChild(td);rows.appendChild(tr);}status.textContent=data.count+' actual open Testnet orders';}
+catch(err){status.textContent='Unable to verify: '+err.message;rows.replaceChildren();}finally{btn.disabled=false;}}
+btn.addEventListener('click',refresh);pane.addEventListener('toggle',()=>{if(pane.open)refresh()});
 })();
 </script>
 </body></html>'''
@@ -3851,6 +3868,47 @@ def terminal_futures_equity():
     except (URLError,TimeoutError,ValueError,TypeError,KeyError,OSError) as exc:
         app.logger.warning('Gate equity not available: %s',type(exc).__name__)
         return jsonify(error='Account equity unavailable for this account type or connection',orders_enabled=False),502
+
+
+@app.get('/terminal/testnet-open-orders')
+def terminal_testnet_open_orders():
+    """Gate Futures Testnet unfilled orders; authenticated GET only."""
+    if not _terminal_permitted():
+        return _terminal_guard()
+    key=os.getenv('GATE_TESTNET_API_KEY','').strip()
+    secret=os.getenv('GATE_TESTNET_API_SECRET','').strip()
+    if not key or not secret:
+        return jsonify(error='Testnet API credentials missing',orders_enabled=False),503
+    path='/api/v4/futures/usdt/orders'
+    query=urlencode({'status':'open','limit':50})
+    stamp=str(int(time.time()))
+    hashed=hashlib.sha512(b'').hexdigest()
+    signed='\\n'.join(('GET',path,query,hashed,stamp))
+    signature=hmac.new(secret.encode(),signed.encode(),hashlib.sha512).hexdigest()
+    req=Request('https://api-testnet.gateapi.io'+path+'?'+query,method='GET',headers={
+        'KEY':key,'Timestamp':stamp,'SIGN':signature,'Accept':'application/json'})
+    try:
+        with urlopen(req,timeout=8) as response:
+            orders=json.loads(response.read(150000))
+        if not isinstance(orders,list):
+            raise ValueError('Invalid open orders response')
+        cleaned=[]
+        for o in orders[:50]:
+            if not isinstance(o,dict):
+                continue
+            cleaned.append(dict(contract=str(o.get('contract') or ''),
+                order_id=str(o.get('id_string') or o.get('id') or ''),
+                size=str(o.get('size') or ''),price=str(o.get('price') or ''),
+                remaining=str(o.get('left') or ''),tif=str(o.get('tif') or ''),
+                status=str(o.get('status') or '')))
+        result=jsonify(environment='GATE_FUTURES_TESTNET',orders=cleaned,
+            count=len(cleaned),orders_enabled=False,live_trading=False)
+        result.headers['Cache-Control']='private, no-store'
+        return result
+    except HTTPError as exc:
+        return jsonify(error='Testnet orders API rejected request',http_status=exc.code,orders_enabled=False),502
+    except (URLError,TimeoutError,OSError,ValueError,TypeError):
+        return jsonify(error='Testnet open orders unavailable',orders_enabled=False),502
 
 
 @app.get('/terminal/testnet-positions')
