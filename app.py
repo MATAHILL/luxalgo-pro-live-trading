@@ -5810,9 +5810,11 @@ def _five_verify_native_tpsl(event_id):
                     or not isinstance(details,dict)
                     or str(initial.get('size')) not in ('0','0.0')
                     or str(initial.get('price')) not in ('0','0.0')
-                    or (mode=='single' and initial.get('close') is not True)
-                    or (mode!='single' and str(initial.get('auto_size') or '').lower() !=
-                        ('close_long' if row['side']=='LONG' else 'close_short'))
+                    # close / auto_size are write-only on Gate.io and must
+                    # never be required from a GET readback. Use read-only
+                    # order_type / is_close / is_reduce_only evidence instead.
+                    or initial.get('is_close') is False
+                    or initial.get('is_reduce_only') is False
                     or str(details.get('rule'))!=str(rule)):
 
                 return {'protection_verified':False,'reason':'TRIGGER_NOT_ACTIVE_OR_MISMATCHED'}
