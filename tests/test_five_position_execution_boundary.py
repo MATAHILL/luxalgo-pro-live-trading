@@ -123,5 +123,15 @@ class FivePositionOrderBoundary(unittest.TestCase):
         self.assertIn('_five_journal_record_order_ack',src)
         self.assertIn('FIVE_POSITION_EXECUTION_CERTIFIED',SRC)
 
+    def test_recovery_errors_require_operator_attention(self):
+        src=source('_five_position_recovery_audit')
+        self.assertIn("'recovery_action']='HALT_AND_RECONCILE'",src)
+        self.assertIn("'needs_operator_attention':unsafe",src)
+        self.assertIn("'safe_to_enable_new_entries':False",src)
+
+    def test_native_protection_observation_not_authorization(self):
+        src=source('_five_verify_native_tpsl')
+        self.assertIn("'execution_authorized':False",src)
+
 if __name__=='__main__':
     unittest.main()
