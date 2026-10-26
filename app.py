@@ -47,6 +47,17 @@ _lock = Lock()
 # Do not fall back to RAM on DB failures: that would lose duplicate protection.
 DB_SCHEMA = '''
 
+CREATE TABLE IF NOT EXISTS luxalgo_testnet_execution_handoff (
+ event_id TEXT PRIMARY KEY,
+ created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+ received_at TIMESTAMPTZ NOT NULL,
+ symbol TEXT NOT NULL,
+ side TEXT NOT NULL,
+ timeframe TEXT NOT NULL,
+ order_type TEXT,
+ status TEXT NOT NULL CHECK (status IN ('BLOCKED','REJECTED')),
+ reason TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS luxalgo_one_trade_candidate (
  singleton_id SMALLINT PRIMARY KEY CHECK(singleton_id=1),
  event_id TEXT NOT NULL UNIQUE,
@@ -2131,6 +2142,26 @@ def webhook():
     except (psycopg.Error,RuntimeError,OSError):
         app.logger.exception('Cannot durably record incoming LuxAlgo signal')
         return jsonify(error='Signal not stored; retry later',orders_placed=0),503
+    # Every newly received signal is durably passed into TESTNET pre-execution
+    # validation. The handoff is permanently fail-closed: no exchange write.
+    try:
+        elapsed=(datetime.now(timezone.utc)-received_at).total_seconds()
+        reasons=[]
+        if duplicate: reasons.append('DUPLICATE_CANDLE_SIGNAL')
+        if elapsed < 0 or elapsed > 120: reasons.append('SIGNAL_EXPIRED')
+        if level_status!='VALID': reasons.append('INVALID_OR_MISSING_ENTRY_SL_TP')
+        if declared_order_type not in ('MARKET','LIMIT'): reasons.append('ORDER_TYPE_NOT_DECLARED')
+        reasons.append('PROTECTED_TESTNET_EXECUTION_NOT_IMPLEMENTED')
+        with _db_connect() as con:
+            _ensure_schema(con)
+            con.execute("""INSERT INTO luxalgo_testnet_execution_handoff
+                (event_id,received_at,symbol,side,timeframe,order_type,status,reason)
+                VALUES (%s,%s,%s,%s,%s,%s,'BLOCKED',%s)
+                ON CONFLICT(event_id) DO NOTHING""",
+                (event_id,received_at,symbol,allowed[side],tf,declared_order_type,','.join(reasons)))
+    except (psycopg.Error,RuntimeError,OSError):
+        app.logger.exception('Testnet handoff audit unavailable')
+        return jsonify(error='Signal stored but Testnet handoff could not be audited',orders_placed=0),503
     # One-trade handoff: durable first-candidate reservation ONLY. Not an order.
     # Preserves existing webhook receipt behavior and does not call exchange APIs.
     one_trade_candidate = 'NOT_ELIGIBLE'
@@ -4359,6 +4390,28 @@ def terminal_testnet_signal_check(event_id):
         return response
     except (psycopg.Error,RuntimeError,OSError):
         return jsonify(error='Cannot verify signal',eligible=False),503
+
+
+@app.get('/terminal/testnet-execution-handoffs')
+def terminal_testnet_execution_handoffs():
+    """Read-only durable signal-to-testnet-stage audit; never exchange orders."""
+    if not _terminal_permitted():
+        return _terminal_guard()
+    try:
+        with _db_connect() as con:
+            with con.cursor() as cur:
+                cur.execute("""SELECT event_id,received_at,symbol,side,timeframe,order_type,status,reason
+                    FROM luxalgo_testnet_execution_handoff ORDER BY received_at DESC LIMIT 50""")
+                rows=cur.fetchall()
+        result=jsonify(count=len(rows),handoffs=[dict(event_id=r['event_id'],
+            received_at=r['received_at'].isoformat(),symbol=r['symbol'],side=r['side'],
+            timeframe=r['timeframe'],order_type=r['order_type'] or 'UNDECLARED',
+            status=r['status'],reason=r['reason']) for r in rows],
+            orders_submitted=0,environment='GATE_FUTURES_TESTNET')
+        result.headers['Cache-Control']='private, no-store'
+        return result
+    except (psycopg.Error,RuntimeError,OSError):
+        return jsonify(error='Testnet handoff audit unavailable'),503
 
 
 @app.get('/terminal/testnet-order-readiness')
