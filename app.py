@@ -5350,6 +5350,14 @@ def _five_journal_mark_dispatch_uncertain(event_id):
             row=cur.fetchone()
             if row is None or row['state']!='PREPARED' or row['handoff_state']!='AWAITING_SAFE_EXECUTOR':
                 return False
+            # This lock serializes all five-slot claims. An unresolved POST,
+            # ACK, missing protection or recovery blocks subsequent claims:
+            # the exchange snapshot alone cannot exclude in-flight exposure.
+            cur.execute("""SELECT COUNT(*) AS n FROM luxalgo_execution_five_journal
+                WHERE state IN ('DISPATCH_UNCERTAIN','ACKNOWLEDGED',
+                    'PROTECTION_UNVERIFIED','RECOVERY_REQUIRED')""")
+            if cur.fetchone()['n']:
+                return False
             # Stale alerts must never become market entries.
             if (datetime.now(timezone.utc)-row['created_at']).total_seconds()>900:
                 cur.execute("""UPDATE luxalgo_execution_handoff_five
