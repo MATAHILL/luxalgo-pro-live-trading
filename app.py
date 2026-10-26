@@ -5999,6 +5999,49 @@ def _five_discover_native_protection(event_id):
         row['stop_loss'],row['take_profit'],orders)
 
 
+def _five_persist_verified_protection_ids(event_id):
+    """Read-only Gate discovery followed by transactional journal reconciliation.
+
+    Never places exchange orders. Conflicting, reused, or stale trade identities
+    require human review rather than overwriting existing protection evidence.
+    """
+    if not isinstance(event_id,str) or not re.fullmatch(r'[A-Za-z0-9_.:-]{4,100}',event_id):
+        raise GateOrderTransportError('Invalid protection event')
+    discovered=_five_discover_native_protection(event_id)
+    if discovered.get('coverage_linked') is not True:
+        return {'state':'PROTECTION_DISCOVERY_UNVERIFIED','ids_persisted':False,
+                'reason':str(discovered.get('reason','UNKNOWN'))[:80]}
+    sl,tp=(str(discovered.get(key,'')) for key in ('sl_order_id','tp_order_id'))
+    if (not re.fullmatch(r'[1-9][0-9]{0,19}',sl)
+            or not re.fullmatch(r'[1-9][0-9]{0,19}',tp) or sl==tp):
+        raise GateOrderTransportError('Ambiguous native protection identities')
+    with _db_connect() as con:
+        with con.cursor() as cur:
+            cur.execute('SELECT pg_advisory_xact_lock(%s)',(65913045,))
+            cur.execute("""SELECT state,sl_order_id,tp_order_id,exchange_order_id
+                FROM luxalgo_execution_five_journal WHERE event_id=%s FOR UPDATE""",
+                (event_id,))
+            row=cur.fetchone()
+            if not row or row['state'] not in (
+                    'ACKNOWLEDGED','PROTECTION_UNVERIFIED','PROTECTED','RECOVERY_REQUIRED'):
+                raise GateOrderTransportError('Protection journal state changed')
+            if (row['sl_order_id'] is not None and str(row['sl_order_id'])!=sl
+                    or row['tp_order_id'] is not None and str(row['tp_order_id'])!=tp):
+                raise GateOrderTransportError('Conflicting persisted SLTP identities')
+            cur.execute("""SELECT event_id FROM luxalgo_execution_five_journal
+                WHERE event_id<>%s AND (sl_order_id IN (%s,%s)
+                   OR tp_order_id IN (%s,%s)) LIMIT 1""",(event_id,sl,tp,sl,tp))
+            if cur.fetchone():
+                raise GateOrderTransportError('Native protection ID belongs to another trade')
+            cur.execute("""UPDATE luxalgo_execution_five_journal
+                SET sl_order_id=%s,tp_order_id=%s,updated_at=NOW()
+                WHERE event_id=%s""",(sl,tp,event_id))
+    # Persisted identities alone are NOT proof of continuing coverage.
+    return {'state':'NATIVE_IDS_LINKED_NEEDS_EXCHANGE_READBACK',
+            'ids_persisted':True,'coverage_verified':False,
+            'execution_authorized':False,'orders_placed':0}
+
+
 def _five_protection_coverage_check(event_id):
     """Read-only coverage evaluation: filled entry + two verified active exits.
 
