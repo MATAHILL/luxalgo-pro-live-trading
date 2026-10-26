@@ -2181,6 +2181,9 @@ def terminal_gate_testnet_check():
                            live_trading=False,orders_enabled=False),502
         result=jsonify(testnet_connected=True,account_currency='USDT',
                        environment='GATE_FUTURES_TESTNET',read_only=True,
+                       api_permissions='READ_VERIFIED_WRITE_NOT_TESTED',
+                       write_permission_verified=False,
+                       connection_mode='READ_ONLY_CHECK',
                        live_trading=False,orders_enabled=False)
         result.headers['Cache-Control']='no-store'
         return result
