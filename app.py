@@ -690,6 +690,10 @@ header.terminal-header{border-radius:17px!important}
 <div><div class="profile-name">Hello SUBHASISH</div><label class="profile-change" for="profileImageInput" tabindex="0">Change Photo</label><input type="file" id="profileImageInput" accept="image/png,image/jpeg,image/webp" hidden></div></div></div><section class="news-slot" aria-label="Latest crypto news"><div class="news-heading"><span>● CRYPTO NEWS</span><span style="display:flex;align-items:center;gap:7px"><span id="newsFeedStatus">Loading headlines…</span><button type="button" id="newsRefresh" aria-label="Refresh crypto news" title="Refresh crypto news">↻</button></span></div><div class="news-viewport" id="newsViewport"><div class="news-stack" id="newsStack"><span class="news-empty">Retrieving publisher headlines…</span></div></div></section><div class="profile-right">
 <form method="post" action="/logout"><input type="hidden" name="csrf_token" value="{{ csrf_token|e }}"><button class="glossy-logout" type="submit">⇥ LOGOUT</button></form><span id="signalLiveSync" role="status" aria-live="polite" style="font-size:11px;color:#9de7ff">● Signals auto-sync: connecting…</span></div></header>
  <section class="live-ops-banner" aria-label="Live trading execution status"><div><strong>GATE.IO FUTURES · LIVE ACCOUNT DASHBOARD</strong><p>Live exchange balances, positions and market data. Automatic real orders are not armed; SL/TP and recovery verification is pending.</p></div><span class="live-ops-state">LIVE ACCOUNT</span></section>
+<section class="bot-control-panel" aria-label="Bot signal simulation controls">
+<div><div class="bot-status-line"><strong id="botControlLabel">BOT STATUS · CHECKING</strong><span id="botStateIndicator" class="bot-state-indicator unknown" role="status">● CHECKING</span></div><p id="botControlDetail">These buttons manage the existing signal simulation, not real Gate.io orders.</p></div>
+<div class="bot-control-actions"><button class="btn" id="botTurnOn" type="button">▶ BOT ON</button><button class="btn" id="botTurnOff" type="button">■ BOT OFF</button></div>
+</section>
 
 <details class="futures-liquidity" id="futuresLiquidityDetails">
 <summary><span>◈ FUTURES LIQUIDITY DETAILS · USDT</span><span class="liquidity-arrow" aria-hidden="true">⌄</span></summary>
@@ -1082,6 +1086,15 @@ header.terminal-header{border-radius:17px!important}
 
 // Remote control: persisted in PostgreSQL, never enables exchange trading.
 
+
+(function(){
+ const label=document.getElementById('botControlLabel'),detail=document.getElementById('botControlDetail');
+ const on=document.getElementById('botTurnOn'),off=document.getElementById('botTurnOff'),indicator=document.getElementById('botStateIndicator');
+ function render(enabled){indicator.className='bot-state-indicator '+(enabled?'on':'off');indicator.textContent=enabled?'● ON':'● OFF';label.textContent=enabled?'BOT ON · SIGNAL SIMULATION':'BOT OFF · SIGNAL SIMULATION';detail.textContent='Controls signal simulation only. Real exchange order execution is not enabled.';on.disabled=enabled;off.disabled=!enabled;}
+ async function refresh(){try{const response=await fetch('/terminal/bot-control',{cache:'no-store'});if(!response.ok)throw Error('Status unavailable');const data=await response.json();render(data.bot_enabled===true);}catch(error){label.textContent='BOT STATUS UNKNOWN';detail.textContent='Cannot verify bot state. Real order execution is not enabled.';on.disabled=true;off.disabled=true;indicator.textContent='● UNKNOWN';}}
+ async function change(enabled){on.disabled=true;off.disabled=true;try{const response=await fetch('/terminal/bot-control',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({enabled}),cache:'no-store'});if(!response.ok)throw Error('Update failed');const data=await response.json();render(data.bot_enabled===true);}catch(error){await refresh();}}
+ on.addEventListener('click',()=>change(true));off.addEventListener('click',()=>change(false));refresh();
+})();
 
 const entry=document.getElementById('entry'), sl=document.getElementById('sl'), tp1=document.getElementById('tp1');
 // Removed on-demand signal panel controls and manual dry-run preview UI.
