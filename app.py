@@ -5939,6 +5939,9 @@ def _five_position_recovery_audit(limit=5):
                 if fill.get('fill_verified') is True:
                     triggers=_five_verify_native_tpsl(event_id)
                     status['protection_verified']=triggers.get('protection_verified') is True
+                    status['protection_observation']=str(triggers.get('reason','UNKNOWN_PROTECTION_STATE'))[:80]
+                    status['sl_order_id_present']=bool(triggers.get('sl_order_id'))
+                    status['tp_order_id_present']=bool(triggers.get('tp_order_id'))
                     status.update(_five_recovery_decision(
                         row['state'],True,status['protection_verified']))
                 else:
@@ -5951,8 +5954,12 @@ def _five_position_recovery_audit(limit=5):
         result.append(status)
     unsafe=any(item['recovery_action'] not in ('NONE_OBSERVED_PROTECTED',)
                for item in result)
+    unprotected=[item['event_id'] for item in result
+                 if item.get('fill_verified') is True and
+                    item.get('protection_verified') is not True]
     return {'audited':len(result),'orders_placed':0,'close_orders_submitted':0,
             'live_recovery_enabled':False,'needs_operator_attention':unsafe,
+            'unprotected_filled_events':unprotected,
             'safe_to_enable_new_entries':False,'results':result}
 
 
