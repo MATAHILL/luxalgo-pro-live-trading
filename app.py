@@ -5665,8 +5665,8 @@ def _five_verify_native_tpsl(event_id):
                     or not isinstance(details,dict)
                     or str(initial.get('size')) not in ('0','0.0')
                     or str(initial.get('price')) not in ('0','0.0')
-                    or str(initial.get('auto_size') or '').lower() not in
-                        ('close_long' if row['side']=='LONG' else 'close_short', '')
+                    or str(initial.get('auto_size') or '').lower() !=
+                        ('close_long' if row['side']=='LONG' else 'close_short')
                     or str(details.get('rule'))!=str(rule)):
 
                 return {'protection_verified':False,'reason':'TRIGGER_NOT_ACTIVE_OR_MISMATCHED'}
