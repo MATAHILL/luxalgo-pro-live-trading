@@ -716,6 +716,11 @@ header.terminal-header{border-radius:17px!important}
 <div class="metric"><small>DATABASE SIGNALS</small><strong>{{ count }}</strong><span>Webhook: {{ 'configured' if configured else 'not configured' }}</span></div>
 </div><section class="panel position-panel"><div class="panel-heading"><h2>OPEN POSITIONS <span class="gloss-cyan">· GATE.IO FUTURES</span></h2><button class="btn gloss-action" id="positionRefresh" type="button">↻ Refresh Positions</button></div>
 <div id="gatePositionsBody" class="position-card-list" aria-live="polite"><p class="light">Checking read-only Gate.io open positions…</p></div><p id="gatePositionsUpdated" class="light">Read-only Gate.io account data; manual close disabled. SL/TP order status is not synchronized.</p></section>
+<details id="gateTestnetPositionPanel" class="panel" open style="width:100%;margin:14px 0;max-width:none">
+<summary style="cursor:pointer;font-size:16px;font-weight:850;padding:2px 0 12px">OPEN POSITIONS · GATE.IO FUTURES TESTNET — Click to minimize / maximize</summary>
+<p class="light">Separate Testnet account readback · Not production · No automatic order submission enabled</p>
+<div class="panel-heading"><span id="gateTestnetPositionStatus" class="light">Checking Testnet positions…</span><button class="btn gloss-action" id="gateTestnetPositionRefresh" type="button">↻ Refresh Testnet</button></div>
+<div class="tablewrap"><table style="width:100%;min-width:700px"><thead><tr><th>CONTRACT</th><th>SIDE</th><th>SIZE (CONTRACTS)</th><th>ENTRY</th><th>MARK</th><th>UNREALIZED PNL</th><th>LEVERAGE</th></tr></thead><tbody id="gateTestnetPositionRows"><tr><td colspan="7">Loading…</td></tr></tbody></table></div></details>
 <details id="incomingLuxPanel" class="panel" open style="width:100%;margin:14px 0;max-width:none">
 <summary style="cursor:pointer;font-size:16px;font-weight:850;padding:2px 0 12px">INCOMING LUXALGO ORDERS · WEBHOOK SIGNALS <span class="light" style="font-size:12px">— Click to minimize / maximize</span></summary>
 <p class="light">Received signals and paper processing only. Not Gate.io exchange orders. Market/Limit is shown only when explicitly supplied in the webhook. No exchange orders are submitted.</p>
@@ -1540,6 +1545,22 @@ draw(true);
  setInterval(()=>{if(panel.open&&!document.hidden)refresh();},60000);
 })();
 </script>
+<script>
+(function(){'use strict';
+ const pane=document.getElementById('gateTestnetPositionPanel'),body=document.getElementById('gateTestnetPositionRows'),status=document.getElementById('gateTestnetPositionStatus'),button=document.getElementById('gateTestnetPositionRefresh');
+ if(!pane||!body||!status||!button)return;
+ function cell(tr,value){const td=document.createElement('td');td.textContent=value===null||value===undefined?'—':String(value);tr.appendChild(td);}
+ async function refresh(){if(button.disabled)return;button.disabled=true;
+  try{const response=await fetch('/terminal/testnet-positions',{cache:'no-store'}),data=await response.json();if(!response.ok)throw Error(data.error||'Testnet unavailable');
+   body.replaceChildren();for(const pos of data.positions){const tr=document.createElement('tr');[pos.contract,pos.side,pos.size_contracts,pos.entry_price,pos.mark_price,pos.unrealized_pnl,pos.leverage_label].forEach(v=>cell(tr,v));body.appendChild(tr);}
+   if(!data.positions.length){const tr=document.createElement('tr'),td=document.createElement('td');td.colSpan=7;td.textContent='No OPEN TESTNET positions reported by Gate.io';tr.appendChild(td);body.appendChild(tr);}
+   status.textContent=data.count+' verified Testnet positions · '+new Date(data.fetched_at*1000).toLocaleTimeString('en-IN',{timeZone:'Asia/Kolkata'})+' IST';
+  }catch(error){status.textContent='Testnet position verification failed: '+error.message;body.replaceChildren();}
+  finally{button.disabled=false;}}
+ button.addEventListener('click',refresh);pane.addEventListener('toggle',()=>{if(pane.open)refresh()});refresh();
+ setInterval(()=>{if(pane.open&&!document.hidden)refresh()},60000);
+})();
+</script>
 </body></html>'''
 
 
@@ -2241,10 +2262,11 @@ def terminal_gate_testnet_check():
                        live_trading=False,orders_enabled=False),502
 
 
-def _gate_read_only_positions():
-    """Authenticated read-only GET; return only sanitized open position fields."""
-    key = os.getenv('GATE_API_KEY', '').strip()
-    secret = os.getenv('GATE_API_SECRET', '').strip()
+def _gate_read_only_positions(testnet=False):
+    """Authenticated GET-only position snapshot from explicitly selected environment."""
+    prefix = 'GATE_TESTNET' if testnet else 'GATE'
+    key = os.getenv(prefix+'_API_KEY', '').strip()
+    secret = os.getenv(prefix+'_API_SECRET', '').strip()
     if not key or not secret:
         raise RuntimeError('Gate.io API credentials not configured')
     path = '/api/v4/futures/usdt/positions'
@@ -2252,7 +2274,7 @@ def _gate_read_only_positions():
     payload_hash = hashlib.sha512(b'').hexdigest()
     message = '\n'.join(('GET', path, '', payload_hash, timestamp))
     signature = hmac.new(secret.encode(), message.encode(), hashlib.sha512).hexdigest()
-    req = Request('https://api.gateio.ws' + path, method='GET', headers={
+    req = Request(('https://api-testnet.gateapi.io' if testnet else 'https://api.gateio.ws') + path, method='GET', headers={
         'KEY': key, 'Timestamp': timestamp, 'SIGN': signature,
         'Accept': 'application/json', 'User-Agent': 'LuxAlgo-PRO-PositionMonitor/1.0',
     })
@@ -3829,6 +3851,27 @@ def terminal_futures_equity():
     except (URLError,TimeoutError,ValueError,TypeError,KeyError,OSError) as exc:
         app.logger.warning('Gate equity not available: %s',type(exc).__name__)
         return jsonify(error='Account equity unavailable for this account type or connection',orders_enabled=False),502
+
+
+@app.get('/terminal/testnet-positions')
+def terminal_testnet_positions():
+    """Isolated Gate.io Futures TESTNET position readback. No order submission."""
+    if not _terminal_permitted():
+        return _terminal_guard()
+    try:
+        positions=_gate_read_only_positions(testnet=True)
+        response=jsonify(environment='GATE_FUTURES_TESTNET',positions=positions,
+            count=len(positions),orders_enabled=False,live_trading=False,
+            fetched_at=int(time.time()))
+        response.headers['Cache-Control']='private, no-store'
+        return response
+    except RuntimeError:
+        return jsonify(error='Gate Testnet API credentials missing',orders_enabled=False),503
+    except HTTPError as exc:
+        return jsonify(error='Gate Testnet position API rejected the read-only request',
+                       http_status=exc.code,orders_enabled=False),502
+    except (URLError,TimeoutError,OSError,ValueError,TypeError,KeyError):
+        return jsonify(error='Gate Testnet positions unavailable or invalid',orders_enabled=False),502
 
 
 @app.get('/terminal/positions')
