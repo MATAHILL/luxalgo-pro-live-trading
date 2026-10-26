@@ -3771,10 +3771,19 @@ def terminal_positions():
         return jsonify(error='Gate.io read-only credentials unavailable', orders_enabled=False),503
     except HTTPError as exc:
         app.logger.warning('Gate positions HTTP status %s', exc.code)
-        return jsonify(error='Gate.io rejected the read-only position request', orders_enabled=False),502
-    except (URLError, TimeoutError, ValueError, KeyError, TypeError, OSError):
-        app.logger.warning('Gate positions response unavailable or invalid')
-        return jsonify(error='Position data temporarily unavailable or invalid', orders_enabled=False),502
+        reason=('Gate.io credentials or Futures read permission rejected (HTTP 401/403)'
+                if exc.code in (401,403) else
+                'Gate.io rate limit reached (HTTP 429)' if exc.code==429 else
+                'Gate.io position endpoint returned HTTP '+str(exc.code))
+        return jsonify(error=reason,gate_http_status=exc.code,orders_enabled=False),502
+    except (URLError, TimeoutError, OSError):
+        app.logger.warning('Gate positions transport error')
+        return jsonify(error='Gate.io position request timed out or network failed',
+                       orders_enabled=False),502
+    except (ValueError, KeyError, TypeError):
+        app.logger.warning('Gate positions response format invalid')
+        return jsonify(error='Gate.io position response incompatible with current parser',
+                       orders_enabled=False),502
 
 def _gate_atr_plan(symbol, direction, tf="15m"):
     """Read ONLY public, completed timeframe candles. Return an illustrative plan.
