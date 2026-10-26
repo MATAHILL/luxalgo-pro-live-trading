@@ -177,5 +177,14 @@ class FivePositionOrderBoundary(unittest.TestCase):
         self.assertIn("('RESERVED_EXECUTION_NOT_ENABLED','ALREADY_RESERVED')",src)
         self.assertIn("_five_position_execution_coordinator(execution_id)",src)
 
+    def test_native_sltp_discovery_uses_signed_bounded_exchange_list(self):
+        src=source('_five_discover_native_protection')
+        self.assertIn("status=open&contract=",src)
+        self.assertIn("len(orders)>=100",src)
+        self.assertIn("_five_match_native_protection_ids(",src)
+        self.assertIn("hashlib.sha512(b'').hexdigest()",src)
+        self.assertIn("signing='\\n'.join",src)
+        self.assertNotIn("_gate_post_transport_implementation(",src)
+
 if __name__=='__main__':
     unittest.main()
