@@ -265,7 +265,15 @@ def _db_connect():
     return psycopg.connect(url, connect_timeout=5, row_factory=dict_row)
 
 def _ensure_schema(connection):
-    # Repeated CREATE IF NOT EXISTS is safe across Railway restarts.
+    """Serialize idempotent DDL across concurrent Render workers.
+
+    PostgreSQL CREATE IF NOT EXISTS can still deadlock when separate sessions
+    attempt index/table DDL concurrently. Acquire a transaction-scoped
+    advisory lock BEFORE the multi-statement schema update; released on
+    commit/rollback. This lock is distinct from paper-bot and order locks.
+    No trade authorization is granted here.
+    """
+    connection.execute('SELECT pg_advisory_xact_lock(%s)', (65913044,))
     connection.execute(DB_SCHEMA)
 
 # Every queue writer and toggle obtains the same DB transaction lock.
