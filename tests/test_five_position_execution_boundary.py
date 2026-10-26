@@ -202,5 +202,12 @@ class FivePositionOrderBoundary(unittest.TestCase):
         self.assertIn("'exchange_write_enabled':False",src)
         self.assertNotIn("_five_submit_order_once(",src)
 
+    def test_acknowledged_order_requires_real_exchange_identity(self):
+        src=source('_five_position_execution_coordinator')
+        self.assertIn("'BLOCKED_ACK_WITHOUT_EXCHANGE_ORDER_ID'",src)
+        self.assertIn("str(row['exchange_order_id'] or '')",src)
+        self.assertIn("'protection_verified':False",src)
+        self.assertIn("'exchange_write_enabled':False",src)
+
 if __name__=='__main__':
     unittest.main()
