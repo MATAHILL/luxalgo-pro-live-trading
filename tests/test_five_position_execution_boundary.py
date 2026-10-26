@@ -145,5 +145,13 @@ class FivePositionOrderBoundary(unittest.TestCase):
                if isinstance(node,ast.Call) and isinstance(node.func,ast.Name)}
         self.assertNotIn('_gate_v4_authenticated_request',calls)
 
+    def test_close_review_requires_exact_contract_side_and_size(self):
+        src=source('_five_recovery_close_review')
+        self.assertIn('RECOVERY_POSITION_IDENTITY_MISMATCH',src)
+        self.assertIn('RECOVERY_POSITION_UNAVAILABLE',src)
+        self.assertIn('RECOVERY_SIZE_INVALID',src)
+        self.assertIn('amount.to_integral_value()',src)
+        self.assertIn('_five_recovery_close_shape(',src)
+
 if __name__=='__main__':
     unittest.main()
