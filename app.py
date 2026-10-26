@@ -1810,7 +1810,31 @@ def terminal_chart():
 
 @app.get('/health')
 def health():
-    return jsonify(status='ok', live_trading=False, orders_enabled=False, kind='signal_receiver_with_readonly_exchange_checks')
+    """Lightweight process liveness; never represents trade readiness."""
+    response = jsonify(status='ok', live_trading=False, orders_enabled=False,
+                       kind='signal_receiver_with_readonly_exchange_checks')
+    response.headers['Cache-Control'] = 'no-store'
+    return response
+
+
+@app.get('/ready')
+def ready():
+    """Read-only PostgreSQL connectivity check. Never authorizes exchange writes."""
+    try:
+        with _db_connect() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute('SELECT 1')
+                if cursor.fetchone() is None:
+                    raise RuntimeError('Database probe returned no row')
+    except (psycopg.Error, RuntimeError, OSError):
+        response = jsonify(status='not_ready', database='unavailable',
+                           live_trading=False, orders_enabled=False)
+        response.headers['Cache-Control'] = 'no-store'
+        return response, 503
+    response = jsonify(status='ready', database='connected',
+                       live_trading=False, orders_enabled=False)
+    response.headers['Cache-Control'] = 'no-store'
+    return response
 
 
 @app.post('/bot/status')
@@ -1826,7 +1850,7 @@ def bot_status():
         return jsonify(error='Persistent signal database unavailable', orders_enabled=False),503
     return jsonify(mode='DRY_RUN_ONLY', live_trading=False,
                    orders_enabled=False, exchange='Gate.io',
-                   signals_since_restart=signal_count,
+                   persistent_signal_receipts=signal_count,
                    dry_run_intents=recent,
                    persistent_history=True,
                    warning='No positions, order submissions, fills, SL or TP orders exist.')
@@ -3636,7 +3660,7 @@ def terminal_live_readiness():
         dict(name='Emergency stop and position handling', ready=False,
              detail='Current BOT OFF stops new paper simulations only'),
         dict(name='Reliable always-on service and API health', ready=False,
-             detail='Render Free sleeps and recent queue/market-data warnings are unresolved'),
+             detail='Validate Render uptime, PostgreSQL, webhook delivery, queues and market-data freshness'),
     ]
     try:
         data = _gate_futures_account_summary()
