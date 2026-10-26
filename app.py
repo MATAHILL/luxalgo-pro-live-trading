@@ -5684,6 +5684,18 @@ def _five_position_recovery_audit(limit=5):
                     'PROTECTION_UNVERIFIED','PROTECTED','RECOVERY_REQUIRED')
                 ORDER BY created_at LIMIT %s""",(limit,))
             rows=cur.fetchall()
+            # An audit limited to five must not silently hide a sixth
+            # uncertain/protected journal. Halt the whole review if overflowed.
+            cur.execute("""SELECT COUNT(*) AS total FROM luxalgo_execution_five_journal
+                WHERE state IN ('DISPATCH_UNCERTAIN','ACKNOWLEDGED',
+                    'PROTECTION_UNVERIFIED','PROTECTED','RECOVERY_REQUIRED')""")
+            outstanding=cur.fetchone()['total']
+    if outstanding > limit:
+        return {'audited':0,'outstanding':outstanding,'orders_placed':0,
+                'close_orders_submitted':0,'live_recovery_enabled':False,
+                'state':'BLOCKED_UNAUDITED_EXPOSURE',
+                'reason':'More active journals than the audit coverage limit',
+                'results':[]}
     result=[]
     for row in rows:
         event_id=row['event_id']
