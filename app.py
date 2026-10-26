@@ -5728,6 +5728,12 @@ def _five_position_execution_coordinator(event_id):
         # again. Run authenticated fill and native protection readback here.
         if row['journal_state'] in ('ACKNOWLEDGED','PROTECTION_UNVERIFIED',
                                     'PROTECTED','RECOVERY_REQUIRED'):
+            # A journal state alone is insufficient: require the original,
+            # independently acknowledged exchange order identity.
+            if not re.fullmatch(r'[1-9][0-9]{0,19}',str(row['exchange_order_id'] or '')):
+                return {'state':'BLOCKED_ACK_WITHOUT_EXCHANGE_ORDER_ID',
+                        'orders_placed':0,'protection_verified':False,
+                        'exchange_write_enabled':False}
             review=_five_post_ack_protection_review(event_id)
             return {'state':'EXISTING_ENTRY_PROTECTION_REVIEW',
                     'protection_review':review,
