@@ -1,0 +1,38 @@
+name: LuxAlgo PRO Safe Execution Tests
+on:
+  push:
+    branches: [live-execution-dev]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  safe-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Compile trading application without starting it
+        run: python -m py_compile app.py
+      - name: Run isolated Gate.io fill regression suite
+        run: python -m unittest discover -s tests -p 'test_*.py' -v
+      - name: Guard against accidental unprotected live dispatch
+        run: |
+          python - <<'PY'
+          import ast
+          from pathlib import Path
+          tree=ast.parse(Path('app.py').read_text(encoding='utf-8'))
+          fn={node.name:node for node in tree.body if isinstance(node,ast.FunctionDef)}
+          assert '_five_position_execution_coordinator' in fn
+          assert '_five_position_recovery_audit' in fn
+          assert '_five_verify_native_tpsl' in fn
+          web=fn['webhook']
+          forbidden={'_gate_post_transport_implementation','_gate_send_protected_entry','_gate_close_existing_oneway_position'}
+          direct={call.func.id for call in ast.walk(web) if isinstance(call,ast.Call) and isinstance(call.func,ast.Name)}
+          assert not (direct & forbidden), 'Webhook must not place unprotected real orders'
+          print('Live-order fail-closed checks passed; no exchange network traffic')
+          PY
