@@ -67,5 +67,12 @@ class FivePositionOrderBoundary(unittest.TestCase):
         self.assertIn("initial.get('auto_size')",src)
         self.assertIn("!=\\n                        ('close_long' if row['side']=='LONG' else 'close_short')",src)
 
+    def test_fill_reconciliation_checks_client_identity_and_exact_quantity(self):
+        src=source('_five_journal_read_fill_evidence')
+        self.assertIn("order.get('text')!=row['client_order_text']",src)
+        self.assertIn("order.get('reduce_only') is True",src)
+        self.assertIn('observed==filled',src)
+        self.assertIn("order.get('status')=='finished'",src)
+
 if __name__=='__main__':
     unittest.main()
