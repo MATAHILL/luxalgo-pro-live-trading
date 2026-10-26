@@ -6075,6 +6075,32 @@ def _five_protection_coverage_check(event_id):
             'warning':'Observation only; does not guarantee future trigger execution'}
 
 
+def _five_reconcile_native_protection(event_id):
+    """Orchestrate authenticated discovery, durable ID linkage and fresh checks.
+
+    This function is deliberately not invoked from the order dispatcher or
+    webhook: it has no ability to submit real-money orders.
+    """
+    if not isinstance(event_id,str) or not re.fullmatch(r'[A-Za-z0-9_.:-]{4,100}',event_id):
+        raise GateOrderTransportError('Invalid protection reconciliation event')
+    try:
+        linked=_five_persist_verified_protection_ids(event_id)
+        if linked.get('ids_persisted') is not True:
+            return {'state':'PROTECTION_LINKAGE_UNVERIFIED',
+                    'coverage_verified':False,'orders_placed':0,
+                    'reason':str(linked.get('reason','MISSING_LINKAGE'))[:80]}
+        checked=_five_protection_coverage_check(event_id)
+        return {'state':checked.get('state','COVERAGE_UNKNOWN'),
+                'coverage_verified':checked.get('coverage_verified') is True,
+                'orders_placed':0,'execution_authorized':False,
+                'reason':str(checked.get('evidence','READBACK_COMPLETE'))[:80]}
+    except (GateOrderTransportError,psycopg.Error,RuntimeError,OSError,
+            ValueError,TypeError,KeyError):
+        return {'state':'EXCHANGE_PROTECTION_RECONCILIATION_FAILED',
+                'coverage_verified':False,'orders_placed':0,
+                'execution_authorized':False}
+
+
 def _five_position_recovery_audit(limit=5):
     """Exchange read-only audit across five journals; never submits a close.
 
