@@ -5901,6 +5901,59 @@ def _five_recovery_decision(journal_state, fill_verified, protection_verified):
             'recovery_action':'NONE_OBSERVED_PROTECTED'}
 
 
+def _five_match_native_protection_ids(entry_order_id, contract, side, stop_price,
+                                      target_price, trigger_orders):
+    """Match Gate.io price orders to the original entry using me_order_id.
+
+    Pure validation of an authenticated price-order LIST snapshot. No network
+    calls, journal updates, or guessed linkage. Ambiguity blocks coverage.
+    """
+    if not re.fullmatch(r'[1-9][0-9]{0,19}',str(entry_order_id)):
+        raise GateOrderTransportError('Invalid original order identity')
+    if not re.fullmatch(r'[A-Z0-9]{2,25}_USDT',str(contract)) or side not in ('LONG','SHORT'):
+        raise GateOrderTransportError('Invalid protection target')
+    if not isinstance(trigger_orders,list):
+        raise GateOrderTransportError('Invalid price-order snapshot')
+    rules=(2,1) if side=='LONG' else (1,2)
+    expected_type='close-long-order' if side=='LONG' else 'close-short-order'
+    try:
+        expected_prices=[Decimal(str(stop_price)),Decimal(str(target_price))]
+        if not all(x.is_finite() and x>0 for x in expected_prices):
+            raise ValueError()
+    except (InvalidOperation,TypeError,ValueError):
+        raise GateOrderTransportError('Invalid protection prices') from None
+    matches=[[],[]]
+    for record in trigger_orders:
+        if not isinstance(record,dict):
+            raise GateOrderTransportError('Malformed native protection order')
+        if str(record.get('me_order_id') or '')!=str(entry_order_id):
+            continue
+        initial=record.get('initial')
+        trigger=record.get('trigger')
+        if (record.get('status')!='open' or record.get('order_type')!=expected_type
+                or not isinstance(initial,dict) or initial.get('contract')!=contract
+                or not isinstance(trigger,dict)):
+            continue
+        try:
+            price=Decimal(str(trigger.get('price')))
+            rule=int(trigger.get('rule'))
+        except (ValueError,TypeError,InvalidOperation):
+            continue
+        if not price.is_finite():
+            continue
+        identity=str(record.get('id_string') or record.get('id') or '')
+        if not re.fullmatch(r'[1-9][0-9]{0,19}',identity):
+            continue
+        for ix in range(2):
+            if price==expected_prices[ix] and rule==rules[ix]:
+                matches[ix].append(identity)
+    if len(matches[0])!=1 or len(matches[1])!=1 or matches[0][0]==matches[1][0]:
+        return {'coverage_linked':False,'reason':'MISSING_OR_AMBIGUOUS_NATIVE_PROTECTION_IDS'}
+    return {'coverage_linked':True,'sl_order_id':matches[0][0],
+            'tp_order_id':matches[1][0],
+            'source':'MATCHED_EXCHANGE_ME_ORDER_ID','execution_authorized':False}
+
+
 def _five_protection_coverage_check(event_id):
     """Read-only coverage evaluation: filled entry + two verified active exits.
 
