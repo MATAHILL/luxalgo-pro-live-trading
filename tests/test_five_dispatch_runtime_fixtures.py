@@ -51,7 +51,7 @@ class DispatchTests(unittest.TestCase):
                "_five_dispatch_plan": plan,
                "_five_journal_mark_dispatch_uncertain": claim,
                "_gate_post_transport_implementation": post,
-               "_five_journal_record_order_ack": journal,
+               "_five_journal_verify_exchange_order": journal,
                "re": re, "os": os}
         exec(compile(ast.Module(body=[fn], type_ignores=[]), str(APP), "exec"), env)
         self.submit = env["_five_submit_order_once"]
