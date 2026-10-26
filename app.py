@@ -679,7 +679,9 @@ header.terminal-header{border-radius:17px!important}
 .v45-refresh-state{font-size:10px;color:#99bbd4;margin-top:7px}
 @media(max-width:550px){.v45-widget{height:265px;min-height:265px}}
 /* Live-terminal presentation. Preserve legacy nodes for existing JS/backend but remove paper UI from view. */
-.bot-control-panel,#liveReadinessPanel,.legacy-paper-panel,#paperClosedHistoryPanel,#v4Workspace,#v4PaperCards{display:none!important}
+#liveReadinessPanel,.legacy-paper-panel,#paperClosedHistoryPanel,#v4Workspace,#v4PaperCards{display:none!important}
+.bot-control-panel{display:flex!important;gap:12px;align-items:center;flex-wrap:wrap;margin:10px 0}
+.bot-control-panel .bot-control-actions .btn{font-size:11px;padding:6px 10px;min-width:75px}
 .live-ops-banner{margin:14px 0;padding:16px 19px;border:1px solid #47779a;border-radius:12px;background:linear-gradient(110deg,#102b45,#081b2f);display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:10px}
 .live-ops-banner strong{font-size:17px;color:#e1f5ff}.live-ops-banner p{margin:5px 0 0;color:#b0cee4;font-size:12px}
 .live-ops-state{font-weight:900;color:#ffd18d;border:1px solid #9c7650;border-radius:8px;padding:9px 12px;background:#3b2b1b}
@@ -690,7 +692,7 @@ header.terminal-header{border-radius:17px!important}
  <section class="live-ops-banner" aria-label="Live trading execution status"><div><strong>GATE.IO FUTURES · LIVE ACCOUNT MONITOR</strong><p>Real exchange balances, positions and market data. Automatic execution remains disabled until verified SL/TP and recovery are deployed.</p></div><span class="live-ops-state">EXECUTION OFF · MONITORING ONLY</span></section>
  <section class="bot-control-panel" aria-label="Remote bot control">
  <div><div class="bot-status-line"><strong id="botControlLabel">BOT OFF · PAPER SIMULATION PAUSED</strong><span id="botStateIndicator" class="bot-state-indicator unknown" role="status" aria-live="polite">● CHECKING</span></div><p id="botControlDetail">New LuxAlgo signals remain logged. No live orders are possible.</p></div>
- <div class="bot-control-actions"><button class="btn" id="botTurnOn" type="button">▶ BOT ON</button><button class="btn" id="botTurnOff" type="button">■ BOT OFF</button></div>
+ <div class="bot-control-actions"><button class="btn" id="botTurnOn" type="button" title="Existing paper-simulation control; NOT live order execution">▶ PAPER BOT ON</button><button class="btn" id="botTurnOff" type="button" title="Existing paper-simulation control; NOT an exchange emergency halt">■ PAPER BOT OFF</button></div>
 </section>
 <details class="futures-liquidity" id="futuresLiquidityDetails">
 <summary><span>◈ FUTURES LIQUIDITY DETAILS · USDT</span><span class="liquidity-arrow" aria-hidden="true">⌄</span></summary>
@@ -707,7 +709,7 @@ header.terminal-header{border-radius:17px!important}
 <div class="metric"><small>TOTAL REALIZED P&amp;L</small><strong>—</strong><span>Verified fills not available</span></div>
 <div class="metric"><small>WIN RATE</small><strong>—</strong><span>Requires completed trades</span></div>
 <div class="metric"><small>DATABASE SIGNALS</small><strong>{{ count }}</strong><span>Webhook: {{ 'configured' if configured else 'not configured' }}</span></div>
-</div><section class="panel position-panel"><div class="panel-heading"><h2>OPEN POSITIONS <span class="gloss-cyan">· GATE.IO FUTURES</span></h2><button class="btn btn-danger gloss-safe-disabled" disabled title="Verified exchange positions and safe close-order execution are not connected">MANUALLY CLOSE SELECTED POSITION · DISABLED</button><button class="btn gloss-action" id="positionRefresh" type="button">↻ Refresh Positions</button></div>
+</div><section class="panel position-panel"><div class="panel-heading"><h2>OPEN POSITIONS <span class="gloss-cyan">· GATE.IO FUTURES</span></h2><button class="btn gloss-action" id="positionRefresh" type="button">↻ Refresh Positions</button></div>
 <div id="gatePositionsBody" class="position-card-list" aria-live="polite"><p class="light">Checking read-only Gate.io open positions…</p></div><p id="gatePositionsUpdated" class="light">Read-only Gate.io account data; manual close disabled. SL/TP order status is not synchronized.</p></section><div class="market-grid">
 <section class="panel market-panel"><div class="panel-heading"><h2>GATE.IO FUTURES RADAR <span class="gloss-gold">● MARKET LIVE</span></h2><button class="btn gloss-action" id="radarRefresh" type="button">↻ Refresh</button></div>
 <p class="light">All available Gate.io USDT perpetual tickers · 24h rankings · public market data.</p>
