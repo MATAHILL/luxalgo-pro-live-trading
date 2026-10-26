@@ -2106,10 +2106,22 @@ def webhook():
         return jsonify(error='Signal not stored; retry later',orders_placed=0),503
     # Legacy single-candidate reservation retired; five-position handoff below is authoritative.
     one_trade_candidate = 'LEGACY_RETIRED'
-    execution_handoff = (_record_execution_handoff(event_id, symbol, allowed[side], tf, parsed)
-                         if level_status == 'VALID' and not duplicate else
-                         {'state':'NOT_ELIGIBLE','orders_placed':0})
-    execution_coordinator = (_five_position_execution_coordinator(event_id)
+    # Use a stable, sender-provided identity for execution, NOT the
+    # receive-time bucket used by legacy signal receipt logging.
+    # Replay of the same TradingView alert must map to the same journal key.
+    tv_event_id = data.get('event_id')
+    valid_tv_id = (isinstance(tv_event_id, str) and
+                   re.fullmatch(r'[A-Za-z0-9_.:-]{8,100}', tv_event_id) is not None)
+    execution_id = (sha256((symbol + '|' + allowed[side] + '|' + tf +
+                            '|' + tv_event_id).encode('utf-8')).hexdigest()[:40]
+                    if valid_tv_id else None)
+    execution_handoff = (
+        _record_execution_handoff(execution_id, symbol, allowed[side], tf, parsed)
+        if level_status == 'VALID' and tf == '15m' and valid_tv_id
+        else {'state': ('BLOCKED_MISSING_STABLE_EVENT_ID'
+                        if level_status == 'VALID' and tf == '15m'
+                        else 'NOT_ELIGIBLE'), 'orders_placed': 0})
+    execution_coordinator = (_five_position_execution_coordinator(execution_id)
         if execution_handoff.get('state') == 'RESERVED_EXECUTION_NOT_ENABLED'
         else {'state':'NOT_ELIGIBLE','orders_placed':0})
     return jsonify(status='signal_received', mode='SIGNAL_ONLY', symbol=symbol,
