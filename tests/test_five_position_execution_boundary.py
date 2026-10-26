@@ -120,7 +120,7 @@ class FivePositionOrderBoundary(unittest.TestCase):
         self.assertLess(src.index('_five_journal_mark_dispatch_uncertain'),
                         src.index('_gate_post_transport_implementation'))
         self.assertIn('ACK_UNKNOWN_DO_NOT_RETRY',src)
-        self.assertIn('_five_journal_record_order_ack',src)
+        self.assertIn('_five_journal_verify_exchange_order',src)
         self.assertIn('FIVE_POSITION_EXECUTION_CERTIFIED',SRC)
 
     def test_recovery_errors_require_operator_attention(self):
