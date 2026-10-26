@@ -5901,6 +5901,39 @@ def _five_recovery_decision(journal_state, fill_verified, protection_verified):
             'recovery_action':'NONE_OBSERVED_PROTECTED'}
 
 
+def _five_protection_coverage_check(event_id):
+    """Read-only coverage evaluation: filled entry + two verified active exits.
+
+    Fail closed for absent or mismatched native trigger IDs. The journal must
+    independently link the orders to this event; a submitted TP/SL price in
+    the entry payload is not evidence of exchange-side protection.
+    """
+    if not isinstance(event_id,str) or not re.fullmatch(r'[A-Za-z0-9_.:-]{4,100}',event_id):
+        raise GateOrderTransportError('Invalid coverage event ID')
+    fill=_five_journal_read_fill_evidence(event_id)
+    if fill.get('fill_verified') is not True:
+        return {'state':'FILL_UNVERIFIED','coverage_verified':False,
+                'requires_operator_attention':True,'orders_placed':0,
+                'evidence':str(fill.get('state','UNKNOWN'))[:80]}
+    triggers=_five_verify_native_tpsl(event_id)
+    if triggers.get('protection_verified') is not True:
+        return {'state':'NATIVE_SL_TP_UNVERIFIED','coverage_verified':False,
+                'requires_operator_attention':True,'orders_placed':0,
+                'evidence':str(triggers.get('reason','UNKNOWN'))[:80]}
+    if (not re.fullmatch(r'[1-9][0-9]{0,19}',str(triggers.get('sl_order_id','')))
+            or not re.fullmatch(r'[1-9][0-9]{0,19}',str(triggers.get('tp_order_id','')))
+            or str(triggers['sl_order_id'])==str(triggers['tp_order_id'])):
+        return {'state':'MISSING_PROTECTIVE_ORDER_IDENTITIES',
+                'coverage_verified':False,'requires_operator_attention':True,
+                'orders_placed':0}
+    return {'state':'EXCHANGE_PROTECTION_OBSERVED',
+            'coverage_verified':True,'requires_operator_attention':False,
+            'orders_placed':0,'execution_authorized':False,
+            'sl_order_id':str(triggers['sl_order_id']),
+            'tp_order_id':str(triggers['tp_order_id']),
+            'warning':'Observation only; does not guarantee future trigger execution'}
+
+
 def _five_position_recovery_audit(limit=5):
     """Exchange read-only audit across five journals; never submits a close.
 
