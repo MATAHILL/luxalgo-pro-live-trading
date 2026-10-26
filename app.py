@@ -6101,6 +6101,32 @@ def _five_reconcile_native_protection(event_id):
                 'execution_authorized':False}
 
 
+def _five_post_ack_protection_review(event_id):
+    """Read-only post-ACK lifecycle review: never submits or retries orders.
+
+    Invoke after independently reconciled ACK, not from the order-POST path.
+    Failure to observe an independently attributable fill blocks promotion.
+    """
+    if not isinstance(event_id,str) or not re.fullmatch(r'[A-Za-z0-9_.:-]{4,100}',event_id):
+        raise GateOrderTransportError('Invalid lifecycle event ID')
+    try:
+        fill=_five_journal_read_fill_evidence(event_id)
+        if fill.get('fill_verified') is not True:
+            return {'state':'POST_ACK_FILL_UNVERIFIED',
+                    'protection_verified':False,'execution_authorized':False,
+                    'orders_placed':0,'requires_attention':True}
+        checked=_five_reconcile_native_protection(event_id)
+        return {'state':checked.get('state','PROTECTION_UNKNOWN'),
+                'protection_verified':checked.get('coverage_verified') is True,
+                'execution_authorized':False,'orders_placed':0,
+                'requires_attention':checked.get('coverage_verified') is not True}
+    except (GateOrderTransportError,psycopg.Error,RuntimeError,OSError,
+            ValueError,TypeError,KeyError):
+        return {'state':'POST_ACK_READBACK_FAILED',
+                'protection_verified':False,'execution_authorized':False,
+                'orders_placed':0,'requires_attention':True}
+
+
 def _five_position_recovery_audit(limit=5):
     """Exchange read-only audit across five journals; never submits a close.
 
