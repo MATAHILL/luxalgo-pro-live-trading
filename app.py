@@ -1823,9 +1823,14 @@ def ready():
     try:
         with _db_connect() as connection:
             with connection.cursor() as cursor:
-                cursor.execute('SELECT 1')
-                if cursor.fetchone() is None:
-                    raise RuntimeError('Database probe returned no row')
+                cursor.execute('''SELECT
+                    to_regclass('public.luxalgo_signal_receipts') IS NOT NULL AS receipts,
+                    to_regclass('public.luxalgo_dry_run_intents') IS NOT NULL AS intents,
+                    to_regclass('public.luxalgo_bot_control') IS NOT NULL AS control,
+                    to_regclass('public.luxalgo_stage6_execution_halt') IS NOT NULL AS halt''')
+                row = cursor.fetchone()
+                if not row or not all(row.values()):
+                    raise RuntimeError('Required safety tables are missing')
     except (psycopg.Error, RuntimeError, OSError):
         response = jsonify(status='not_ready', database='unavailable',
                            live_trading=False, orders_enabled=False)
