@@ -153,5 +153,9 @@ class FivePositionOrderBoundary(unittest.TestCase):
         self.assertIn('amount.to_integral_value()',src)
         self.assertIn('_five_recovery_close_shape(',src)
 
+    def test_exchange_ack_uses_id_string_fallback(self):
+        src=source('_five_journal_verify_exchange_order')
+        self.assertIn("order.get('id_string') or order.get('id')",src)
+
 if __name__=='__main__':
     unittest.main()
