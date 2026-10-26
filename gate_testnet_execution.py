@@ -98,6 +98,44 @@ def protective_trigger_payload(contract: str, side: str, trigger_kind: str,
     }
 
 
+def signed_testnet_request(method: str, path: str, body: dict | None = None,
+                           query: str = "", *, timeout: int = 8) -> dict | list:
+    """Strict Testnet-only REST transport. No retries of order-writing requests.
+
+    This helper does not authorize trading and is never invoked by webhook.
+    Calling code must validate risk, recovery, native protection and idempotency.
+    """
+    from urllib.error import HTTPError, URLError
+    if path not in (ORDER_PATH, "/api/v4/futures/usdt/price_orders",
+                    "/api/v4/futures/usdt/positions"):
+        raise ValueError("API path not allowlisted")
+    if method == "POST" and path == "/api/v4/futures/usdt/positions":
+        raise ValueError("Position write prohibited")
+    if method not in ("GET", "POST"):
+        raise ValueError("Unsupported HTTP method")
+    if method == "GET" and body is not None:
+        raise ValueError("GET body forbidden")
+    if method == "POST" and not isinstance(body,dict):
+        raise ValueError("POST requires JSON object")
+    key=os.getenv("GATE_TESTNET_API_KEY","").strip()
+    secret=os.getenv("GATE_TESTNET_API_SECRET","").strip()
+    if not key or not secret:
+        raise TestnetExecutionDisabled("Gate Testnet credentials unavailable")
+    data=(json.dumps(body,separators=(",",":"),allow_nan=False).encode("utf-8")
+          if method=="POST" else b"")
+    stamp=str(int(time.time()))
+    headers=signed_headers(method,path,query,data,stamp,key,secret)
+    url=TESTNET_HOST+path+("?"+query if query else "")
+    request=Request(url,data=data if method=="POST" else None,
+                    headers=headers,method=method)
+    # Never retry a write after a transport timeout: order may already exist.
+    with urlopen(request,timeout=timeout) as response:
+        result=json.loads(response.read(150000))
+    if not isinstance(result,(dict,list)):
+        raise ValueError("Unexpected Testnet response")
+    return result
+
+
 def submit_testnet_entry(payload: dict, *, allow_unprotected_entry: bool = False) -> dict:
     """Signed Gate Futures TESTNET order transport, isolated from webhooks.
 
