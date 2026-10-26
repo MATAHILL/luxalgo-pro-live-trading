@@ -5503,6 +5503,53 @@ def _five_position_execution_coordinator(event_id):
         return {'state':'BLOCKED_DB_READ_FAILURE','orders_placed':0}
 
 
+def _five_verify_native_tpsl(event_id):
+    """Strict read-only verification of both recorded Gate.io trigger orders.
+
+    This does not place protection orders or permit opening entries. Missing
+    price-order IDs fail closed; a trigger attached in a request is not proof.
+    """
+    if not isinstance(event_id,str) or not re.fullmatch(r'[A-Za-z0-9_.:-]{4,100}',event_id):
+        raise GateOrderTransportError('Invalid event')
+    with _db_connect() as con:
+        con.execute(_EXECUTION_HANDOFF_FIVE_SCHEMA)
+        con.execute(_EXECUTION_FIVE_JOURNAL_SCHEMA)
+        with con.cursor() as cur:
+            cur.execute("""SELECT j.contract,j.side,j.state,j.sl_order_id,j.tp_order_id,
+                h.stop_loss,h.take_profit FROM luxalgo_execution_five_journal j
+                JOIN luxalgo_execution_handoff_five h USING(event_id)
+                WHERE j.event_id=%s""",(event_id,))
+            row=cur.fetchone()
+    if not row or row['state'] not in ('ACKNOWLEDGED','PROTECTION_UNVERIFIED',
+                                     'PROTECTED','RECOVERY_REQUIRED'):
+        return {'protection_verified':False,'reason':'NO_ACKNOWLEDGED_TRADE'}
+    sl_id,tp_id=row['sl_order_id'],row['tp_order_id']
+    if not sl_id or not tp_id or str(sl_id)==str(tp_id):
+        return {'protection_verified':False,'reason':'MISSING_DISTINCT_SL_TP_IDS'}
+    expected_close={'LONG':('close-long-order','close-long-position','plan-close-long-position'),
+                    'SHORT':('close-short-order','close-short-position','plan-close-short-position')}
+    try:
+        for oid,expected in ((sl_id,row['stop_loss']),(tp_id,row['take_profit'])):
+            if not re.fullmatch(r'[1-9][0-9]{0,19}',str(oid)):
+                return {'protection_verified':False,'reason':'INVALID_TRIGGER_ID'}
+            trigger=_gate_v4_authenticated_request('GET','/api/v4/futures/usdt/price_orders/'+str(oid))
+            initial=trigger.get('initial')
+            details=trigger.get('trigger')
+            if (str(trigger.get('id_string') or trigger.get('id'))!=str(oid)
+                    or trigger.get('status')!='open'
+                    or trigger.get('order_type') not in expected_close[row['side']]
+                    or not isinstance(initial,dict) or initial.get('contract')!=row['contract']
+                    or not isinstance(details,dict)):
+                return {'protection_verified':False,'reason':'TRIGGER_NOT_ACTIVE_OR_MISMATCHED'}
+            actual=Decimal(str(details.get('price')))
+            if not actual.is_finite() or actual!=Decimal(str(expected)):
+                return {'protection_verified':False,'reason':'TRIGGER_PRICE_MISMATCH'}
+    except (GateOrderTransportError,ValueError,TypeError,InvalidOperation):
+        return {'protection_verified':False,'reason':'EXCHANGE_TRIGGER_READBACK_FAILED'}
+    return {'protection_verified':True,'reason':'TWO_ACTIVE_TRIGGER_ORDERS_VERIFIED',
+            'sl_order_id':str(sl_id),'tp_order_id':str(tp_id)}
+
+
 @app.get('/terminal/execution-handoff')
 def terminal_execution_handoff():
     if not _terminal_permitted():
