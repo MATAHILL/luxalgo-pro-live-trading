@@ -112,5 +112,16 @@ class FivePositionOrderBoundary(unittest.TestCase):
         audit=source('_five_position_recovery_audit')
         self.assertIn('_five_recovery_decision(',audit)
 
+    def test_live_sender_is_hard_disabled_until_certified(self):
+        src=source('_five_submit_order_once')
+        self.assertIn('FIVE_POSITION_EXECUTION_NOT_CERTIFIED',src)
+        self.assertLess(src.index('FIVE_POSITION_EXECUTION_NOT_CERTIFIED'),
+                        src.index('_five_journal_mark_dispatch_uncertain'))
+        self.assertLess(src.index('_five_journal_mark_dispatch_uncertain'),
+                        src.index('_gate_post_transport_implementation'))
+        self.assertIn('ACK_UNKNOWN_DO_NOT_RETRY',src)
+        self.assertIn('_five_journal_record_order_ack',src)
+        self.assertIn('FIVE_POSITION_EXECUTION_CERTIFIED',SRC)
+
 if __name__=='__main__':
     unittest.main()
