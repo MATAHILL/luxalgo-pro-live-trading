@@ -64,8 +64,8 @@ class FivePositionOrderBoundary(unittest.TestCase):
 
     def test_protection_requires_explicit_close_position_direction(self):
         src=source('_five_verify_native_tpsl')
-        self.assertIn("initial.get('auto_size')",src)
-        self.assertIn("'close_long' if row['side']=='LONG' else 'close_short'",src)
+        self.assertIn("initial.get('is_close') is False",src)
+        self.assertIn("initial.get('is_reduce_only') is False",src)
 
     def test_fill_reconciliation_checks_client_identity_and_exact_quantity(self):
         src=source('_five_journal_read_fill_evidence')
@@ -160,8 +160,8 @@ class FivePositionOrderBoundary(unittest.TestCase):
     def test_native_tpsl_validates_oneway_and_hedge_closing_modes(self):
         src=source('_five_verify_native_tpsl')
         self.assertIn('_gate_read_only_positions()',src)
-        self.assertIn("mode=='single' and initial.get('close') is not True",src)
-        self.assertIn("mode!='single' and str(initial.get('auto_size')",src)
+        self.assertNotIn("initial.get('close') is not True",src)
+        self.assertNotIn("str(initial.get('auto_size') or '').lower() !=",src)
         self.assertIn('POSITION_MODE_UNVERIFIED',src)
         self.assertIn('POSITION_MODE_SIDE_MISMATCH',src)
 
