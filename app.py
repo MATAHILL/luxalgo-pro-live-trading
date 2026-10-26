@@ -5778,6 +5778,21 @@ def _five_verify_native_tpsl(event_id):
         return {'protection_verified':False,'reason':'INVALID_POSITION_DIRECTION'}
     # An active trigger must be a close-position trigger with the right
     # comparator; matching order IDs and prices alone is insufficient.
+    # Full-close protection semantics differ between single and hedge mode.
+    # Resolve mode from authenticated open positions rather than inferring it
+    # from the trigger or the strategy signal.
+    try:
+        matching=[p for p in _gate_read_only_positions()
+                  if p.get('contract')==row['contract'] and p.get('side')==row['side']]
+    except (GateOrderTransportError,RuntimeError,OSError,ValueError,TypeError,KeyError):
+        return {'protection_verified':False,'reason':'POSITION_MODE_READBACK_FAILED'}
+    if len(matching)!=1 or matching[0].get('position_mode') not in (
+            'single','dual_long','dual_short'):
+        return {'protection_verified':False,'reason':'POSITION_MODE_UNVERIFIED'}
+    mode=matching[0]['position_mode']
+    if ((mode=='dual_long' and row['side']!='LONG') or
+            (mode=='dual_short' and row['side']!='SHORT')):
+        return {'protection_verified':False,'reason':'POSITION_MODE_SIDE_MISMATCH'}
     expected_rules={'LONG':(2,1),'SHORT':(1,2)}
     expected_close={'LONG':('close-long-order','close-long-position','plan-close-long-position'),
                     'SHORT':('close-short-order','close-short-position','plan-close-short-position')}
@@ -5795,8 +5810,9 @@ def _five_verify_native_tpsl(event_id):
                     or not isinstance(details,dict)
                     or str(initial.get('size')) not in ('0','0.0')
                     or str(initial.get('price')) not in ('0','0.0')
-                    or str(initial.get('auto_size') or '').lower() !=
-                        ('close_long' if row['side']=='LONG' else 'close_short')
+                    or (mode=='single' and initial.get('close') is not True)
+                    or (mode!='single' and str(initial.get('auto_size') or '').lower() !=
+                        ('close_long' if row['side']=='LONG' else 'close_short'))
                     or str(details.get('rule'))!=str(rule)):
 
                 return {'protection_verified':False,'reason':'TRIGGER_NOT_ACTIVE_OR_MISMATCHED'}
