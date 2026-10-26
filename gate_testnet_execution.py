@@ -61,6 +61,43 @@ def prepare_order_for_review(payload: dict) -> dict:
                 submitted=False, protective_orders_verified=False,
                 blocker="ENTRY_AND_EXCHANGE_NATIVE_SL_TP_REQUIRE_ATOMIC_RECOVERY_AND_RECONCILIATION")
 
+def protective_trigger_payload(contract: str, side: str, trigger_kind: str,
+                               trigger_price: str, mark_reference_price: str,
+                               position_mode: str = "dual") -> dict:
+    """Construct documented Gate Futures position-close trigger; never submit.
+
+    Require an actual fresh mark before choosing above/below trigger rule.
+    This avoids creating an already-triggered protective order.
+    """
+    from decimal import Decimal, InvalidOperation
+    import re
+    if not re.fullmatch(r"[A-Z0-9]{2,28}_USDT", contract):
+        raise ValueError("Invalid contract")
+    if side not in ("LONG", "SHORT") or trigger_kind not in ("STOP_LOSS", "TAKE_PROFIT"):
+        raise ValueError("Invalid position side or trigger purpose")
+    if position_mode != "dual":
+        raise ValueError("Only explicitly verified dual-mode plans supported")
+    try:
+        trigger=Decimal(str(trigger_price))
+        mark=Decimal(str(mark_reference_price))
+    except (InvalidOperation, ValueError, TypeError):
+        raise ValueError("Invalid trigger or mark") from None
+    if not all(p.is_finite() and p>0 for p in (trigger,mark)) or trigger==mark:
+        raise ValueError("Invalid or already reached trigger")
+    above=(side=="LONG" and trigger_kind=="TAKE_PROFIT") or (side=="SHORT" and trigger_kind=="STOP_LOSS")
+    if (trigger>mark) != above:
+        raise ValueError("Trigger is on incorrect side of fresh mark")
+    close_side="long" if side=="LONG" else "short"
+    return {
+        "initial": {"contract":contract, "size":0, "price":"0", "tif":"ioc",
+                    "auto_size":"close_"+close_side},
+        "trigger": {"strategy_type":0, "price_type":1,
+                    "price":str(trigger), "rule":1 if above else 2,
+                    "expiration":86400},
+        "order_type":"close-"+close_side+"-position"
+    }
+
+
 def send_protected_order(*_args, **_kwargs):
     """Fail closed until order, protective stops, reconciliation and recovery are integrated."""
     raise TestnetExecutionDisabled("Protected Testnet execution is not yet implemented; no order sent")
