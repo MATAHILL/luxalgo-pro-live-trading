@@ -5624,10 +5624,15 @@ def _five_verify_native_tpsl(event_id):
     sl_id,tp_id=row['sl_order_id'],row['tp_order_id']
     if not sl_id or not tp_id or str(sl_id)==str(tp_id):
         return {'protection_verified':False,'reason':'MISSING_DISTINCT_SL_TP_IDS'}
+    if row['side'] not in ('LONG','SHORT'):
+        return {'protection_verified':False,'reason':'INVALID_POSITION_DIRECTION'}
+    # An active trigger must be a close-position trigger with the right
+    # comparator; matching order IDs and prices alone is insufficient.
+    expected_rules={'LONG':(2,1),'SHORT':(1,2)}
     expected_close={'LONG':('close-long-order','close-long-position','plan-close-long-position'),
                     'SHORT':('close-short-order','close-short-position','plan-close-short-position')}
     try:
-        for oid,expected in ((sl_id,row['stop_loss']),(tp_id,row['take_profit'])):
+        for (oid,expected),rule in zip(((sl_id,row['stop_loss']),(tp_id,row['take_profit'])),expected_rules[row['side']]):
             if not re.fullmatch(r'[1-9][0-9]{0,19}',str(oid)):
                 return {'protection_verified':False,'reason':'INVALID_TRIGGER_ID'}
             trigger=_gate_v4_authenticated_request('GET','/api/v4/futures/usdt/price_orders/'+str(oid))
@@ -5637,7 +5642,13 @@ def _five_verify_native_tpsl(event_id):
                     or trigger.get('status')!='open'
                     or trigger.get('order_type') not in expected_close[row['side']]
                     or not isinstance(initial,dict) or initial.get('contract')!=row['contract']
-                    or not isinstance(details,dict)):
+                    or not isinstance(details,dict)
+                    or str(initial.get('size')) not in ('0','0.0')
+                    or str(initial.get('price')) not in ('0','0.0')
+                    or str(initial.get('auto_size') or '').lower() not in
+                        ('close_long' if row['side']=='LONG' else 'close_short', '')
+                    or str(details.get('rule'))!=str(rule)):
+
                 return {'protection_verified':False,'reason':'TRIGGER_NOT_ACTIVE_OR_MISMATCHED'}
             actual=Decimal(str(details.get('price')))
             if not actual.is_finite() or actual!=Decimal(str(expected)):
