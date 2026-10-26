@@ -4323,6 +4323,44 @@ def _completed_gate_candles_after(symbol, tf, after):
 
 
 # Read-only per-signal market outcome. Never implies a filled exchange order.
+@app.get('/terminal/testnet-signal-check/<event_id>')
+def terminal_testnet_signal_check(event_id):
+    """Read-only validation of a stored signal; does not create an order."""
+    if not _terminal_permitted():
+        return _terminal_guard()
+    if not re.fullmatch(r'[a-f0-9]{20}',event_id):
+        return jsonify(error='Invalid signal identifier',eligible=False),400
+    try:
+        with _db_connect() as con:
+            with con.cursor() as cur:
+                cur.execute("""SELECT i.received_at,i.symbol,i.side,i.timeframe,
+                    l.status AS level_status,t.order_type
+                    FROM luxalgo_dry_run_intents i
+                    LEFT JOIN luxalgo_signal_levels l ON l.event_id=i.event_id
+                    LEFT JOIN luxalgo_signal_order_types t ON t.event_id=i.event_id
+                    WHERE i.event_id=%s""",(event_id,))
+                row=cur.fetchone()
+        if not row:
+            return jsonify(error='Signal not found',eligible=False),404
+        elapsed=(datetime.now(timezone.utc)-row['received_at']).total_seconds()
+        failures=[]
+        if elapsed<0 or elapsed>120:
+            failures.append('SIGNAL_EXPIRED')
+        if row['level_status']!='VALID':
+            failures.append('ENTRY_SL_TP_NOT_VALIDATED')
+        if row['order_type'] not in ('MARKET','LIMIT'):
+            failures.append('ORDER_TYPE_UNDECLARED')
+        failures.append('TESTNET_EXECUTION_ENGINE_NOT_READY')
+        response=jsonify(event_id=event_id,symbol=row['symbol'],side=row['side'],
+            timeframe=row['timeframe'],order_type=row['order_type'] or 'UNDECLARED',
+            signal_age_seconds=max(0,int(elapsed)),blockers=failures,
+            eligible=False,orders_placed=0,live_trading=False)
+        response.headers['Cache-Control']='no-store'
+        return response
+    except (psycopg.Error,RuntimeError,OSError):
+        return jsonify(error='Cannot verify signal',eligible=False),503
+
+
 @app.get('/terminal/testnet-order-readiness')
 def terminal_testnet_order_readiness():
     if not _terminal_permitted():
