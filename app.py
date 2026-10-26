@@ -5724,6 +5724,15 @@ def _five_position_execution_coordinator(event_id):
                 row=cur.fetchone()
         if row is None:
             return {'state':'BLOCKED_MISSING_DURABLE_JOURNAL','orders_placed':0}
+        # An already acknowledged entry must be reconciled, never dispatched
+        # again. Run authenticated fill and native protection readback here.
+        if row['journal_state'] in ('ACKNOWLEDGED','PROTECTION_UNVERIFIED',
+                                    'PROTECTED','RECOVERY_REQUIRED'):
+            review=_five_post_ack_protection_review(event_id)
+            return {'state':'EXISTING_ENTRY_PROTECTION_REVIEW',
+                    'protection_review':review,
+                    'protection_verified':review.get('protection_verified') is True,
+                    'orders_placed':0,'exchange_write_enabled':False}
         if row['journal_state']!='PREPARED' or row['reservation_state']!='AWAITING_SAFE_EXECUTOR':
             return {'state':'BLOCKED_NOT_PREPARED','orders_placed':0}
         if row['exchange_order_id'] is not None:
