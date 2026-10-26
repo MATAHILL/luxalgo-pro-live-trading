@@ -5652,6 +5652,51 @@ def _five_dispatch_plan(event_id, preview):
                         'native_sl_tp_readback','automatic_emergency_recovery']}
 
 
+# This must be changed through a reviewed code change after automated
+# exchange-native SL/TP and emergency recovery are implemented and tested.
+# Environment variables and the dashboard cannot override this kill switch.
+FIVE_POSITION_EXECUTION_CERTIFIED = False
+
+
+def _five_submit_order_once(event_id):
+    """Prepared five-slot order -> irreversible journal claim -> Gate.io POST.
+
+    This entry point is not called by Flask and is hard-disabled pending
+    autonomous recovery verification. The journal state remains uncertain on
+    any ambiguous transport or database acknowledgement failure. Never retry.
+    """
+    if FIVE_POSITION_EXECUTION_CERTIFIED is not True:
+        raise GateOrderTransportError('FIVE_POSITION_EXECUTION_NOT_CERTIFIED')
+    if (os.getenv('LIVE_TRADING_ENABLED','false').strip().lower()!='true'
+            or os.getenv('ORDERS_ENABLED','false').strip().lower()!='true'):
+        raise GateOrderTransportError('Live futures order submission disabled')
+    # Mandatory last-moment, fresh exchange-backed validation.
+    preview=_five_position_entry_preflight(event_id)
+    plan=_five_dispatch_plan(event_id,preview)
+    if plan['state']!='READY_FOR_OFFLINE_REVIEW':
+        raise GateOrderTransportError('Dispatch envelope not verified')
+    # Commit dispatch intent BEFORE the irreversible network operation.
+    # A false claim means duplicate, expiry, or unresolved exposure: no POST.
+    if _five_journal_mark_dispatch_uncertain(event_id) is not True:
+        raise GateOrderTransportError('DISPATCH_CLAIM_DENIED_DO_NOT_RETRY')
+    try:
+        ack=_gate_post_transport_implementation(dict(preview['order_preview']))
+    except Exception:
+        # The exchange may have accepted the request despite a timeout.
+        raise GateOrderTransportError('ACK_UNKNOWN_DO_NOT_RETRY') from None
+    order_id=str(ack.get('exchange_order_id') or '')
+    if not re.fullmatch(r'[1-9][0-9]{0,19}',order_id):
+        raise GateOrderTransportError('ACK_UNKNOWN_DO_NOT_RETRY')
+    # An ACK is never protection evidence or fill confirmation.
+    try:
+        _five_journal_record_order_ack(event_id,order_id)
+    except Exception:
+        raise GateOrderTransportError('ACK_RECEIVED_JOURNAL_UNCERTAIN_DO_NOT_RETRY') from None
+    return {'state':'ACKNOWLEDGED_UNPROTECTED',
+            'exchange_order_id':order_id,'orders_placed':1,
+            'protection_verified':False,'recovery_required':True}
+
+
 def _five_position_execution_coordinator(event_id):
     """Webhook-connected five-position coordinator; ALWAYS blocks exchange writes.
 
