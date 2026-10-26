@@ -172,5 +172,10 @@ class FivePositionOrderBoundary(unittest.TestCase):
         self.assertIn("item.get('fill_verified') is True",src)
         self.assertIn("'safe_to_enable_new_entries':False",src)
 
+    def test_webhook_reports_coordinator_for_replayed_reserved_signal(self):
+        src=SRC
+        self.assertIn("('RESERVED_EXECUTION_NOT_ENABLED','ALREADY_RESERVED')",src)
+        self.assertIn("_five_position_execution_coordinator(execution_id)",src)
+
 if __name__=='__main__':
     unittest.main()
