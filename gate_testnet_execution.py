@@ -113,6 +113,8 @@ def signed_testnet_request(method: str, path: str, body: dict | None = None,
         raise ValueError("Position write prohibited")
     if method not in ("GET", "POST"):
         raise ValueError("Unsupported HTTP method")
+    if method == "POST":
+        raise TestnetExecutionDisabled("Direct Testnet order writes prohibited until protected coordinator is verified")
     if method == "GET" and body is not None:
         raise ValueError("GET body forbidden")
     if method == "POST" and not isinstance(body,dict):
