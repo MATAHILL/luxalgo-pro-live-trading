@@ -5433,7 +5433,7 @@ def _five_journal_verify_exchange_order(event_id, exchange_order_id):
         raise GateOrderTransportError('Exchange ID conflict; manual reconciliation required')
     order=_gate_v4_authenticated_request(
         'GET','/api/v4/futures/usdt/orders/'+str(exchange_order_id))
-    if str(order.get('id'))!=str(exchange_order_id):
+    if str(order.get('id_string') or order.get('id'))!=str(exchange_order_id):
         raise GateOrderTransportError('Gate.io returned a different order ID')
     if order.get('contract')!=row['contract'] or order.get('text')!=row['client_order_text']:
         raise GateOrderTransportError('Gate.io order contract/client identity mismatch')
