@@ -3883,7 +3883,7 @@ def terminal_testnet_open_orders():
     query=urlencode({'status':'open','limit':50})
     stamp=str(int(time.time()))
     hashed=hashlib.sha512(b'').hexdigest()
-    signed='\\n'.join(('GET',path,query,hashed,stamp))
+    signed='\n'.join(('GET',path,query,hashed,stamp))
     signature=hmac.new(secret.encode(),signed.encode(),hashlib.sha512).hexdigest()
     req=Request('https://api-testnet.gateapi.io'+path+'?'+query,method='GET',headers={
         'KEY':key,'Timestamp':stamp,'SIGN':signature,'Accept':'application/json'})
