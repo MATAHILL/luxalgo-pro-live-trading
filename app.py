@@ -5464,6 +5464,55 @@ def _five_journal_read_fill_evidence(event_id):
             'exchange_order_id':str(order_id)}
 
 
+def _five_position_entry_preflight(event_id):
+    """Build a fresh exchange-backed entry preview from a durable five-trade reservation.
+
+    No Gate.io POST is performed. Never claim/release a dispatch slot here:
+    sizing can change and must be independently rechecked by a future sender.
+    """
+    if not isinstance(event_id,str) or not re.fullmatch(r'[A-Za-z0-9_.:-]{4,100}',event_id):
+        raise GateOrderTransportError('Invalid execution event ID')
+    with _db_connect() as con:
+        con.execute(_EXECUTION_HANDOFF_FIVE_SCHEMA)
+        con.execute(_EXECUTION_FIVE_JOURNAL_SCHEMA)
+        with con.cursor() as cur:
+            cur.execute("""SELECT h.symbol,h.side,h.timeframe,h.entry_price,h.stop_loss,
+                    h.take_profit,h.created_at,h.state AS handoff_state,
+                    j.state AS journal_state,j.contract,j.client_order_text,j.exchange_order_id
+                    FROM luxalgo_execution_handoff_five h
+                    JOIN luxalgo_execution_five_journal j USING(event_id)
+                    WHERE h.event_id=%s""",(event_id,))
+            row=cur.fetchone()
+    if (not row or row['handoff_state']!='AWAITING_SAFE_EXECUTOR'
+            or row['journal_state']!='PREPARED' or row['timeframe']!='15m'
+            or row['exchange_order_id'] is not None):
+        raise GateOrderTransportError('No eligible prepared trade')
+    if (datetime.now(timezone.utc)-row['created_at']).total_seconds()>900:
+        raise GateOrderTransportError('Signal expired')
+    if not re.fullmatch(r'[A-Z0-9]{2,25}USDT',row['symbol']):
+        raise GateOrderTransportError('Invalid signal contract')
+    contract=row['symbol'][:-4]+'_USDT'
+    if row['contract']!=contract or row['client_order_text']!=_gate_client_order_text(event_id):
+        raise GateOrderTransportError('Reservation and journal mismatch')
+    # Read the entire exchange exposure, not just the local five slots.
+    positions=_gate_read_only_positions()
+    if len(positions)>=5 or any(p.get('contract')==contract for p in positions):
+        raise GateOrderTransportError('Five-position or duplicate-contract exposure limit')
+    sizing=_gate_live_risk_size(contract,row['side'],row['entry_price'],row['stop_loss'])
+    envelope=_gate_protected_entry_payload(
+        event_id=event_id,contract=contract,side=row['side'],
+        contracts=sizing['contracts'],entry=row['entry_price'],
+        sl=row['stop_loss'],tp=row['take_profit'])
+    if envelope['text']!=row['client_order_text']:
+        raise GateOrderTransportError('Client order identity mismatch')
+    wire={k:v for k,v in envelope.items() if not k.startswith('_')}
+    return {'state':'PREFLIGHT_VALIDATED_NO_ORDER','order_preview':wire,
+            'risk_budget_usdt':sizing['risk_budget_usdt'],
+            'stop_distance_risk_usdt':sizing['stop_distance_risk_usdt'],
+            'positions_observed':len(positions),
+            'order_submitted':False,'exchange_write_enabled':False}
+
+
 def _five_position_execution_coordinator(event_id):
     """Webhook-connected five-position coordinator; ALWAYS blocks exchange writes.
 
