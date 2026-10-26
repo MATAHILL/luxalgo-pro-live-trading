@@ -133,5 +133,17 @@ class FivePositionOrderBoundary(unittest.TestCase):
         src=source('_five_verify_native_tpsl')
         self.assertIn("'execution_authorized':False",src)
 
+    def test_recovery_close_preview_is_mode_specific_and_never_dispatches(self):
+        src=source('_five_recovery_close_shape')
+        self.assertIn("ACCOUNT_MODE_UNVERIFIED",src)
+        self.assertIn("HEDGE_CLOSE_SIDE_MISMATCH",src)
+        self.assertIn("order['close']=True",src)
+        self.assertIn("'close_long' if side=='LONG' else 'close_short'",src)
+        self.assertIn("'close_orders_submitted':0",src)
+        self.assertIn("'exchange_write_enabled':False",src)
+        calls={node.func.id for node in ast.walk(FUNCTIONS['_five_recovery_close_shape'])
+               if isinstance(node,ast.Call) and isinstance(node.func,ast.Name)}
+        self.assertNotIn('_gate_v4_authenticated_request',calls)
+
 if __name__=='__main__':
     unittest.main()
