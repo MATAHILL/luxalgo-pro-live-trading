@@ -186,5 +186,14 @@ class FivePositionOrderBoundary(unittest.TestCase):
         self.assertIn("signing='\\n'.join",src)
         self.assertNotIn("_gate_post_transport_implementation(",src)
 
+    def test_verified_native_ids_persist_with_lock_but_do_not_arm_execution(self):
+        src=source('_five_persist_verified_protection_ids')
+        self.assertIn('_five_discover_native_protection(event_id)',src)
+        self.assertIn('pg_advisory_xact_lock',src)
+        self.assertIn('FOR UPDATE',src)
+        self.assertIn('sl_order_id IN (%s,%s)',src)
+        self.assertIn("'coverage_verified':False",src)
+        self.assertIn("'execution_authorized':False",src)
+
 if __name__=='__main__':
     unittest.main()
