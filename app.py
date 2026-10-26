@@ -5241,6 +5241,25 @@ CREATE INDEX IF NOT EXISTS luxalgo_execution_handoff_five_open
   ON luxalgo_execution_handoff_five(state, created_at);
 """
 
+# Five-slot durable preparation ledger. The legacy one-row journal is unchanged.
+# Creating a PREPARED record never authorizes Gate.io writes.
+_EXECUTION_FIVE_JOURNAL_SCHEMA = """
+CREATE TABLE IF NOT EXISTS luxalgo_execution_five_journal (
+ event_id TEXT PRIMARY KEY REFERENCES luxalgo_execution_handoff_five(event_id),
+ contract TEXT NOT NULL,
+ side TEXT NOT NULL CHECK(side IN ('LONG','SHORT')),
+ client_order_text TEXT NOT NULL UNIQUE,
+ state TEXT NOT NULL DEFAULT 'PREPARED'
+   CHECK(state IN ('PREPARED','DISPATCH_UNCERTAIN','ACKNOWLEDGED',
+                   'PROTECTION_UNVERIFIED','PROTECTED','RECOVERY_REQUIRED','CLOSED')),
+ exchange_order_id TEXT UNIQUE,
+ sl_order_id TEXT,
+ tp_order_id TEXT,
+ created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+ updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+"""
+
 def _record_execution_handoff(event_id, symbol, side, tf, levels):
     """Atomically reserve up to five unique 15m signals. NEVER dispatch orders."""
     if tf != '15m' or side not in ('LONG', 'SHORT') or not isinstance(levels, (list, tuple)) or len(levels)!=3:
@@ -5253,6 +5272,7 @@ def _record_execution_handoff(event_id, symbol, side, tf, levels):
             return {'state':'INVALID_LEVELS','orders_placed':0}
         with _db_connect() as conn:
             conn.execute(_EXECUTION_HANDOFF_FIVE_SCHEMA)
+            conn.execute(_EXECUTION_FIVE_JOURNAL_SCHEMA)
             with conn.cursor() as cur:
                 # Serialize capacity checks across concurrent Flask workers.
                 cur.execute('SELECT pg_advisory_xact_lock(%s)', (65913045,))
@@ -5273,6 +5293,12 @@ def _record_execution_handoff(event_id, symbol, side, tf, levels):
                     (event_id,symbol,side,timeframe,entry_price,stop_loss,take_profit,state)
                     VALUES (%s,%s,%s,%s,%s,%s,%s,'AWAITING_SAFE_EXECUTOR')""",
                     (event_id,symbol,side,tf,entry,sl,tp))
+                contract = symbol[:-4] + '_USDT'
+                cur.execute("""INSERT INTO luxalgo_execution_five_journal
+                    (event_id,contract,side,client_order_text,state)
+                    VALUES (%s,%s,%s,%s,'PREPARED')""",
+                    (event_id,contract,side,
+                     't-lux-'+hashlib.sha256(str(event_id).encode('utf8')).hexdigest()[:24]))
         return {'state':'RESERVED_EXECUTION_NOT_ENABLED','orders_placed':0}
     except (psycopg.Error,RuntimeError,OSError,InvalidOperation,ValueError,TypeError):
         app.logger.warning('Five-position handoff failed closed; no exchange order permitted')
