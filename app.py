@@ -737,7 +737,7 @@ header.terminal-header{border-radius:17px!important}
 <div class="adv-table"><table><thead><tr><th>PAIR</th><th>DIRECTION</th><th>TIMEFRAME</th><th>LUXALGO</th><th>ENTRY REF.</th><th>SL1</th><th>TP1</th><th>R:R</th><th>3% RISK / SIZE</th><th>STATUS / REASON</th></tr></thead><tbody id="advancedScanBody"><tr><td colspan="10" class="light">Waiting for scan results.</td></tr></tbody></table></div>
 <p class="light">Technical watchlist is NOT a LuxAlgo signal or recommendation. Technical entry/SL1/TP1 are non-executable previews. No verified LuxAlgo SL1/TP1 = NO TRADE. Capital figures are account-read-only; sizes are indicative BASE-asset quantities, not validated Gate.io contract quantities. Live execution remains BLOCKED.</p>
 </section>
-<div class="bottom-grid"><section class="panel performance-panel"><div class="panel-heading"><h2>PERFORMANCE ANALYTICS</h2><span class="label-muted">VERIFIED FILLS ONLY</span></div><div class="perf-grid"><div><span>Total Closed Trades</span><strong>—</strong></div><div><span>Winning Trades</span><strong>—</strong></div><div><span>Losing Trades</span><strong>—</strong></div><div><span>Win Rate</span><strong>—</strong></div><div><span>Total Realized P&amp;L</span><strong>—</strong></div><div><span>Unrealized P&amp;L</span><strong>—</strong></div></div><p class="light">Waiting for authenticated position and fill synchronization. No synthetic P&amp;L or win statistics.</p></section></div><section class="panel"><div class="panel-heading"><h2>COMPLETED TRADES · EXIT RECORD</h2><span class="label-muted">PENDING ACCOUNT HISTORY INTEGRATION</span></div><div class="tablewrap"><table><thead><tr><th>TIME (UTC)</th><th>PAIR</th><th>DIRECTION</th><th>ENTRY FILL</th><th>EXIT FILL</th><th>NET REALIZED P&amp;L</th><th>RESULT</th></tr></thead><tbody><tr><td colspan="7" class="empty-state">No verified exchange fills have been synchronized. Signal receipts are not executed trades.</td></tr></tbody></table></div></section><section class="panel legacy-paper-panel"><div class="panel-heading"><h2>PAPER TRADE MONITOR <span class="tag">SIMULATION ONLY</span></h2><button class="btn gloss-action" id="paperRefresh" type="button">↻ Check Paper Trades</button></div><p class="light" id="paperStatus" role="status" aria-live="polite">Checks queued simulated orders when the dashboard is open; historical outcomes remain estimates, not fills.</p><div class="tablewrap"><table><thead><tr><th>CREATED (UTC)</th><th>PAIR</th><th>SIDE</th><th>SIM ENTRY</th><th>SIM SL</th><th>SIM TP</th><th>STATE</th><th>LAST PRICE</th><th>UNREALIZED P&amp;L</th><th>EST. CLOSED P&amp;L</th></tr></thead><tbody id="paperBody"><tr><td colspan="10">No simulated positions loaded.</td></tr></tbody></table></div><p id="paperOpenPnlTotal" class="light" role="status" aria-live="polite">Open paper unrealized P&amp;L: not yet available.</p><p class="light">Simulation outcomes assume the reference entry was achievable and exclude fees, slippage and funding. If both SL and TP are touched in one candle, SL is assumed first. Historical-data gaps are not guessed. Simulated P&amp;L is never included in verified real-trade analytics.</p></section><div class="foot">LUXALGO PRO · Private terminal · Market data is public Gate.io data. Scanners are technical watchlists, not LuxAlgo entry signals. No account positions, fills, profit or loss are available until authenticated exchange sync is implemented. LIVE TRADING OFF; no orders are placed.</div></div><script>
+<div class="bottom-grid"><section class="panel performance-panel"><div class="panel-heading"><h2>PERFORMANCE ANALYTICS</h2><span class="label-muted">VERIFIED FILLS ONLY</span></div><div class="perf-grid"><div><span>Total Closed Trades</span><strong>—</strong></div><div><span>Winning Trades</span><strong>—</strong></div><div><span>Losing Trades</span><strong>—</strong></div><div><span>Win Rate</span><strong>—</strong></div><div><span>Total Realized P&amp;L</span><strong>—</strong></div><div><span>Unrealized P&amp;L</span><strong>—</strong></div></div><p class="light">Waiting for authenticated position and fill synchronization. No synthetic P&amp;L or win statistics.</p></section></div><section class="panel"><div class="panel-heading"><h2>COMPLETED TRADES · EXIT RECORD</h2><span class="label-muted">PENDING ACCOUNT HISTORY INTEGRATION</span></div><div class="tablewrap"><table><thead><tr><th>TIME (IST)</th><th>PAIR</th><th>DIRECTION</th><th>ENTRY FILL</th><th>EXIT FILL</th><th>NET REALIZED P&amp;L</th><th>RESULT</th></tr></thead><tbody><tr><td colspan="7" class="empty-state">No verified exchange fills have been synchronized. Signal receipts are not executed trades.</td></tr></tbody></table></div></section><section class="panel legacy-paper-panel"><div class="panel-heading"><h2>PAPER TRADE MONITOR <span class="tag">SIMULATION ONLY</span></h2><button class="btn gloss-action" id="paperRefresh" type="button">↻ Check Paper Trades</button></div><p class="light" id="paperStatus" role="status" aria-live="polite">Checks queued simulated orders when the dashboard is open; historical outcomes remain estimates, not fills.</p><div class="tablewrap"><table><thead><tr><th>CREATED (IST)</th><th>PAIR</th><th>SIDE</th><th>SIM ENTRY</th><th>SIM SL</th><th>SIM TP</th><th>STATE</th><th>LAST PRICE</th><th>UNREALIZED P&amp;L</th><th>EST. CLOSED P&amp;L</th></tr></thead><tbody id="paperBody"><tr><td colspan="10">No simulated positions loaded.</td></tr></tbody></table></div><p id="paperOpenPnlTotal" class="light" role="status" aria-live="polite">Open paper unrealized P&amp;L: not yet available.</p><p class="light">Simulation outcomes assume the reference entry was achievable and exclude fees, slippage and funding. If both SL and TP are touched in one candle, SL is assumed first. Historical-data gaps are not guessed. Simulated P&amp;L is never included in verified real-trade analytics.</p></section><div class="foot">LUXALGO PRO · Private terminal · Market data is public Gate.io data. Scanners are technical watchlists, not LuxAlgo entry signals. No account positions, fills, profit or loss are available until authenticated exchange sync is implemented. LIVE TRADING OFF; no orders are placed.</div></div><script>
 
 // Read-only advanced watchlist: uses completed 5m/15m public candles and validated LuxAlgo receipt records.
 (function(){
@@ -746,7 +746,7 @@ header.terminal-header{border-radius:17px!important}
  function cell(tr,val,css){const t=tr.insertCell();t.textContent=String(val??'—');if(css)t.className=css;return t;}
  async function refresh(force=false){if(busy)return;busy=true;btn.disabled=true;
  try{const url='/terminal/advanced-scanner'+(force?'?refresh=1':'');const r=await fetch(url,{cache:'no-store'});const data=await r.json();if(!r.ok)throw Error(data.error||'Scanner unavailable');
-  let x=data.scan||{};status.textContent='5m '+(x['5m']?.scanned||0)+'/'+(x['5m']?.total||0)+' · 15m '+(x['15m']?.scanned||0)+'/'+(x['15m']?.total||0)+(x.running?' · scanning progressively':' · current snapshot')+' · '+(data.updated_at?new Date(data.updated_at*1000).toLocaleTimeString():'pending');
+  let x=data.scan||{};status.textContent='5m '+(x['5m']?.scanned||0)+'/'+(x['5m']?.total||0)+' · 15m '+(x['15m']?.scanned||0)+'/'+(x['15m']?.total||0)+(x.running?' · scanning progressively':' · current snapshot')+' · '+(data.updated_at?new Date(data.updated_at*1000).toLocaleTimeString('en-IN',{timeZone:'Asia/Kolkata',hour12:true})+' IST':'pending');
   risk.textContent=data.equity_usdt==null?'Risk sizing unavailable (equity not verified)':'Verified equity: '+data.equity_usdt.toFixed(2)+' USDT · 3% budget '+data.risk_budget_usdt.toFixed(2)+' USDT';
   body.replaceChildren();if(!data.candidates?.length){const tr=body.insertRow();cell(tr,'NO TRADE · '+(x.running?'Scans are still running':'No verified opportunities meeting screening conditions'), 'adv-blocked').colSpan=10;}
   for(const p of (data.candidates||[])){const tr=body.insertRow();cell(tr,p.symbol);cell(tr,p.side,p.side==='LONG'?'adv-signal long':'adv-signal short');cell(tr,p.timeframe);cell(tr,p.confirmation);cell(tr,p.entry==null?'—':Number(p.entry).toPrecision(7));cell(tr,p.sl1==null?'—':Number(p.sl1).toPrecision(7));cell(tr,p.tp1==null?'—':Number(p.tp1).toPrecision(7));cell(tr,p.rr);cell(tr,p.size_hint);cell(tr,p.status+' · '+(p.level_source||'UNAVAILABLE')+' · '+p.reason,'adv-reason');}
@@ -1153,7 +1153,7 @@ async function loadChart(){
    series.setData(bars);
    if(range)chart.timeScale().setVisibleLogicalRange(range);
   }
-  status.textContent=pair+' · '+tf.value+' · '+bars.length+' historical completed candles · '+new Date().toLocaleTimeString()+' · Wheel to zoom, drag to pan. Read-only market chart.';
+  status.textContent=pair+' · '+tf.value+' · '+bars.length+' historical completed candles · '+new Date().toLocaleTimeString('en-IN',{timeZone:'Asia/Kolkata',hour12:true})+' IST'+' · Wheel to zoom, drag to pan. Read-only market chart.';
  }catch(e){status.textContent='Chart unavailable: '+e.message;}finally{loading=false;refresh.disabled=false;}
 }
 async function loadOlder(){
@@ -1217,7 +1217,7 @@ async function loadFuturesEquity(){
   document.getElementById('futuresEquity').textContent=money(d.equity_usdt);
   document.getElementById('futuresAvailable').textContent=money(d.available_usdt);
   document.getElementById('futuresBalance').textContent=money(d.balance_usdt);
-  document.getElementById('futuresEquityUpdated').textContent='Gate.io verified · '+new Date(d.fetched_at*1000).toLocaleTimeString();
+  document.getElementById('futuresEquityUpdated').textContent='Gate.io verified · '+new Date(d.fetched_at*1000).toLocaleTimeString('en-IN',{timeZone:'Asia/Kolkata',hour12:true})+' IST';
  }catch(e){clearEquity('Cannot verify: '+e.message);}finally{equityBusy=false;}
 }
 function field(grid,label,value,colorClass){const x=element('div','position-fact');x.append(element('small','',label),element('strong',colorClass||'',value));grid.append(x);}
@@ -1270,7 +1270,7 @@ async function loadPositions(){
   count.textContent=String(d.count);pnl.textContent=money(d.unrealized_pnl_usdt);
   pnl.classList.toggle('positive',d.unrealized_pnl_usdt>0);pnl.classList.toggle('negative',d.unrealized_pnl_usdt<0);
   connection.textContent='Position feed connected · READ ONLY';renderPositions(d.positions);
-  updated.textContent='Gate.io snapshot · '+new Date(d.fetched_at*1000).toLocaleTimeString()+' · refresh every 30s · no trading orders enabled.';
+  updated.textContent='Gate.io snapshot · '+new Date(d.fetched_at*1000).toLocaleTimeString('en-IN',{timeZone:'Asia/Kolkata',hour12:true})+' IST'+' · refresh every 30s · no trading orders enabled.';
  }catch(e){count.textContent='—';pnl.textContent='—';pnl.classList.remove('positive','negative');connection.textContent='Position feed unavailable';body.replaceChildren(element('p','light','Unable to verify positions: '+e.message));updated.textContent='Position data unavailable; no empty positions assumed.';}
  finally{busy=false;button.disabled=false;}
 }
@@ -1305,7 +1305,7 @@ async function loadFuturesEquity(){
   document.getElementById('futuresEquity').textContent=money(d.equity_usdt);
   document.getElementById('futuresAvailable').textContent=money(d.available_usdt);
   document.getElementById('futuresBalance').textContent=money(d.balance_usdt);
-  document.getElementById('futuresEquityUpdated').textContent='Gate.io verified · '+new Date(d.fetched_at*1000).toLocaleTimeString();
+  document.getElementById('futuresEquityUpdated').textContent='Gate.io verified · '+new Date(d.fetched_at*1000).toLocaleTimeString('en-IN',{timeZone:'Asia/Kolkata',hour12:true})+' IST';
  }catch(e){clearEquity('Cannot verify: '+e.message);}
  finally{equityBusy=false;}
 }
@@ -1324,7 +1324,7 @@ async function loadPositions(){
    cell(tr,money(p.unrealized_pnl),p.unrealized_pnl>=0?'positive':'negative');
    cell(tr,p.leverage_label);cell(tr,'Not verified');cell(tr,'Not verified');cell(tr,p.position_mode);
   }
-  updated.textContent='Gate.io position snapshot · '+new Date(d.fetched_at*1000).toLocaleTimeString()+' · read-only · SL/TP order status not verified · manual close disabled.';
+  updated.textContent='Gate.io position snapshot · '+new Date(d.fetched_at*1000).toLocaleTimeString('en-IN',{timeZone:'Asia/Kolkata',hour12:true})+' IST'+' · read-only · SL/TP order status not verified · manual close disabled.';
  }catch(e){
   count.textContent='—';pnl.textContent='—';pnl.classList.remove('positive','negative');
   connection.textContent='Position feed unavailable';empty('Unable to verify open positions. No zero balance or empty positions assumed.');
@@ -1344,9 +1344,9 @@ const fmtVol=n=>n>=1e9?(n/1e9).toFixed(2)+'B':n>=1e6?(n/1e6).toFixed(2)+'M':n>=1
 function addCell(tr,value,className){const td=document.createElement('td');td.textContent=value;if(className)td.className=className;tr.appendChild(td);return td;}
 function addPair(tr,sym,tf){const td=tr.insertCell(),btn=document.createElement('button');btn.className='pairlink';btn.textContent=sym.replace('_','/');btn.addEventListener('click',()=>{document.getElementById('chartSymbol').value=sym.replace('_','');document.getElementById('chartTf').value=tf;window.loadChart();document.getElementById('chartShell').scrollIntoView({behavior:'smooth',block:'center'});});td.appendChild(btn);}
 function renderRadar(){let list=tickerData.slice();const q=document.getElementById('radarSearch').value.trim().toUpperCase();if(q)list=list.filter(x=>x.contract.includes(q));list.sort((a,b)=>radarMode==='gainers'?b.change-a.change:radarMode==='losers'?a.change-b.change:radarMode==='volume'?b.volume-a.volume:a.contract.localeCompare(b.contract));const lim=document.getElementById('radarLimit').value;if(lim!=='all')list=list.slice(0,Number(lim));radarBody.replaceChildren();for(const x of list){const tr=document.createElement('tr');addPair(tr,x.contract,document.getElementById('chartTf').value);addCell(tr,fmtPrice(x.last));addCell(tr,(x.change>0?'+':'')+x.change.toFixed(2)+'%',x.change>=0?'positive':'negative');addCell(tr,fmtVol(x.volume));radarBody.appendChild(tr);}if(!list.length){const tr=radarBody.insertRow();addCell(tr,'No pairs match').colSpan=4;}}
-async function loadRadar(){const b=document.getElementById('radarRefresh');b.disabled=true;radarStatus.textContent='Updating public Gate.io tickers…';try{const r=await fetch('/terminal/radar',{cache:'no-store'}),d=await r.json();if(!r.ok)throw Error(d.error||'Radar error');tickerData=d.results;radarStatus.textContent=d.total+' USDT perpetual pairs · updated '+new Date(d.generated_at*1000).toLocaleTimeString()+' · refresh every 60s';renderRadar();}catch(e){radarStatus.textContent='Radar unavailable: '+e.message;}finally{b.disabled=false}}
+async function loadRadar(){const b=document.getElementById('radarRefresh');b.disabled=true;radarStatus.textContent='Updating public Gate.io tickers…';try{const r=await fetch('/terminal/radar',{cache:'no-store'}),d=await r.json();if(!r.ok)throw Error(d.error||'Radar error');tickerData=d.results;radarStatus.textContent=d.total+' USDT perpetual pairs · updated '+new Date(d.generated_at*1000).toLocaleTimeString('en-IN',{timeZone:'Asia/Kolkata',hour12:true})+' IST'+' · refresh every 60s';renderRadar();}catch(e){radarStatus.textContent='Radar unavailable: '+e.message;}finally{b.disabled=false}}
 function renderScanner(){let list=scanData.filter(x=>scanMode==='all'||x.bias===scanMode);const q=document.getElementById('scannerSearch').value.trim().toUpperCase();if(q)list=list.filter(x=>x.contract.includes(q));list.sort((a,b)=>Math.abs(b.score)-Math.abs(a.score)||a.contract.localeCompare(b.contract));scanBody.replaceChildren();for(const x of list.slice(0,150)){const tr=document.createElement('tr');addPair(tr,x.contract,scanTf);addCell(tr,x.bias.toUpperCase(),x.bias==='bullish'?'positive':x.bias==='bearish'?'negative':'');addCell(tr,String(x.score));addCell(tr,x.rsi.toFixed(1));addCell(tr,x.volume_ratio.toFixed(2)+'x');scanBody.appendChild(tr);}if(!list.length){const tr=scanBody.insertRow();addCell(tr,'No matching scans yet').colSpan=5;}}
-async function loadScanner(force=false){const b=document.getElementById('scannerRefresh');b.disabled=true;try{const r=await fetch('/terminal/scanner?tf='+scanTf+(force?'&refresh=1':''),{cache:'no-store'}),d=await r.json();if(!r.ok)throw Error(d.error||'Scanner error');scanData=d.results||[];scanStatus.textContent=(d.running?'Scanning… ':'Scan complete · ')+d.scanned+'/'+d.total+' pairs · '+d.failed+' unavailable · '+(d.generated_at?new Date(d.generated_at*1000).toLocaleTimeString():'pending')+' · technical watchlist';renderScanner();}catch(e){scanStatus.textContent='Scanner unavailable: '+e.message;}finally{b.disabled=false}}
+async function loadScanner(force=false){const b=document.getElementById('scannerRefresh');b.disabled=true;try{const r=await fetch('/terminal/scanner?tf='+scanTf+(force?'&refresh=1':''),{cache:'no-store'}),d=await r.json();if(!r.ok)throw Error(d.error||'Scanner error');scanData=d.results||[];scanStatus.textContent=(d.running?'Scanning… ':'Scan complete · ')+d.scanned+'/'+d.total+' pairs · '+d.failed+' unavailable · '+(d.generated_at?new Date(d.generated_at*1000).toLocaleTimeString('en-IN',{timeZone:'Asia/Kolkata',hour12:true})+' IST':'pending')+' · technical watchlist';renderScanner();}catch(e){scanStatus.textContent='Scanner unavailable: '+e.message;}finally{b.disabled=false}}
 for(const b of document.querySelectorAll('#radarTabs button'))b.addEventListener('click',()=>{radarMode=b.dataset.radar;document.querySelectorAll('#radarTabs button').forEach(x=>x.classList.toggle('selected',x===b));renderRadar();});
 for(const b of document.querySelectorAll('#scannerTabs button'))b.addEventListener('click',()=>{scanMode=b.dataset.scan;document.querySelectorAll('#scannerTabs button').forEach(x=>x.classList.toggle('selected',x===b));renderScanner();});
 document.getElementById('radarRefresh').addEventListener('click',loadRadar);document.getElementById('radarSearch').addEventListener('input',renderRadar);document.getElementById('radarLimit').addEventListener('change',renderRadar);document.getElementById('scannerSearch').addEventListener('input',renderScanner);document.getElementById('scannerRefresh').addEventListener('click',()=>loadScanner(true));document.getElementById('scannerTf').addEventListener('change',e=>{scanTf=e.target.value;scanData=[];loadScanner();});
@@ -1432,7 +1432,7 @@ loadRadar();loadScanner();setInterval(()=>{if(!document.hidden)loadRadar()},6000
    if(!rows.length){const r=body.insertRow(),c=r.insertCell();c.colSpan=10;c.textContent='No simulated orders stored yet.';}
    for(const x of rows){
     const r=body.insertRow();r.dataset.paperEventId=x.event_id;r.dataset.paperState=x.state;
-    for(const v of [x.created_at,x.symbol,x.side,x.entry,x.stop,x.take,x.state,x.state==='OPEN'?(x.mark_price??'—'):'—',x.state==='OPEN'?(x.unrealized_pnl_usdt??'—'):'—',x.state!=='OPEN'?(x.estimated_pnl_usdt??'—'):'—']){
+    for(const v of [(x.created_at?new Date(x.created_at).toLocaleString('en-IN',{timeZone:'Asia/Kolkata',hour12:true})+' IST':'—'),x.symbol,x.side,x.entry,x.stop,x.take,x.state,x.state==='OPEN'?(x.mark_price??'—'):'—',x.state==='OPEN'?(x.unrealized_pnl_usdt??'—'):'—',x.state!=='OPEN'?(x.estimated_pnl_usdt??'—'):'—']){
      const c=r.insertCell();c.textContent=String(v===null?'—':v);
     }
    }
@@ -1581,7 +1581,7 @@ workspace.addEventListener('click',e=>{
   if(demo){if(state)state.textContent='DEMO — values are illustrative; no exchange refresh';return;}
   // Uses the existing authenticated paper position refresh, never submits an order.
   r.disabled=true;if(state)state.textContent='Refreshing paper positions…';
-  btn?.click();setTimeout(()=>{r.disabled=false;if(state&&state.isConnected)state.textContent='Refresh requested · '+new Date().toLocaleTimeString();},1400);
+  btn?.click();setTimeout(()=>{r.disabled=false;if(state&&state.isConnected)state.textContent='Refresh requested · '+new Date().toLocaleTimeString('en-IN',{timeZone:'Asia/Kolkata',hour12:true})+' IST';},1400);
   return;
  }
  const b=e.target.closest('[data-v45-toggle]');if(!b)return;
@@ -1604,7 +1604,7 @@ draw(true);
  panel.innerHTML='<div class="panel-heading"><h2>PAPER TRADE HISTORY · COMPLETED</h2><span class="label-muted">SIMULATED RESULTS ONLY · NO EXCHANGE FILLS</span></div>'+
  '<div class="perf-grid" id="paperHistoryMetrics"><div><span>Closed Paper Trades</span><strong id="paperHistoryClosed">—</strong></div><div><span>TP</span><strong id="paperHistoryWins">—</strong></div><div><span>SL</span><strong id="paperHistoryLosses">—</strong></div><div><span>Win Rate (Paper)</span><strong id="paperHistoryRate">—</strong></div><div><span>Estimated Closed P&amp;L (USDT)</span><strong id="paperHistoryPnl">—</strong></div></div>'+
  '<p class="light" id="paperHistoryStatus" role="status">Loading closed paper trade records…</p>'+
- '<div class="tablewrap"><table><thead><tr><th>CREATED (UTC)</th><th>PAIR</th><th>SIDE</th><th>SIM ENTRY</th><th>SIM EXIT</th><th>RESULT</th><th>EST. P&amp;L (USDT)</th></tr></thead><tbody id="paperHistoryBody"><tr><td colspan="7">Loading…</td></tr></tbody></table></div>'+
+ '<div class="tablewrap"><table><thead><tr><th>CREATED (IST)</th><th>PAIR</th><th>SIDE</th><th>SIM ENTRY</th><th>SIM EXIT</th><th>RESULT</th><th>EST. P&amp;L (USDT)</th></tr></thead><tbody id="paperHistoryBody"><tr><td colspan="7">Loading…</td></tr></tbody></table></div>'+
  '<p class="light">Historical candle-based outcomes only. Excludes fees, funding and slippage. Not actual exchange fills or verified realized P&amp;L. Latest 100 closed paper trades.</p>';
  workspace.after(panel);
  let busy=false;
@@ -1625,7 +1625,7 @@ draw(true);
    if(!trades.length){const r=body.insertRow();const c=r.insertCell();c.colSpan=7;c.textContent='No closed simulated trades yet.'}
    for(const x of trades){
     const row=body.insertRow();
-    for(const value of [x.created_at,x.symbol,x.side,x.entry,x.exit_price,x.state,x.estimated_pnl_usdt]){
+    for(const value of [(x.created_at?new Date(x.created_at).toLocaleString('en-IN',{timeZone:'Asia/Kolkata',hour12:true})+' IST':'—'),x.symbol,x.side,x.entry,x.exit_price,x.state,x.estimated_pnl_usdt]){
      const cell=row.insertCell();cell.textContent=String(value??'—');
     }
     row.cells[5].classList.add(x.state==='TP'?'positive':'negative');
@@ -1688,7 +1688,7 @@ def _news_fetch_source(source):
         if not title or not date_ts or date_ts>time.time()+600 or date_ts<time.time()-3*86400:
             continue
         items.append({'title': title[:200], 'url': link, 'source': label,
-                      'published': datetime.fromtimestamp(date_ts,timezone.utc).strftime('%d %b %H:%M UTC'),
+                      'published': datetime.fromtimestamp(date_ts,timezone(timedelta(hours=5,minutes=30))).strftime('%d %b %H:%M IST'),
                       '_timestamp':date_ts})
     return items
 
