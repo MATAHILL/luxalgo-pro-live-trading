@@ -5427,6 +5427,13 @@ def _five_journal_verify_exchange_order(event_id, exchange_order_id):
         raise GateOrderTransportError('Gate.io order size unavailable') from None
     if signed_size==0 or (signed_size>0)!=(row['side']=='LONG'):
         raise GateOrderTransportError('Gate.io order side mismatch')
+    # An entry ACK must belong to an opening order. A closing or
+    # reduce-only order must never satisfy an opening-entry journal.
+    if (order.get('is_close') is True or order.get('close') is True or
+            order.get('is_reduce_only') is True or order.get('reduce_only') is True):
+        raise GateOrderTransportError('Close/reduce-only order cannot acknowledge entry')
+    if order.get('status') not in ('open','finished'):
+        raise GateOrderTransportError('Unrecognized Gate.io order state')
     if row['state']=='DISPATCH_UNCERTAIN':
         return _five_journal_record_order_ack(event_id,exchange_order_id)
     return {'state':'ACKNOWLEDGED','duplicate_ack':True,'orders_placed':0}
