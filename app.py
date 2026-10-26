@@ -5484,7 +5484,7 @@ def _five_journal_read_fill_evidence(event_id):
         con.execute(_EXECUTION_HANDOFF_FIVE_SCHEMA)
         con.execute(_EXECUTION_FIVE_JOURNAL_SCHEMA)
         with con.cursor() as cur:
-            cur.execute("""SELECT j.contract,j.side,j.exchange_order_id,j.state
+            cur.execute("""SELECT j.contract,j.side,j.client_order_text,j.exchange_order_id,j.state
                 FROM luxalgo_execution_five_journal j WHERE j.event_id=%s""",(event_id,))
             row=cur.fetchone()
     if not row or row['state'] not in ('ACKNOWLEDGED','PROTECTION_UNVERIFIED',
@@ -5494,8 +5494,12 @@ def _five_journal_read_fill_evidence(event_id):
     if not order_id or not re.fullmatch(r'[1-9][0-9]{0,19}',str(order_id)):
         return {'state':'MISSING_EXCHANGE_ORDER_ID','fill_verified':False,'protection_verified':False}
     order=_gate_v4_authenticated_request('GET','/api/v4/futures/usdt/orders/'+str(order_id))
-    if str(order.get('id'))!=str(order_id) or order.get('contract')!=row['contract']:
-        raise GateOrderTransportError('Order readback identity mismatch')
+    if (str(order.get('id_string') or order.get('id'))!=str(order_id)
+            or order.get('contract')!=row['contract']
+            or order.get('text')!=row['client_order_text']
+            or order.get('is_close') is True or order.get('close') is True
+            or order.get('is_reduce_only') is True or order.get('reduce_only') is True):
+        raise GateOrderTransportError('Order readback identity or entry intent mismatch')
     # Parse Gate.io's documented signed size and remaining left quantities.
     # A cancelled/IOC order may have a partial fill.
     try:
@@ -5506,8 +5510,16 @@ def _five_journal_read_fill_evidence(event_id):
         raise GateOrderTransportError('Exchange trade side mismatch')
     positions=_gate_read_only_positions()
     matching=[p for p in positions if p.get('contract')==row['contract'] and p.get('side')==row['side']]
-    verified=(filled>0 and len(matching)==1 and
-              Decimal(str(matching[0].get('size_contracts','0')))>0)
+    # A partial IOC fill must not be treated as reconciled merely because
+    # an unrelated/surviving position in the same contract has nonzero size.
+    # Until trade-specific fill attribution is available, require exact match.
+    try:
+        observed=(Decimal(str(matching[0]['size_contracts'])) if len(matching)==1
+                  else Decimal('0'))
+        verified=(filled>0 and observed.is_finite() and observed==filled
+                  and order.get('status')=='finished')
+    except (ValueError,TypeError,KeyError,InvalidOperation):
+        verified=False
     return {'state':'POSITION_OBSERVED' if verified else 'FILL_NOT_CONFIRMED',
             'fill_verified':bool(verified),'protection_verified':False,
             'exchange_order_id':str(order_id)}
