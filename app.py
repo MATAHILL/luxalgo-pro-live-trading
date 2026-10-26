@@ -5305,6 +5305,43 @@ def _record_execution_handoff(event_id, symbol, side, tf, levels):
         return {'state':'DB_UNAVAILABLE_NO_ORDER','orders_placed':0}
 
 
+def _five_journal_mark_dispatch_uncertain(event_id):
+    """Single irreversible claim before a possible order POST.
+
+    This is deliberately NOT called by the webhook. A future reviewed executor
+    must independently verify exchange mode, capacity, protection and recovery.
+    Returns False for duplicate/replayed/previously claimed events.
+    """
+    if not isinstance(event_id, str) or not re.fullmatch(r'[A-Za-z0-9_.:-]{4,100}',event_id):
+        raise GateOrderTransportError('Invalid execution event identity')
+    with _db_connect() as con:
+        con.execute(_EXECUTION_HANDOFF_FIVE_SCHEMA)
+        con.execute(_EXECUTION_FIVE_JOURNAL_SCHEMA)
+        with con.cursor() as cur:
+            cur.execute('SELECT pg_advisory_xact_lock(%s)', (65913045,))
+            cur.execute("""SELECT j.state, h.state AS handoff_state, h.created_at
+                FROM luxalgo_execution_five_journal AS j
+                JOIN luxalgo_execution_handoff_five AS h USING (event_id)
+                WHERE j.event_id=%s FOR UPDATE OF j,h""",(event_id,))
+            row=cur.fetchone()
+            if row is None or row['state']!='PREPARED' or row['handoff_state']!='AWAITING_SAFE_EXECUTOR':
+                return False
+            # Stale alerts must never become market entries.
+            if (datetime.now(timezone.utc)-row['created_at']).total_seconds()>900:
+                cur.execute("""UPDATE luxalgo_execution_handoff_five
+                    SET state='REJECTED' WHERE event_id=%s""",(event_id,))
+                return False
+            cur.execute("""UPDATE luxalgo_execution_five_journal
+                SET state='DISPATCH_UNCERTAIN', updated_at=NOW()
+                WHERE event_id=%s AND state='PREPARED' RETURNING event_id""",(event_id,))
+            if cur.fetchone() is None:
+                return False
+            cur.execute("""UPDATE luxalgo_execution_handoff_five
+                SET state='EXECUTION_REVIEW_REQUIRED'
+                WHERE event_id=%s AND state='AWAITING_SAFE_EXECUTOR'""",(event_id,))
+            return True
+
+
 @app.get('/terminal/execution-handoff')
 def terminal_execution_handoff():
     if not _terminal_permitted():
