@@ -5342,6 +5342,40 @@ def _five_journal_mark_dispatch_uncertain(event_id):
             return True
 
 
+def _five_journal_record_order_ack(event_id, exchange_order_id):
+    """Reconcile an externally verified order ACK; never creates an order.
+
+    An unknown outcome cannot be retried. Conflicting IDs fail closed.
+    Callers must obtain the exchange order ID from authenticated Gate.io readback.
+    """
+    if not isinstance(event_id,str) or not re.fullmatch(r'[A-Za-z0-9_.:-]{4,100}',event_id):
+        raise GateOrderTransportError('Invalid event identity')
+    if not re.fullmatch(r'[1-9][0-9]{0,19}',str(exchange_order_id)):
+        raise GateOrderTransportError('Invalid Gate.io order identity')
+    with _db_connect() as con:
+        con.execute(_EXECUTION_HANDOFF_FIVE_SCHEMA)
+        con.execute(_EXECUTION_FIVE_JOURNAL_SCHEMA)
+        with con.cursor() as cur:
+            cur.execute('SELECT pg_advisory_xact_lock(%s)',(65913045,))
+            cur.execute("""SELECT state,exchange_order_id FROM luxalgo_execution_five_journal
+                WHERE event_id=%s FOR UPDATE""",(event_id,))
+            row=cur.fetchone()
+            if row is None:
+                raise GateOrderTransportError('No durable order claim exists')
+            existing=row['exchange_order_id']
+            if existing is not None and str(existing)!=str(exchange_order_id):
+                raise GateOrderTransportError('Conflicting exchange order ID: manual reconciliation required')
+            if row['state']=='ACKNOWLEDGED' and str(existing)==str(exchange_order_id):
+                return {'state':'ACKNOWLEDGED','duplicate_ack':True,'orders_placed':0}
+            if row['state']!='DISPATCH_UNCERTAIN':
+                raise GateOrderTransportError('ACK requires a dispatch-uncertain journal record')
+            cur.execute("""UPDATE luxalgo_execution_five_journal
+                SET state='ACKNOWLEDGED',exchange_order_id=%s,updated_at=NOW()
+                WHERE event_id=%s AND state='DISPATCH_UNCERTAIN'""",
+                (str(exchange_order_id),event_id))
+            return {'state':'ACKNOWLEDGED','duplicate_ack':False,'orders_placed':0}
+
+
 @app.get('/terminal/execution-handoff')
 def terminal_execution_handoff():
     if not _terminal_permitted():
