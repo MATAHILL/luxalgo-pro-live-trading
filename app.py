@@ -4993,5 +4993,51 @@ def terminal_advanced_scanner():
              'open_positions':open_count,'orders_enabled':False,'live_trading':False,'execution_status':'BLOCKED'}
     res=jsonify(payload);res.headers['Cache-Control']='no-store';return res
 
+
+# --- Read-only Gate.io order diagnostics (no order-write route) ---
+def _gate_v4_authenticated_request(method, path, *, payload=None, timeout=8):
+    """Strict authenticated GET for a single futures order; no write capability."""
+    if (method != 'GET' or payload is not None or
+            not re.fullmatch(r'/api/v4/futures/usdt/orders/[1-9][0-9]{0,19}',str(path))):
+        raise ValueError('Only read-only futures order GET is authorized')
+    key=os.getenv('GATE_API_KEY','').strip()
+    secret=os.getenv('GATE_API_SECRET','').strip()
+    if not key or not secret:
+        raise RuntimeError('Gate.io credentials unavailable')
+    stamp=str(int(time.time()))
+    hashed=hashlib.sha512(b'').hexdigest()
+    msg='\\n'.join(('GET',path,'',hashed,stamp))
+    sign=hmac.new(secret.encode(),msg.encode(),hashlib.sha512).hexdigest()
+    req=Request('https://api.gateio.ws'+path,method='GET',
+        headers={'KEY':key,'Timestamp':stamp,'SIGN':sign,'Accept':'application/json'})
+    try:
+        with urlopen(req,timeout=timeout) as response:
+            result=json.loads(response.read(100000))
+    except (HTTPError,URLError,TimeoutError,OSError,ValueError):
+        raise RuntimeError('Gate.io order readback unavailable') from None
+    if not isinstance(result,dict):
+        raise RuntimeError('Gate.io order response invalid')
+    return result
+
+
+def _five_journal_verify_exchange_order(event_id, exchange_order_id):
+    """Verify known order identity by authenticated GET; never submit trades.
+
+    Production has no five-position journal yet. This diagnostic requires the
+    expected event-derived text and confirms only order identity, not a fill.
+    """
+    if (not isinstance(event_id,str) or
+            not re.fullmatch(r'[A-Za-z0-9_.:-]{4,100}',event_id) or
+            not re.fullmatch(r'[1-9][0-9]{0,19}',str(exchange_order_id))):
+        raise ValueError('Valid event and existing numeric order ID required')
+    expected_text='t-lux-'+hashlib.sha256(event_id.encode('utf8')).hexdigest()[:24]
+    order=_gate_v4_authenticated_request(
+        'GET','/api/v4/futures/usdt/orders/'+str(exchange_order_id))
+    return {'verified':(str(order.get('id_string') or order.get('id'))==str(exchange_order_id)
+                       and order.get('text')==expected_text),
+            'order_id':str(exchange_order_id),'orders_placed':0,
+            'fill_verified':False,'protection_verified':False}
+
+
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=int(os.getenv('PORT', '8080')))
