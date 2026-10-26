@@ -5837,6 +5837,27 @@ def _five_recovery_close_shape(contract, side, account_mode):
             'close_orders_submitted':0}
 
 
+def _five_recovery_close_review(position, expected_contract, expected_side):
+    """Fail-closed position identity check before constructing a close preview.
+
+    Never send a close against an unrelated, missing, or ambiguous position.
+    This function is pure and cannot interact with Gate.io.
+    """
+    if not isinstance(position,dict):
+        raise GateOrderTransportError('RECOVERY_POSITION_UNAVAILABLE')
+    if position.get('contract')!=expected_contract or position.get('side')!=expected_side:
+        raise GateOrderTransportError('RECOVERY_POSITION_IDENTITY_MISMATCH')
+    qty=position.get('size_contracts')
+    try:
+        amount=Decimal(str(qty))
+    except (InvalidOperation,ValueError,TypeError):
+        raise GateOrderTransportError('RECOVERY_SIZE_INVALID') from None
+    if not amount.is_finite() or amount<=0 or amount!=amount.to_integral_value():
+        raise GateOrderTransportError('RECOVERY_SIZE_INVALID')
+    mode=position.get('position_mode')
+    return _five_recovery_close_shape(expected_contract,expected_side,mode)
+
+
 def _five_recovery_decision(journal_state, fill_verified, protection_verified):
     """Pure fail-closed recovery classifier. No exchange writes or retries."""
     if journal_state == 'DISPATCH_UNCERTAIN':
