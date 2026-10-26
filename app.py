@@ -5982,7 +5982,7 @@ def _five_discover_native_protection(event_id):
         raise GateOrderTransportError('Gate credentials missing for protection audit')
     stamp=str(int(time.time()))
     digest=hashlib.sha512(b'').hexdigest()
-    signing='\\n'.join(('GET',path,query,digest,stamp))
+    signing='\n'.join(('GET',path,query,digest,stamp))
     signature=hmac.new(secret.encode(),signing.encode(),hashlib.sha512).hexdigest()
     request=Request('https://api.gateio.ws'+path+'?'+query,method='GET',
                     headers={'KEY':key,'Timestamp':stamp,'SIGN':signature,
