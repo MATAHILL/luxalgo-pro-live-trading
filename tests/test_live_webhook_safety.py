@@ -38,5 +38,11 @@ class LiveWebhookSafetyTests(unittest.TestCase):
     def test_production_not_part_of_this_offline_suite(self):
         self.assertTrue((ROOT/'.github/workflows/luxalgo-safe-tests.yml').exists())
 
+    def test_schema_ddl_serialized_before_create(self):
+        src=ast.get_source_segment((ROOT/'app.py').read_text(encoding='utf-8'),
+                                   FUNCS['_ensure_schema'])
+        self.assertIn('pg_advisory_xact_lock',src)
+        self.assertLess(src.index('pg_advisory_xact_lock'),src.index('connection.execute(DB_SCHEMA)'))
+
 if __name__=='__main__':
     unittest.main()
