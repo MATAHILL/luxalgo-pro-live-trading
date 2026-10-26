@@ -5376,6 +5376,46 @@ def _five_journal_record_order_ack(event_id, exchange_order_id):
             return {'state':'ACKNOWLEDGED','duplicate_ack':False,'orders_placed':0}
 
 
+def _five_journal_verify_exchange_order(event_id, exchange_order_id):
+    """Read-only Gate.io order identity check before acknowledging one journal.
+
+    Requires an independently obtained order ID. Does not infer a successful
+    fill, native protective orders, or safe recovery from an order ACK.
+    """
+    if not isinstance(event_id,str) or not re.fullmatch(r'[A-Za-z0-9_.:-]{4,100}',event_id):
+        raise GateOrderTransportError('Invalid event identity')
+    if not re.fullmatch(r'[1-9][0-9]{0,19}',str(exchange_order_id)):
+        raise GateOrderTransportError('Invalid exchange order identity')
+    with _db_connect() as con:
+        con.execute(_EXECUTION_HANDOFF_FIVE_SCHEMA)
+        con.execute(_EXECUTION_FIVE_JOURNAL_SCHEMA)
+        with con.cursor() as cur:
+            cur.execute("""SELECT j.contract,j.side,j.client_order_text,j.state,j.exchange_order_id,
+                          h.event_id FROM luxalgo_execution_five_journal j
+                          JOIN luxalgo_execution_handoff_five h USING(event_id)
+                          WHERE j.event_id=%s""",(event_id,))
+            row=cur.fetchone()
+    if row is None or row['state'] not in ('DISPATCH_UNCERTAIN','ACKNOWLEDGED'):
+        raise GateOrderTransportError('No eligible claimed order for readback')
+    if row['exchange_order_id'] is not None and str(row['exchange_order_id'])!=str(exchange_order_id):
+        raise GateOrderTransportError('Exchange ID conflict; manual reconciliation required')
+    order=_gate_v4_authenticated_request(
+        'GET','/api/v4/futures/usdt/orders/'+str(exchange_order_id))
+    if str(order.get('id'))!=str(exchange_order_id):
+        raise GateOrderTransportError('Gate.io returned a different order ID')
+    if order.get('contract')!=row['contract'] or order.get('text')!=row['client_order_text']:
+        raise GateOrderTransportError('Gate.io order contract/client identity mismatch')
+    try:
+        signed_size=int(order['size'])
+    except (KeyError,ValueError,TypeError):
+        raise GateOrderTransportError('Gate.io order size unavailable') from None
+    if signed_size==0 or (signed_size>0)!=(row['side']=='LONG'):
+        raise GateOrderTransportError('Gate.io order side mismatch')
+    if row['state']=='DISPATCH_UNCERTAIN':
+        return _five_journal_record_order_ack(event_id,exchange_order_id)
+    return {'state':'ACKNOWLEDGED','duplicate_ack':True,'orders_placed':0}
+
+
 @app.get('/terminal/execution-handoff')
 def terminal_execution_handoff():
     if not _terminal_permitted():
