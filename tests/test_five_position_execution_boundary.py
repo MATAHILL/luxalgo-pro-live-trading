@@ -54,5 +54,13 @@ class FivePositionOrderBoundary(unittest.TestCase):
         self.assertIn('BLOCKED_UNAUDITED_EXPOSURE',src)
         self.assertIn("'close_orders_submitted':0",src)
 
+    def test_unresolved_exchange_dispatch_prevents_next_entry(self):
+        src=source('_five_position_entry_preflight')
+        self.assertIn('DISPATCH_UNCERTAIN',src)
+        self.assertIn('PROTECTION_UNVERIFIED',src)
+        self.assertIn('RECOVERY_REQUIRED',src)
+        self.assertIn('if unresolved:',src)
+        self.assertIn('entry blocked',src)
+
 if __name__=='__main__':
     unittest.main()
