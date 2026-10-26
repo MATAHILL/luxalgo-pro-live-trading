@@ -74,5 +74,21 @@ class FivePositionOrderBoundary(unittest.TestCase):
         self.assertIn('observed==filled',src)
         self.assertIn("order.get('status')=='finished'",src)
 
+    def test_coordinator_validates_dispatch_envelope_without_submitting(self):
+        src=source('_five_position_execution_coordinator')
+        self.assertIn('_five_dispatch_plan(event_id,preview)',src)
+        self.assertIn('BLOCKED_DISPATCH_ENVELOPE_INVALID',src)
+        self.assertIn("'exchange_write_enabled':False",src)
+
+    def test_dispatch_plan_is_non_executable(self):
+        src=source('_five_dispatch_plan')
+        self.assertIn('READY_FOR_OFFLINE_REVIEW',src)
+        self.assertIn("'orders_placed':0",src)
+        self.assertIn("'exchange_write_enabled':False",src)
+        invoked={node.func.id for node in ast.walk(FUNCTIONS['_five_dispatch_plan'])
+                 if isinstance(node,ast.Call) and isinstance(node.func,ast.Name)}
+        self.assertNotIn('_gate_post_transport_implementation',invoked)
+        self.assertNotIn('_five_journal_mark_dispatch_uncertain',invoked)
+
 if __name__=='__main__':
     unittest.main()
