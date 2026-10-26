@@ -5954,6 +5954,51 @@ def _five_match_native_protection_ids(entry_order_id, contract, side, stop_price
             'source':'MATCHED_EXCHANGE_ME_ORDER_ID','execution_authorized':False}
 
 
+def _five_discover_native_protection(event_id):
+    """Authenticated READ-ONLY lookup of linked native Gate price orders.
+
+    Never stores unverified IDs or places trades. Reject a full 100-row page
+    rather than silently miss additional matching orders on later pages.
+    """
+    if not isinstance(event_id,str) or not re.fullmatch(r'[A-Za-z0-9_.:-]{4,100}',event_id):
+        raise GateOrderTransportError('Invalid event identity')
+    with _db_connect() as con:
+        with con.cursor() as cur:
+            cur.execute("""SELECT j.contract,j.side,j.exchange_order_id,h.stop_loss,h.take_profit,
+                j.state FROM luxalgo_execution_five_journal j
+                JOIN luxalgo_execution_handoff_five h USING(event_id)
+                WHERE j.event_id=%s""",(event_id,))
+            row=cur.fetchone()
+    if (not row or row['state'] not in ('ACKNOWLEDGED','PROTECTION_UNVERIFIED',
+                                         'PROTECTED','RECOVERY_REQUIRED')
+            or not re.fullmatch(r'[1-9][0-9]{0,19}',str(row['exchange_order_id'] or ''))
+            or not re.fullmatch(r'[A-Z0-9]{2,25}_USDT',str(row['contract'] or ''))):
+        return {'coverage_linked':False,'reason':'NO_VERIFIED_ENTRY_ID'}
+    path='/api/v4/futures/usdt/price_orders'
+    query='status=open&contract='+row['contract']+'&limit=100&offset=0'
+    key=os.getenv('GATE_API_KEY','').strip()
+    secret=os.getenv('GATE_API_SECRET','').strip()
+    if not key or not secret:
+        raise GateOrderTransportError('Gate credentials missing for protection audit')
+    stamp=str(int(time.time()))
+    digest=hashlib.sha512(b'').hexdigest()
+    signing='\\n'.join(('GET',path,query,digest,stamp))
+    signature=hmac.new(secret.encode(),signing.encode(),hashlib.sha512).hexdigest()
+    request=Request('https://api.gateio.ws'+path+'?'+query,method='GET',
+                    headers={'KEY':key,'Timestamp':stamp,'SIGN':signature,
+                             'Accept':'application/json'})
+    try:
+        with urlopen(request,timeout=8) as response:
+            orders=json.load(response)
+    except (HTTPError,URLError,TimeoutError,OSError,ValueError):
+        raise GateOrderTransportError('Native price-order readback unavailable') from None
+    if not isinstance(orders,list) or len(orders)>=100:
+        raise GateOrderTransportError('Native price-order audit truncated or malformed')
+    return _five_match_native_protection_ids(
+        row['exchange_order_id'],row['contract'],row['side'],
+        row['stop_loss'],row['take_profit'],orders)
+
+
 def _five_protection_coverage_check(event_id):
     """Read-only coverage evaluation: filled entry + two verified active exits.
 
