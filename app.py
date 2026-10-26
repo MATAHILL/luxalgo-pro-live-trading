@@ -2109,10 +2109,14 @@ def webhook():
     execution_handoff = (_record_execution_handoff(event_id, symbol, allowed[side], tf, parsed)
                          if level_status == 'VALID' and not duplicate else
                          {'state':'NOT_ELIGIBLE','orders_placed':0})
+    execution_coordinator = (_five_position_execution_coordinator(event_id)
+        if execution_handoff.get('state') == 'RESERVED_EXECUTION_NOT_ENABLED'
+        else {'state':'NOT_ELIGIBLE','orders_placed':0})
     return jsonify(status='signal_received', mode='SIGNAL_ONLY', symbol=symbol,
                    side=allowed[side], timeframe=tf, duplicate_in_candle=duplicate,
                    dry_run_intent_id=event_id, level_status=level_status,
-                   one_trade_candidate=one_trade_candidate, execution_handoff=execution_handoff, orders_placed=0), 200
+                   one_trade_candidate=one_trade_candidate, execution_handoff=execution_handoff,
+                   execution_coordinator=execution_coordinator, orders_placed=0), 200
 
 
 # One-trade bridge inspection: authenticated, database-backed and READ-ONLY.
@@ -5458,6 +5462,45 @@ def _five_journal_read_fill_evidence(event_id):
     return {'state':'POSITION_OBSERVED' if verified else 'FILL_NOT_CONFIRMED',
             'fill_verified':bool(verified),'protection_verified':False,
             'exchange_order_id':str(order_id)}
+
+
+def _five_position_execution_coordinator(event_id):
+    """Webhook-connected five-position coordinator; ALWAYS blocks exchange writes.
+
+    This enforces the distinction between a prepared signal and a verified
+    end-to-end Gate.io execution. No secrets, order submission, or retries.
+    """
+    if not isinstance(event_id,str) or not re.fullmatch(r'[A-Za-z0-9_.:-]{4,100}',event_id):
+        return {'state':'BLOCKED_INVALID_EVENT_ID','orders_placed':0}
+    try:
+        with _db_connect() as con:
+            con.execute(_EXECUTION_HANDOFF_FIVE_SCHEMA)
+            con.execute(_EXECUTION_FIVE_JOURNAL_SCHEMA)
+            with con.cursor() as cur:
+                cur.execute("""SELECT j.state AS journal_state,h.state AS reservation_state,
+                    h.created_at,j.contract,j.side,j.exchange_order_id
+                    FROM luxalgo_execution_five_journal j
+                    JOIN luxalgo_execution_handoff_five h USING(event_id)
+                    WHERE j.event_id=%s""",(event_id,))
+                row=cur.fetchone()
+        if row is None:
+            return {'state':'BLOCKED_MISSING_DURABLE_JOURNAL','orders_placed':0}
+        if row['journal_state']!='PREPARED' or row['reservation_state']!='AWAITING_SAFE_EXECUTOR':
+            return {'state':'BLOCKED_NOT_PREPARED','orders_placed':0}
+        if row['exchange_order_id'] is not None:
+            return {'state':'BLOCKED_ALREADY_HAS_EXCHANGE_ORDER','orders_placed':0}
+        if (datetime.now(timezone.utc)-row['created_at']).total_seconds()>900:
+            return {'state':'BLOCKED_STALE_SIGNAL','orders_placed':0}
+        # Even if LIVE_TRADING_ENABLED and ORDERS_ENABLED are mistakenly set,
+        # do not call the legacy single-row sender from this five-position path.
+        return {'state':'PREPARED_WAITING_FOR_VERIFIED_PROTECTION_AND_RECOVERY',
+                'orders_placed':0,'exchange_write_enabled':False,
+                'blockers':['Five-event sender not transactionally connected',
+                            'Exchange position mode and aggregate account risk unverified',
+                            'SL/TP trigger readback and emergency recovery unverified']}
+    except (psycopg.Error,RuntimeError,OSError,TypeError,ValueError):
+        app.logger.exception('Five-position coordinator journal read failed')
+        return {'state':'BLOCKED_DB_READ_FAILURE','orders_placed':0}
 
 
 @app.get('/terminal/execution-handoff')
