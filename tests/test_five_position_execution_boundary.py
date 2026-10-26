@@ -90,5 +90,12 @@ class FivePositionOrderBoundary(unittest.TestCase):
         self.assertNotIn('_gate_post_transport_implementation',invoked)
         self.assertNotIn('_five_journal_mark_dispatch_uncertain',invoked)
 
+    def test_dispatch_rejects_wrong_direction_native_protection(self):
+        src=source('_five_dispatch_plan')
+        self.assertIn('Native SL/TP direction mismatch',src)
+        self.assertIn('stop<entry<take',src)
+        self.assertIn('take<entry<stop',src)
+        self.assertIn('Invalid dispatch contract',src)
+
 if __name__=='__main__':
     unittest.main()
