@@ -5285,10 +5285,10 @@ def terminal_execution_handoff():
         return _terminal_guard()
     try:
         with _db_connect() as con:
-            con.execute(_EXECUTION_HANDOFF_SCHEMA)
+            con.execute(_EXECUTION_HANDOFF_FIVE_SCHEMA)
             with con.cursor() as cur:
                 cur.execute("""SELECT event_id,symbol,side,timeframe,state,
-                    created_at FROM luxalgo_execution_handoff ORDER BY created_at DESC LIMIT 1""")
+                    created_at FROM luxalgo_execution_handoff_five ORDER BY created_at DESC LIMIT 1""")
                 row=cur.fetchone()
         result={'handoff': None if row is None else dict(row),
                 'exchange_write_enabled':False,'live_trading':False,
