@@ -5562,13 +5562,21 @@ def _five_position_execution_coordinator(event_id):
             return {'state':'BLOCKED_ALREADY_HAS_EXCHANGE_ORDER','orders_placed':0}
         if (datetime.now(timezone.utc)-row['created_at']).total_seconds()>900:
             return {'state':'BLOCKED_STALE_SIGNAL','orders_placed':0}
-        # Even if LIVE_TRADING_ENABLED and ORDERS_ENABLED are mistakenly set,
-        # do not call the legacy single-row sender from this five-position path.
-        return {'state':'PREPARED_WAITING_FOR_VERIFIED_PROTECTION_AND_RECOVERY',
-                'orders_placed':0,'exchange_write_enabled':False,
-                'blockers':['Five-event sender not transactionally connected',
-                            'Exchange position mode and aggregate account risk unverified',
-                            'SL/TP trigger readback and emergency recovery unverified']}
+        # Validate the candidate against fresh Gate.io account and market data.
+        # Never call the legacy one-row order sender for any of these five slots.
+        # No deployment flag or webhook field can bypass the recovery gate.
+        try:
+            preview=_five_position_entry_preflight(event_id)
+        except (GateOrderTransportError,psycopg.Error,RuntimeError,OSError,
+                ValueError,TypeError,KeyError):
+            return {'state':'BLOCKED_EXCHANGE_PREFLIGHT_FAILED','orders_placed':0,
+                    'exchange_write_enabled':False}
+        return {'state':'PREFLIGHT_PASSED_DISPATCH_NOT_ARMED','orders_placed':0,
+                'exchange_write_enabled':False,
+                'preflight':preview,
+                'blockers':['Per-event exchange POST sender is not integrated',
+                            'Native exchange SL/TP after fill is unverified',
+                            'Automated emergency close is unverified']}
     except (psycopg.Error,RuntimeError,OSError,TypeError,ValueError):
         app.logger.exception('Five-position coordinator journal read failed')
         return {'state':'BLOCKED_DB_READ_FAILURE','orders_placed':0}
