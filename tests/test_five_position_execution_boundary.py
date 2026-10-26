@@ -62,5 +62,10 @@ class FivePositionOrderBoundary(unittest.TestCase):
         self.assertIn('if unresolved:',src)
         self.assertIn('entry blocked',src)
 
+    def test_protection_requires_explicit_close_position_direction(self):
+        src=source('_five_verify_native_tpsl')
+        self.assertIn("initial.get('auto_size')",src)
+        self.assertIn("!=\\n                        ('close_long' if row['side']=='LONG' else 'close_short')",src)
+
 if __name__=='__main__':
     unittest.main()
