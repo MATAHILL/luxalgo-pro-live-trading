@@ -98,6 +98,19 @@ def protective_trigger_payload(contract: str, side: str, trigger_kind: str,
     }
 
 
+def submit_testnet_entry(payload: dict, *, allow_unprotected_entry: bool = False) -> dict:
+    """Signed Gate Futures TESTNET order transport, isolated from webhooks.
+
+    Explicitly fail-closed: submission is impossible without a separately
+    implemented protective-order coordinator. Never connects to production.
+    """
+    if allow_unprotected_entry:
+        raise TestnetExecutionDisabled("Unprotected entry submission is prohibited")
+    raise TestnetExecutionDisabled(
+        "Testnet entry requires reconciled native stop/target protection; no order sent"
+    )
+
+
 def send_protected_order(*_args, **_kwargs):
     """Fail closed until order, protective stops, reconciliation and recovery are integrated."""
     raise TestnetExecutionDisabled("Protected Testnet execution is not yet implemented; no order sent")
