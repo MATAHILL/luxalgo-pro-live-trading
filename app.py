@@ -4323,6 +4323,22 @@ def _completed_gate_candles_after(symbol, tf, after):
 
 
 # Read-only per-signal market outcome. Never implies a filled exchange order.
+@app.get('/terminal/testnet-order-readiness')
+def terminal_testnet_order_readiness():
+    if not _terminal_permitted():
+        return _terminal_guard()
+    response=jsonify(environment='GATE_FUTURES_TESTNET',
+        signal_receiver=True,read_only_monitor=True,
+        order_submission_implemented=False,
+        protective_orders_implemented=False,
+        fill_reconciliation_implemented=False,
+        automatic_execution_ready=False,
+        production_trading_enabled=False,
+        reason='Automatic execution requires verified exchange-native protection and fill reconciliation')
+    response.headers['Cache-Control']='no-store'
+    return response
+
+
 @app.get('/terminal/incoming-signals')
 def terminal_incoming_signals():
     """Recent webhook receipts and paper state only; never exchange orders."""
