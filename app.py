@@ -2154,7 +2154,12 @@ def _gate_read_only_positions():
     for p in raw:
         if not isinstance(p, dict):
             raise ValueError('Unexpected position')
-        size = number(p.get('size', 0))
+        # Gate may return a null size for an inactive/empty position row.
+        # Do not let that unrelated empty row hide valid open positions.
+        raw_size=p.get('size')
+        if raw_size is None or raw_size=='':
+            continue
+        size=number(raw_size)
         if not size:
             continue
         contract = p.get('contract')
