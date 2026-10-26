@@ -5550,6 +5550,52 @@ def _five_verify_native_tpsl(event_id):
             'sl_order_id':str(sl_id),'tp_order_id':str(tp_id)}
 
 
+def _five_position_recovery_audit(limit=5):
+    """Exchange read-only audit across five journals; never submits a close.
+
+    Every ambiguous observation is treated as recovery requiring operator
+    attention. This routine intentionally cannot authorize exchange writes.
+    """
+    if type(limit) is not int or not (1 <= limit <= 5):
+        raise GateOrderTransportError('Invalid audit limit')
+    with _db_connect() as con:
+        con.execute(_EXECUTION_HANDOFF_FIVE_SCHEMA)
+        con.execute(_EXECUTION_FIVE_JOURNAL_SCHEMA)
+        with con.cursor() as cur:
+            cur.execute("""SELECT event_id,state,exchange_order_id FROM luxalgo_execution_five_journal
+                WHERE state IN ('DISPATCH_UNCERTAIN','ACKNOWLEDGED',
+                    'PROTECTION_UNVERIFIED','PROTECTED','RECOVERY_REQUIRED')
+                ORDER BY created_at LIMIT %s""",(limit,))
+            rows=cur.fetchall()
+    result=[]
+    for row in rows:
+        event_id=row['event_id']
+        status={'event_id':event_id,'journal_state':row['state'],
+                'close_submitted':False,'protection_verified':False,
+                'recovery_action':'REVIEW_REQUIRED'}
+        try:
+            if row['state']=='DISPATCH_UNCERTAIN':
+                status['reason']='ORDER_ACK_UNKNOWN_DO_NOT_RETRY'
+            else:
+                fill=_five_journal_read_fill_evidence(event_id)
+                status['fill_verified']=fill.get('fill_verified') is True
+                if fill.get('fill_verified') is True:
+                    triggers=_five_verify_native_tpsl(event_id)
+                    status['protection_verified']=triggers.get('protection_verified') is True
+                    status['reason']=('EXCHANGE_PROTECTION_OBSERVED'
+                        if status['protection_verified'] else 'POSITION_WITHOUT_VERIFIED_SL_TP')
+                    if status['protection_verified']:
+                        status['recovery_action']='NONE_OBSERVED_PROTECTED'
+                else:
+                    status['reason']=str(fill.get('state','FILL_UNKNOWN'))[:80]
+        except (GateOrderTransportError,psycopg.Error,RuntimeError,OSError,
+                ValueError,TypeError,KeyError):
+            status['reason']='EXCHANGE_OR_DATABASE_READBACK_UNAVAILABLE'
+        result.append(status)
+    return {'audited':len(result),'orders_placed':0,'close_orders_submitted':0,
+            'live_recovery_enabled':False,'results':result}
+
+
 @app.get('/terminal/execution-handoff')
 def terminal_execution_handoff():
     if not _terminal_permitted():
