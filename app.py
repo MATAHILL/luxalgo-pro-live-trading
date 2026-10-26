@@ -716,7 +716,7 @@ header.terminal-header{border-radius:17px!important}
 <summary style="cursor:pointer;font-size:16px;font-weight:850;padding:2px 0 12px">INCOMING LUXALGO ORDERS · WEBHOOK SIGNALS <span class="light" style="font-size:12px">— Click to minimize / maximize</span></summary>
 <p class="light">Received signals and paper processing only. Not Gate.io exchange orders. Market/Limit is NOT SPECIFIED unless an explicit order strategy is implemented.</p>
 <div class="panel-heading"><span id="incomingLuxInfo" class="light" role="status">Loading latest received signals…</span><button class="btn gloss-action" id="incomingLuxRefresh" type="button">↻ Refresh Signals</button></div>
-<div class="tablewrap" style="width:100%;overflow-x:auto"><table style="min-width:1000px;width:100%"><thead><tr><th>RECEIVED (IST)</th><th>COIN</th><th>SIGNAL</th><th>TF</th><th>ORDER TYPE</th><th>ENTRY</th><th>STOP LOSS</th><th>TAKE PROFIT</th><th>PROCESS STATUS</th></tr></thead><tbody id="incomingLuxRows"><tr><td colspan="9">Loading…</td></tr></tbody></table></div>
+<div class="tablewrap" style="width:100%;overflow-x:auto"><table style="min-width:1000px;width:100%"><thead><tr><th>RECEIVED (IST)</th><th>COIN</th><th>SIGNAL</th><th>TF</th><th>ORDER TYPE</th><th>ENTRY</th><th>STOP LOSS</th><th>TAKE PROFIT</th><th>PROCESS STATUS</th><th>DETAIL</th></tr></thead><tbody id="incomingLuxRows"><tr><td colspan="10">Loading…</td></tr></tbody></table></div>
 </details><div class="market-grid">
 <section class="panel market-panel"><div class="panel-heading"><h2>GATE.IO FUTURES RADAR <span class="gloss-gold">● MARKET LIVE</span></h2><button class="btn gloss-action" id="radarRefresh" type="button">↻ Refresh</button></div>
 <p class="light">All available Gate.io USDT perpetual tickers · 24h rankings · public market data.</p>
@@ -1522,10 +1522,10 @@ draw(true);
      for(const s of data.signals){
        const tr=document.createElement('tr');
        let tm='—';try{tm=new Date(s.time).toLocaleString('en-IN',{timeZone:'Asia/Kolkata'});}catch(e){}
-       [tm,s.symbol,s.side,s.timeframe,s.order_type,s.entry,s.stop_loss,s.take_profit,s.state].forEach(v=>cell(tr,v));
+       [tm,s.symbol,s.side,s.timeframe,s.order_type,s.entry,s.stop_loss,s.take_profit,s.state,s.reason].forEach(v=>cell(tr,v));
        tbody.appendChild(tr);
      }
-     if(!data.signals.length){const tr=document.createElement('tr'),td=document.createElement('td');td.colSpan=9;td.textContent='No stored incoming signals yet';tr.appendChild(td);tbody.appendChild(tr);}
+     if(!data.signals.length){const tr=document.createElement('tr'),td=document.createElement('td');td.colSpan=10;td.textContent='No stored incoming signals yet';tr.appendChild(td);tbody.appendChild(tr);}
      info.textContent=data.count+' stored signals · no exchange orders submitted';
    }catch(err){info.textContent='Signal monitor unavailable: '+err.message;}
    finally{btn.disabled=false;}
@@ -1533,7 +1533,7 @@ draw(true);
  btn.addEventListener('click',refresh);
  panel.addEventListener('toggle',()=>{if(panel.open)refresh()});
  refresh();
- setInterval(()=>{if(panel.open&&!document.hidden)refresh();},30000);
+ setInterval(()=>{if(panel.open&&!document.hidden)refresh();},60000);
 })();
 </script>
 </body></html>'''
@@ -4222,11 +4222,12 @@ def terminal_incoming_signals():
                 cur.execute('''SELECT i.event_id,i.received_at,i.symbol,i.side,i.timeframe,
                     l.status AS level_status,l.entry_price,l.stop_loss,l.take_profit,
                     q.state AS queue_state,q.note AS queue_note,
-                    s.status AS simulated_status
+                    s.status AS simulated_status,b.enabled AS bot_enabled
                     FROM luxalgo_dry_run_intents i
                     LEFT JOIN luxalgo_signal_levels l ON l.event_id=i.event_id
                     LEFT JOIN luxalgo_auto_paper_queue q ON q.event_id=i.event_id
                     LEFT JOIN luxalgo_simulated_orders s ON s.event_id=i.event_id
+                    LEFT JOIN luxalgo_bot_control b ON b.id=1
                     ORDER BY i.received_at DESC LIMIT 50''')
                 rows=cur.fetchall()
         now=datetime.now(timezone.utc)
@@ -4241,6 +4242,8 @@ def terminal_incoming_signals():
                 state='EXPIRED_PENDING' if age>120 else 'PAPER_PENDING'
             elif r['level_status'] in ('MISSING','INVALID'):
                 state='INVALID_LEVELS'
+            elif not r['bot_enabled']:
+                state='BOT_OFF'
             else:
                 state='RECEIVED_NOT_EXECUTED'
             signals.append(dict(event_id=r['event_id'],time=r['received_at'].isoformat(),
@@ -4249,7 +4252,7 @@ def terminal_incoming_signals():
                 stop_loss=str(r['stop_loss']) if r['stop_loss'] is not None else None,
                 take_profit=str(r['take_profit']) if r['take_profit'] is not None else None,
                 order_type='NOT_SPECIFIED',state=state,
-                reason=r['queue_note'] or '',level_status=r['level_status'] or 'UNKNOWN'))
+                reason=r['queue_note'] or ('Paper bot disabled' if state=='BOT_OFF' else 'No exchange submission implemented' if state=='RECEIVED_NOT_EXECUTED' else 'Missing or invalid entry / SL / TP' if state=='INVALID_LEVELS' else ''),level_status=r['level_status'] or 'UNKNOWN'))
         response=jsonify(signals=signals,count=len(signals),orders_placed=0,
                          mode='WEBHOOK_MONITOR_ONLY',live_trading=False)
         response.headers['Cache-Control']='no-store'
