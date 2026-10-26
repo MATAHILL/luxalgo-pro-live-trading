@@ -5420,6 +5420,31 @@ def _five_journal_verify_exchange_order(event_id, exchange_order_id):
     return {'state':'ACKNOWLEDGED','duplicate_ack':True,'orders_placed':0}
 
 
+def _gate_order_fill_quantity(order):
+    """Parse Gate.io futures order size/left, conservatively.
+
+    Gate.io documents signed size and unfilled left, not fill_size.
+    A finished/cancelled IOC can be partly filled; status alone proves nothing.
+    """
+    if not isinstance(order,dict):
+        raise GateOrderTransportError('Invalid futures order response')
+    try:
+        size=Decimal(str(order['size']))
+        left=Decimal(str(order['left']))
+    except (KeyError,ValueError,TypeError,InvalidOperation):
+        raise GateOrderTransportError('Gate.io size or left unavailable') from None
+    if not size.is_finite() or not left.is_finite() or size==0:
+        raise GateOrderTransportError('Invalid futures order quantity')
+    if left!=0 and (left>0)!=(size>0):
+        raise GateOrderTransportError('Unfilled order sign mismatch')
+    if abs(left)>abs(size):
+        raise GateOrderTransportError('Unfilled quantity exceeds order quantity')
+    filled=abs(size)-abs(left)
+    if order.get('status') not in ('open','finished'):
+        raise GateOrderTransportError('Unrecognized Gate.io order status')
+    return size,filled
+
+
 def _five_journal_read_fill_evidence(event_id):
     """Read-only fill/position evidence; NEVER assumes protection from an ACK.
 
@@ -5444,15 +5469,12 @@ def _five_journal_read_fill_evidence(event_id):
     order=_gate_v4_authenticated_request('GET','/api/v4/futures/usdt/orders/'+str(order_id))
     if str(order.get('id'))!=str(order_id) or order.get('contract')!=row['contract']:
         raise GateOrderTransportError('Order readback identity mismatch')
-    # Gate.io can report filled_size and left with different endpoint semantics.
-    # Do not guess an actual fill from a zero remaining-size field alone.
+    # Parse Gate.io's documented signed size and remaining left quantities.
+    # A cancelled/IOC order may have a partial fill.
     try:
-        size=Decimal(str(order['size']))
-        filled=Decimal(str(order['fill_size']))
-    except (KeyError,InvalidOperation,ValueError,TypeError):
+        size,filled=_gate_order_fill_quantity(order)
+    except GateOrderTransportError:
         return {'state':'FILL_FIELDS_UNAVAILABLE','fill_verified':False,'protection_verified':False}
-    if not all(x.is_finite() for x in (size,filled)) or size==0 or filled<0 or filled>abs(size):
-        raise GateOrderTransportError('Invalid exchange fill quantities')
     if (size>0)!=(row['side']=='LONG'):
         raise GateOrderTransportError('Exchange trade side mismatch')
     positions=_gate_read_only_positions()
