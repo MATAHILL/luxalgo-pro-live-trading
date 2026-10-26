@@ -1,7 +1,7 @@
 import unittest
 from gate_testnet_execution import (
     TestnetExecutionDisabled, order_payload, prepare_order_for_review,
-    send_protected_order, signing_message,
+    send_protected_order, signing_message, protective_trigger_payload,
 )
 
 class TestnetExecutionSafetyTests(unittest.TestCase):
@@ -30,6 +30,22 @@ class TestnetExecutionSafetyTests(unittest.TestCase):
             order_type="MARKET",client_id="t-test123"))
         self.assertFalse(p["submitted"])
         self.assertFalse(p["protective_orders_verified"])
+    def test_native_long_stop_and_target(self):
+        stop=protective_trigger_payload("BTC_USDT","LONG","STOP_LOSS","90","100")
+        target=protective_trigger_payload("BTC_USDT","LONG","TAKE_PROFIT","110","100")
+        self.assertEqual(stop["trigger"]["rule"],2)
+        self.assertEqual(target["trigger"]["rule"],1)
+        self.assertEqual(stop["initial"]["auto_size"],"close_long")
+    def test_native_short_stop_and_target(self):
+        stop=protective_trigger_payload("BTC_USDT","SHORT","STOP_LOSS","110","100")
+        target=protective_trigger_payload("BTC_USDT","SHORT","TAKE_PROFIT","90","100")
+        self.assertEqual(stop["trigger"]["rule"],1)
+        self.assertEqual(target["trigger"]["rule"],2)
+        self.assertEqual(target["initial"]["auto_size"],"close_short")
+    def test_wrong_side_trigger_rejected(self):
+        with self.assertRaises(ValueError):
+            protective_trigger_payload("BTC_USDT","LONG","STOP_LOSS","110","100")
+
     def test_submit_disabled(self):
         with self.assertRaises(TestnetExecutionDisabled):
             send_protected_order()
