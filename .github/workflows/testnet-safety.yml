@@ -1,0 +1,27 @@
+name: Testnet execution safety
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'gate_testnet_execution.py'
+      - 'test_gate_testnet_execution.py'
+      - '.github/workflows/testnet-safety.yml'
+  pull_request:
+    paths:
+      - 'gate_testnet_execution.py'
+      - 'test_gate_testnet_execution.py'
+      - '.github/workflows/testnet-safety.yml'
+permissions:
+  contents: read
+jobs:
+  safety-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Compile files
+        run: python -m py_compile gate_testnet_execution.py test_gate_testnet_execution.py
+      - name: Run isolated unit tests
+        run: python -m unittest -v test_gate_testnet_execution.py
