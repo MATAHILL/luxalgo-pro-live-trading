@@ -1186,68 +1186,14 @@ async function loadPositions(){
   pnl.classList.toggle('positive',d.unrealized_pnl_usdt>0);pnl.classList.toggle('negative',d.unrealized_pnl_usdt<0);
   connection.textContent='Position feed connected · READ ONLY';renderPositions(d.positions);
   updated.textContent='Gate.io snapshot · '+new Date(d.fetched_at*1000).toLocaleTimeString('en-IN',{timeZone:'Asia/Kolkata',hour12:true})+' IST'+' · refresh every 30s · no trading orders enabled.';
- }catch(e){count.textContent='—';pnl.textContent='—';pnl.classList.remove('positive','negative');connection.textContent='Position feed unavailable';body.replaceChildren(element('p','light','Unable to verify positions: '+e.message));updated.textContent='Position data unavailable; no empty positions assumed.';}
+ }catch(e){count.textContent='—';pnl.textContent='—';pnl.classList.remove('positive','negative');connection.textContent='Feed unavailable: '+String(e.message).slice(0,110);body.replaceChildren(element('p','light','Unable to verify positions: '+e.message));updated.textContent='Position data unavailable; no empty positions assumed.';}
  finally{busy=false;button.disabled=false;}
 }
 button.addEventListener('click',()=>{loadPositions();loadFuturesEquity();});
 loadPositions();loadFuturesEquity();setInterval(()=>{if(!document.hidden){loadPositions();loadFuturesEquity();}},30000);
 })();
 
-(function(){
-'use strict';
-const body=document.getElementById('gatePositionsBody'),updated=document.getElementById('gatePositionsUpdated');
-const count=document.getElementById('openPositionCount'),pnl=document.getElementById('unrealizedPositionPnl');
-const connection=document.getElementById('gatePositionStatus'),button=document.getElementById('positionRefresh');
-let busy=false;
-function cell(tr,value,cl){const td=tr.insertCell();td.textContent=value;if(cl)td.className=cl;return td;}
-function money(value){if(value===null||value===undefined)return '—';const v=Number(value);return Number.isFinite(v)?v.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:4}):'—';}
-function price(value){const v=Number(value);if(!Number.isFinite(v)||v<=0)return '—';return v.toLocaleString(undefined,{maximumSignificantDigits:10});}
-function empty(msg){body.replaceChildren();const tr=body.insertRow();cell(tr,msg).colSpan=9;tr.className='empty-state';}
-function clearEquity(message){
- document.getElementById('futuresEquity').textContent='—';
- document.getElementById('futuresAvailable').textContent='—';
- document.getElementById('futuresBalance').textContent='—';
- document.getElementById('futuresEquityUpdated').textContent=message||'Account figures unavailable';
-}
-let equityBusy=false;
-async function loadFuturesEquity(){
- if(equityBusy)return;
- equityBusy=true;
- try{
-  const r=await fetch('/terminal/futures-equity',{cache:'no-store'});
-  const d=await r.json();
-  if(!r.ok)throw Error(d.error||'Futures balance not available');
-  document.getElementById('futuresEquity').textContent=money(d.equity_usdt);
-  document.getElementById('futuresAvailable').textContent=money(d.available_usdt);
-  document.getElementById('futuresBalance').textContent=money(d.balance_usdt);
-  document.getElementById('futuresEquityUpdated').textContent='Gate.io verified · '+new Date(d.fetched_at*1000).toLocaleTimeString('en-IN',{timeZone:'Asia/Kolkata',hour12:true})+' IST';
- }catch(e){clearEquity('Cannot verify: '+e.message);}
- finally{equityBusy=false;}
-}
-async function loadPositions(){
- if(busy)return;busy=true;button.disabled=true;
- try{
-  const r=await fetch('/terminal/positions',{cache:'no-store'});
-  const d=await r.json();if(!r.ok)throw Error(d.error||'Gate.io account temporarily unavailable');
-  count.textContent=String(d.count);pnl.textContent=money(d.unrealized_pnl_usdt);
-  pnl.classList.toggle('positive',d.unrealized_pnl_usdt>0);pnl.classList.toggle('negative',d.unrealized_pnl_usdt<0);
-  connection.textContent='Position feed connected · READ ONLY';body.replaceChildren();
-  if(!d.positions.length)empty('Gate.io reports no open USDT perpetual positions. No trades are being placed by LUXALGO PRO.');
-  for(const p of d.positions){
-   const tr=body.insertRow();cell(tr,p.contract);cell(tr,p.side+' · '+p.size_contracts+' contracts');
-   cell(tr,price(p.entry_price));cell(tr,price(p.mark_price));
-   cell(tr,money(p.unrealized_pnl),p.unrealized_pnl>=0?'positive':'negative');
-   cell(tr,p.leverage_label);cell(tr,'Not verified');cell(tr,'Not verified');cell(tr,p.position_mode);
-  }
-  updated.textContent='Gate.io position snapshot · '+new Date(d.fetched_at*1000).toLocaleTimeString('en-IN',{timeZone:'Asia/Kolkata',hour12:true})+' IST'+' · read-only · SL/TP order status not verified · manual close disabled.';
- }catch(e){
-  count.textContent='—';pnl.textContent='—';pnl.classList.remove('positive','negative');
-  connection.textContent='Position feed unavailable';empty('Unable to verify open positions. No zero balance or empty positions assumed.');
-  updated.textContent='Position data unavailable: '+e.message;
- }finally{busy=false;button.disabled=false;}
-}
-button.addEventListener('click',()=>{loadPositions();loadFuturesEquity();});loadPositions();loadFuturesEquity();setInterval(()=>{if(!document.hidden){loadPositions();loadFuturesEquity();}},30000);
-})();
+
 
 (function(){
 'use strict';
