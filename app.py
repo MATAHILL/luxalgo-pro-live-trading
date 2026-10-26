@@ -378,7 +378,7 @@ def _db_record(record,event_id):
                             (event_id,record['dt']))
     return duplicate
 
-PAGE = '''<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>LUXALGO PRO · Trading Terminal</title><script defer src="https://cdn.jsdelivr.net/npm/lightweight-charts@5.0.8/dist/lightweight-charts.standalone.production.js"></script>
+PAGE = '''<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>LUXALGO PRO · Trading Terminal</title>
 <style>:root{color-scheme:dark}*{box-sizing:border-box}body{margin:0;background:#08111f;color:#edf5ff;font:14px/1.5 system-ui,Segoe UI,Arial}.wrap{max-width:1180px;margin:auto;padding:24px}header,.panel,.metric{background:#122238;border:1px solid #29415e;border-radius:12px;padding:19px}header{display:flex;justify-content:space-between;gap:12px;align-items:center}h1{font-size:23px;margin:0}h2{font-size:15px;margin:0 0 15px}p{margin:5px 0;color:#a8bed6}.tag{color:#ffc47c;font-weight:700}.grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin:15px 0}.metric small{color:#9fb5cf}.metric strong{display:block;margin-top:8px;font-size:18px}.panel{margin-top:14px}.tablewrap{overflow:auto}table{border-collapse:collapse;width:100%;min-width:650px}th,td{padding:11px 9px;border-bottom:1px solid #2b435e;text-align:left}th{color:#a7c0dc;font-size:12px}td{font-size:13px}.light{color:#a8bed6}.ok{color:#47dfae}.off{color:#ffc47c}.btn{background:#203b5c;color:#eef6ff;border:1px solid #46749d;border-radius:7px;padding:8px 12px;cursor:pointer}.btn:disabled{opacity:.5}#planResults{white-space:pre-wrap;font:13px/1.7 ui-monospace,Consolas,monospace;background:#0b1a2b;border:1px solid #2b435e;border-radius:8px;padding:14px}.controls{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:12px;margin:14px 0}.controls label{display:flex;flex-direction:column;color:#a8bed6;font-size:12px;gap:5px}.controls input,.controls select{background:#0b1a2b;color:#edf5ff;border:1px solid #46749d;border-radius:7px;padding:9px;font:inherit}.controls input:read-only{opacity:.7}.foot{padding:18px 2px;font-size:12px;color:#a8bed6}@media(max-width:800px){.grid{grid-template-columns:repeat(2,minmax(0,1fr))}header{display:block}.wrap{padding:12px}}.market-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:14px}.market-grid .panel{margin-top:0}.market-panel{min-width:0}.panel-heading{display:flex;justify-content:space-between;align-items:center;gap:9px}.panel-heading h2{margin:0}.market-tabs{display:flex;flex-wrap:wrap;gap:6px;margin:12px 0}.market-tabs .btn{font-size:11px;padding:7px}.market-tabs .selected{background:linear-gradient(140deg,#1c5377,#17416a);border-color:#49e3e9;color:#e6fdff;box-shadow:0 0 10px #00c9e740}.market-filters{display:flex;gap:8px;margin-bottom:9px}.market-filters input,.market-filters select{min-width:0;max-width:100%;background:#0b1a2b;border:1px solid #3b5b7c;color:#eaf7ff;border-radius:7px;padding:9px}.market-filters input{flex:1}.market-scroll{max-height:360px;overflow:auto}.market-scroll table{min-width:390px}.market-scroll th{position:sticky;top:0;background:#162c45;z-index:1}.pairlink{border:0;background:transparent;color:#a9e9ff;text-align:left;cursor:pointer;text-decoration:underline;font-weight:700}.gloss-gold,.gloss-cyan,.positive,.negative{font-weight:750}.gloss-gold{background:linear-gradient(#fff7c8,#ffd368 45%,#d68c3f);background-clip:text;-webkit-background-clip:text;color:transparent}.gloss-cyan{background:linear-gradient(#fff,#56eaff 40%,#16a5d9);background-clip:text;-webkit-background-clip:text;color:transparent}.positive{color:#57f6bd;text-shadow:0 0 9px #28dd9550}.negative{color:#ff829e;text-shadow:0 0 8px #f8527450}header h1,h2{background:linear-gradient(180deg,#ffffff 12%,#b9e7ff 56%,#78bcef 100%);-webkit-background-clip:text;background-clip:text;color:transparent}.tag{background:linear-gradient(180deg,#ffeac8,#ffbf58 65%,#c18134);-webkit-background-clip:text;background-clip:text;color:transparent}.metric strong.ok{color:#5bffd1;text-shadow:0 0 8px #3beacb55}@media(max-width:1080px){.market-grid{grid-template-columns:1fr}}
 
 /* Desktop terminal redesign: preserves original JS bindings and backend routes. */
@@ -683,7 +683,7 @@ header.terminal-header{border-radius:17px!important}
 .live-ops-banner{margin:14px 0;padding:16px 19px;border:1px solid #47779a;border-radius:12px;background:linear-gradient(110deg,#102b45,#081b2f);display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:10px}
 .live-ops-banner strong{font-size:17px;color:#e1f5ff}.live-ops-banner p{margin:5px 0 0;color:#b0cee4;font-size:12px}
 .live-ops-state{font-weight:900;color:#ffd18d;border:1px solid #9c7650;border-radius:8px;padding:9px 12px;background:#3b2b1b}
-</style><script type="module" src="https://widgets.tradingview-widget.com/w/en/tv-advanced-chart.js"></script></head><body><div class="wrap"><header class="terminal-header"><div class="terminal-brand"><h1>LUXALGO PRO · LIVE FUTURES TERMINAL</h1><p>Gate.io USDT Perpetual · LuxAlgo 5m / 15m · Coded by · SUBHASISH</p>
+</style></head><body><div class="wrap"><header class="terminal-header"><div class="terminal-brand"><h1>LUXALGO PRO · LIVE FUTURES TERMINAL</h1><p>Gate.io USDT Perpetual · LuxAlgo 5m / 15m · Coded by · SUBHASISH</p>
 <div class="profile-greeting"><div class="profile-avatar" id="avatarDisplay"><span>SD</span></div>
 <div><div class="profile-name">Hello SUBHASISH</div><label class="profile-change" for="profileImageInput" tabindex="0">Change Photo</label><input type="file" id="profileImageInput" accept="image/png,image/jpeg,image/webp" hidden></div></div></div><section class="news-slot" aria-label="Latest crypto news"><div class="news-heading"><span>● CRYPTO NEWS</span><span style="display:flex;align-items:center;gap:7px"><span id="newsFeedStatus">Loading headlines…</span><button type="button" id="newsRefresh" aria-label="Refresh crypto news" title="Refresh crypto news">↻</button></span></div><div class="news-viewport" id="newsViewport"><div class="news-stack" id="newsStack"><span class="news-empty">Retrieving publisher headlines…</span></div></div></section><div class="profile-right">
 <form method="post" action="/logout"><input type="hidden" name="csrf_token" value="{{ csrf_token|e }}"><button class="glossy-logout" type="submit">⇥ LOGOUT</button></form><span id="signalLiveSync" role="status" aria-live="polite" style="font-size:11px;color:#9de7ff">● Signals auto-sync: connecting…</span></div></header>
@@ -708,14 +708,7 @@ header.terminal-header{border-radius:17px!important}
 <div class="metric"><small>WIN RATE</small><strong>—</strong><span>Requires completed trades</span></div>
 <div class="metric"><small>DATABASE SIGNALS</small><strong>{{ count }}</strong><span>Webhook: {{ 'configured' if configured else 'not configured' }}</span></div>
 </div><section class="panel position-panel"><div class="panel-heading"><h2>OPEN POSITIONS <span class="gloss-cyan">· GATE.IO FUTURES</span></h2><button class="btn btn-danger gloss-safe-disabled" disabled title="Verified exchange positions and safe close-order execution are not connected">MANUALLY CLOSE SELECTED POSITION · DISABLED</button><button class="btn gloss-action" id="positionRefresh" type="button">↻ Refresh Positions</button></div>
-<div id="gatePositionsBody" class="position-card-list" aria-live="polite"><p class="light">Checking read-only Gate.io open positions…</p></div><p id="gatePositionsUpdated" class="light">Read-only Gate.io account data; manual close disabled. SL/TP order status is not synchronized.</p></section><section class="panel"><h2>IN-TERMINAL MARKET CHART</h2>
-<p class="light">Select a signal above, or enter a Gate.io USDT perpetual pair. Charts use public market candles only (not position/fill data).</p>
-<div class="controls"><label>Trading pair <input id="chartSymbol" value="BTCUSDT" maxlength="29" autocomplete="off"></label><label>Chart timeframe<select id="chartTf"><option value="15m">15 minutes</option><option value="5m">5 minutes</option></select></label><label>Chart refresh <button class="btn gloss-action" id="chartRefresh" type="button">Refresh Chart</button></label></div>
-<div class="chart-toolbar" style="display:flex;flex-wrap:wrap;gap:8px;margin:10px 0;align-items:center"><button class="btn" id="zoomIn" type="button">＋ Zoom In</button><button class="btn" id="zoomOut" type="button">－ Zoom Out</button><button class="btn" id="resetChart" type="button">Reset View</button><button class="btn" id="olderChart" type="button">Load Older Candles</button><button class="btn" id="fullChart" type="button">⛶ Fullscreen</button><button class="btn" id="openTradingView" type="button">Open in TradingView ↗</button><span class="light" style="font-size:12px">Wheel: zoom · drag: pan · scroll back for history</span></div>
-<div id="chartShell" style="position:relative;background:#0b1a2b;border:1px solid #29415e;border-radius:8px;overflow:hidden"><div id="tradeChart" style="height:410px;width:100%;min-height:320px" role="img" aria-label="Interactive candlestick market chart"></div></div>
-<p class="light" id="chartStatus" aria-live="polite">Select a token to load its market chart.</p>
-</section>
-<div class="market-grid">
+<div id="gatePositionsBody" class="position-card-list" aria-live="polite"><p class="light">Checking read-only Gate.io open positions…</p></div><p id="gatePositionsUpdated" class="light">Read-only Gate.io account data; manual close disabled. SL/TP order status is not synchronized.</p></section><div class="market-grid">
 <section class="panel market-panel"><div class="panel-heading"><h2>GATE.IO FUTURES RADAR <span class="gloss-gold">● MARKET LIVE</span></h2><button class="btn gloss-action" id="radarRefresh" type="button">↻ Refresh</button></div>
 <p class="light">All available Gate.io USDT perpetual tickers · 24h rankings · public market data.</p>
 <div class="market-tabs" id="radarTabs"><button class="btn selected" data-radar="gainers">TOP GAINERS</button><button class="btn" data-radar="losers">TOP LOSERS</button><button class="btn" data-radar="volume">TOP VOLUME</button><button class="btn" data-radar="all">ALL PAIRS</button></div>
@@ -749,7 +742,7 @@ header.terminal-header{border-radius:17px!important}
   let x=data.scan||{};status.textContent='5m '+(x['5m']?.scanned||0)+'/'+(x['5m']?.total||0)+' · 15m '+(x['15m']?.scanned||0)+'/'+(x['15m']?.total||0)+(x.running?' · scanning progressively':' · current snapshot')+' · '+(data.updated_at?new Date(data.updated_at*1000).toLocaleTimeString('en-IN',{timeZone:'Asia/Kolkata',hour12:true})+' IST':'pending');
   risk.textContent=data.equity_usdt==null?'Risk sizing unavailable (equity not verified)':'Verified equity: '+data.equity_usdt.toFixed(2)+' USDT · 3% budget '+data.risk_budget_usdt.toFixed(2)+' USDT';
   body.replaceChildren();if(!data.candidates?.length){const tr=body.insertRow();cell(tr,'NO TRADE · '+(x.running?'Scans are still running':'No verified opportunities meeting screening conditions'), 'adv-blocked').colSpan=10;}
-  for(const p of (data.candidates||[])){const tr=body.insertRow();cell(tr,p.symbol);cell(tr,p.side,p.side==='LONG'?'adv-signal long':'adv-signal short');cell(tr,p.timeframe);cell(tr,p.confirmation);cell(tr,p.entry==null?'—':Number(p.entry).toPrecision(7));cell(tr,p.sl1==null?'—':Number(p.sl1).toPrecision(7));cell(tr,p.tp1==null?'—':Number(p.tp1).toPrecision(7));cell(tr,p.rr);cell(tr,p.size_hint);cell(tr,p.status+' · '+(p.level_source||'UNAVAILABLE')+' · '+p.reason,'adv-reason');}
+  for(const p of (data.candidates||[])){const tr=body.insertRow();{const td=cell(tr,p.symbol+' ↗');td.className='pairlink';td.style.cursor='pointer';td.title='Open chart in TradingView (new tab)';td.addEventListener('click',()=>window.openGateTradingView(p.symbol));}cell(tr,p.side,p.side==='LONG'?'adv-signal long':'adv-signal short');cell(tr,p.timeframe);cell(tr,p.confirmation);cell(tr,p.entry==null?'—':Number(p.entry).toPrecision(7));cell(tr,p.sl1==null?'—':Number(p.sl1).toPrecision(7));cell(tr,p.tp1==null?'—':Number(p.tp1).toPrecision(7));cell(tr,p.rr);cell(tr,p.size_hint);cell(tr,p.status+' · '+(p.level_source||'UNAVAILABLE')+' · '+p.reason,'adv-reason');}
  }catch(e){status.textContent='Advanced scan unavailable: '+e.message;body.replaceChildren();const tr=body.insertRow();cell(tr,'NO TRADE · market confirmation unavailable').colSpan=10;}
  finally{busy=false;btn.disabled=false;}}
  btn.addEventListener('click',()=>refresh(true));refresh();setInterval(()=>{if(!document.hidden)refresh();},20000);
@@ -1102,93 +1095,12 @@ const entry=document.getElementById('entry'), sl=document.getElementById('sl'), 
 // Removed on-demand signal panel controls and manual dry-run preview UI.
 // Webhook receipts, paper simulation, and backend safety checks remain intact.
 
-(function(){
-'use strict';
-const container=document.getElementById('tradeChart'),shell=document.getElementById('chartShell');
-const symbol=document.getElementById('chartSymbol'),tf=document.getElementById('chartTf'),status=document.getElementById('chartStatus'),refresh=document.getElementById('chartRefresh');
-let chart=null, series=null, bars=[],loading=false,olderLoading=false,loadedPair='',loadedTf='',pending=0;
-const validPair=()=>symbol.value.trim().toUpperCase().replaceAll(' ','');
-// Choose display precision from market price magnitude, not the default 2 decimals.
-// This controls axis/crosshair labels only; it does NOT assert the exchange tick size.
-function chartPriceFormat(candles){
- const prices=candles.flatMap(b=>[b.open,b.high,b.low,b.close]).filter(p=>Number.isFinite(p)&&p>0);
- if(!prices.length)return {type:'price',precision:2,minMove:0.01};
- const minPrice=Math.min(...prices);
- let precision=minPrice>=1?2:minPrice>=0.01?4:minPrice>=0.0001?6:minPrice>=0.000001?8:minPrice>=0.00000001?10:minPrice>=0.0000000001?12:14;
- return {type:'price',precision,minMove:Math.pow(10,-precision)};
+function openGateTradingView(symbol){
+ const pair=String(symbol||'').toUpperCase().replace('_','').trim();
+ if(!/^[A-Z0-9]{2,25}USDT$/.test(pair))return;
+ window.open('https://www.tradingview.com/chart/?symbol='+encodeURIComponent('GATEIO:'+pair+'.P'),'_blank','noopener,noreferrer');
 }
-function applyChartPriceFormat(candles){
- if(series&&candles.length)series.applyOptions({priceFormat:chartPriceFormat(candles)});
-}
-function initialize(){
- if(chart)return true;
- if(typeof LightweightCharts==='undefined'){
-  status.textContent='Chart library did not load. Check network or browser content blockers, then refresh the page.';return false;
- }
- chart=LightweightCharts.createChart(container,{autoSize:true,layout:{background:{type:'solid',color:'#0b1a2b'},textColor:'#b8d5ed',attributionLogo:true},grid:{vertLines:{color:'#193047'},horzLines:{color:'#193047'}},rightPriceScale:{borderColor:'#365471'},timeScale:{borderColor:'#365471',timeVisible:true,secondsVisible:false,rightOffset:5},crosshair:{mode:LightweightCharts.CrosshairMode.Normal},handleScroll:{mouseWheel:true,pressedMouseMove:true,horzTouchDrag:true,vertTouchDrag:true},handleScale:{mouseWheel:true,pinch:true,axisPressedMouseMove:true}});
- series=chart.addSeries(LightweightCharts.CandlestickSeries,{upColor:'#3fe6ad',downColor:'#ef6983',borderVisible:false,wickUpColor:'#3fe6ad',wickDownColor:'#ef6983'});
- return true;
-}
-async function readCandles(before){
- const q=new URLSearchParams({symbol:validPair(),tf:tf.value});if(before)q.set('before',String(before));
- const r=await fetch('/terminal/chart?'+q,{cache:'no-store'}),d=await r.json();
- if(!r.ok)throw Error(d.error||'Market data unavailable');
- return (d.candles||[]).map(b=>({time:b.t,open:b.o,high:b.h,low:b.l,close:b.c})).sort((a,b)=>a.time-b.time);
-}
-async function loadChart(){
- const pair=validPair();if(!/^[A-Z0-9]{3,25}USDT$/.test(pair)){status.textContent='Enter a valid USDT pair, such as BTCUSDT';return;}
- if(!initialize())return;
- if(loading)return;
- const ticket=++pending;loading=true;refresh.disabled=true;
- const same=(loadedPair===pair&&loadedTf===tf.value);
- status.textContent='Loading '+pair+' · '+tf.value+' candles…';
- try{
-  const batch=await readCandles();if(!batch.length)throw Error('No completed candles');
-  if(ticket!==pending)return;
-  if(!same){bars=batch;loadedPair=pair;loadedTf=tf.value;applyChartPriceFormat(bars);series.setData(bars);chart.timeScale().fitContent();}
-  else{
-   const range=chart.timeScale().getVisibleLogicalRange();
-   bars=Array.from(new Map([...bars,...batch].map(b=>[b.time,b])).values()).sort((a,b)=>a.time-b.time);
-   applyChartPriceFormat(bars);
-   series.setData(bars);
-   if(range)chart.timeScale().setVisibleLogicalRange(range);
-  }
-  status.textContent=pair+' · '+tf.value+' · '+bars.length+' historical completed candles · '+new Date().toLocaleTimeString('en-IN',{timeZone:'Asia/Kolkata',hour12:true})+' IST'+' · Wheel to zoom, drag to pan. Read-only market chart.';
- }catch(e){status.textContent='Chart unavailable: '+e.message;}finally{loading=false;refresh.disabled=false;}
-}
-async function loadOlder(){
- if(olderLoading||!bars.length||!initialize())return;
- olderLoading=true;document.getElementById('olderChart').disabled=true;
- const pair=validPair(),oldest=bars[0].time,range=chart.timeScale().getVisibleLogicalRange();
- try{
-  const batch=await readCandles(oldest);
-  if(pair!==loadedPair||tf.value!==loadedTf)return;
-  const earlier=batch.filter(b=>b.time<oldest);if(!earlier.length){status.textContent='No older candles were returned for this contract.';return;}
-  bars=Array.from(new Map([...earlier,...bars].map(b=>[b.time,b])).values()).sort((a,b)=>a.time-b.time);
-  applyChartPriceFormat(bars);
-  series.setData(bars);
-  if(range)chart.timeScale().setVisibleLogicalRange({from:range.from+earlier.length,to:range.to+earlier.length});
-  status.textContent='Loaded '+earlier.length+' older candles · '+bars.length+' total · drag to browse history.';
- }catch(e){status.textContent='Historical data unavailable: '+e.message;}finally{olderLoading=false;document.getElementById('olderChart').disabled=false;}
-}
-refresh.addEventListener('click',loadChart);tf.addEventListener('change',loadChart);symbol.addEventListener('change',loadChart);
-document.getElementById('zoomIn').addEventListener('click',()=>{if(initialize())chart.timeScale().setBarSpacing(Math.min(55,chart.timeScale().options().barSpacing*1.35));});
-document.getElementById('zoomOut').addEventListener('click',()=>{if(initialize())chart.timeScale().setBarSpacing(Math.max(2,chart.timeScale().options().barSpacing/1.35));});
-document.getElementById('resetChart').addEventListener('click',()=>{if(initialize())chart.timeScale().fitContent();});
-document.getElementById('olderChart').addEventListener('click',loadOlder);
-document.getElementById('fullChart').addEventListener('click',async()=>{try{if(document.fullscreenElement)await document.exitFullscreen();else await shell.requestFullscreen();}catch(e){status.textContent='Fullscreen blocked by browser: '+e.message;}});
-document.getElementById('openTradingView').addEventListener('click',()=>{
- const pair=validPair();if(!/^[A-Z0-9]{3,25}USDT$/.test(pair))return;
- // TradingView account workspace opens separately: indicator availability is account-dependent.
- const tv='https://www.tradingview.com/chart/?symbol='+encodeURIComponent('GATEIO:'+pair+'.P');
- window.open(tv,'_blank','noopener,noreferrer');
-});
-window.loadChart=loadChart;
-// Defer initialization until the external TradingView Lightweight Charts script has loaded.
-function start(){if(typeof LightweightCharts==='undefined'){status.textContent='Loading interactive chart library…';setTimeout(start,400);return;}loadChart();}
-start();
-setInterval(()=>{if(!document.hidden)loadChart();},30000);
-})();
+window.openGateTradingView=openGateTradingView;;
 
 
 
@@ -1248,9 +1160,7 @@ function renderPositions(positions){
   const actions=element('div','position-card-actions');
   const chart=element('button','btn position-chart-action','View Chart');chart.type='button';
   chart.addEventListener('click',()=>{
-   document.getElementById('chartSymbol').value=p.contract.replace('_','');
-   if(typeof window.loadChart==='function')window.loadChart();
-   document.getElementById('chartShell').scrollIntoView({behavior:'smooth',block:'center'});
+   window.openGateTradingView(p.contract);
   });actions.append(chart);
   for(const name of ['Set TP/SL','Reverse','Market Close','Close Position']){
    const action=element('button','btn btn-danger',name+' · LOCKED');action.type='button';action.disabled=true;
@@ -1342,7 +1252,7 @@ let tickerData=[],radarMode='gainers',scanMode='bullish',scanData=[],scanTf='15m
 const fmtPrice=n=>Number(n).toLocaleString(undefined,{maximumSignificantDigits:7});
 const fmtVol=n=>n>=1e9?(n/1e9).toFixed(2)+'B':n>=1e6?(n/1e6).toFixed(2)+'M':n>=1e3?(n/1e3).toFixed(1)+'K':n.toFixed(0);
 function addCell(tr,value,className){const td=document.createElement('td');td.textContent=value;if(className)td.className=className;tr.appendChild(td);return td;}
-function addPair(tr,sym,tf){const td=tr.insertCell(),btn=document.createElement('button');btn.className='pairlink';btn.textContent=sym.replace('_','/');btn.addEventListener('click',()=>{document.getElementById('chartSymbol').value=sym.replace('_','');document.getElementById('chartTf').value=tf;window.loadChart();document.getElementById('chartShell').scrollIntoView({behavior:'smooth',block:'center'});});td.appendChild(btn);}
+function addPair(tr,sym,tf){const td=tr.insertCell(),link=document.createElement('a');link.className='pairlink';link.textContent=sym.replace('_','/')+' ↗';const pair=sym.replace('_','').toUpperCase();link.href='https://www.tradingview.com/chart/?symbol='+encodeURIComponent('GATEIO:'+pair+'.P');link.target='_blank';link.rel='noopener noreferrer';link.title='Open '+pair+' perpetual chart in TradingView (new tab)';td.appendChild(link);}
 function renderRadar(){let list=tickerData.slice();const q=document.getElementById('radarSearch').value.trim().toUpperCase();if(q)list=list.filter(x=>x.contract.includes(q));list.sort((a,b)=>radarMode==='gainers'?b.change-a.change:radarMode==='losers'?a.change-b.change:radarMode==='volume'?b.volume-a.volume:a.contract.localeCompare(b.contract));const lim=document.getElementById('radarLimit').value;if(lim!=='all')list=list.slice(0,Number(lim));radarBody.replaceChildren();for(const x of list){const tr=document.createElement('tr');addPair(tr,x.contract,document.getElementById('chartTf').value);addCell(tr,fmtPrice(x.last));addCell(tr,(x.change>0?'+':'')+x.change.toFixed(2)+'%',x.change>=0?'positive':'negative');addCell(tr,fmtVol(x.volume));radarBody.appendChild(tr);}if(!list.length){const tr=radarBody.insertRow();addCell(tr,'No pairs match').colSpan=4;}}
 async function loadRadar(){const b=document.getElementById('radarRefresh');b.disabled=true;radarStatus.textContent='Updating public Gate.io tickers…';try{const r=await fetch('/terminal/radar',{cache:'no-store'}),d=await r.json();if(!r.ok)throw Error(d.error||'Radar error');tickerData=d.results;radarStatus.textContent=d.total+' USDT perpetual pairs · updated '+new Date(d.generated_at*1000).toLocaleTimeString('en-IN',{timeZone:'Asia/Kolkata',hour12:true})+' IST'+' · refresh every 60s';renderRadar();}catch(e){radarStatus.textContent='Radar unavailable: '+e.message;}finally{b.disabled=false}}
 function renderScanner(){let list=scanData.filter(x=>scanMode==='all'||x.bias===scanMode);const q=document.getElementById('scannerSearch').value.trim().toUpperCase();if(q)list=list.filter(x=>x.contract.includes(q));list.sort((a,b)=>Math.abs(b.score)-Math.abs(a.score)||a.contract.localeCompare(b.contract));scanBody.replaceChildren();for(const x of list.slice(0,150)){const tr=document.createElement('tr');addPair(tr,x.contract,scanTf);addCell(tr,x.bias.toUpperCase(),x.bias==='bullish'?'positive':x.bias==='bearish'?'negative':'');addCell(tr,String(x.score));addCell(tr,x.rsi.toFixed(1));addCell(tr,x.volume_ratio.toFixed(2)+'x');scanBody.appendChild(tr);}if(!list.length){const tr=scanBody.insertRow();addCell(tr,'No matching scans yet').colSpan=5;}}
