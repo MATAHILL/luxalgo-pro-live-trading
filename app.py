@@ -2126,6 +2126,43 @@ def gate_check():
 
 
 
+@app.get('/terminal/gate-testnet-check')
+def terminal_gate_testnet_check():
+    """Private authenticated Testnet readback; NO real or simulated order writes."""
+    if not _terminal_permitted():
+        return _terminal_guard()
+    key=os.getenv('GATE_TESTNET_API_KEY','').strip()
+    secret=os.getenv('GATE_TESTNET_API_SECRET','').strip()
+    if not key or not secret:
+        return jsonify(testnet_connected=False,reason='TESTNET_CREDENTIALS_MISSING',
+                       live_trading=False,orders_enabled=False),503
+    path='/api/v4/futures/usdt/accounts'
+    stamp=str(int(time.time()))
+    digest=hashlib.sha512(b'').hexdigest()
+    signing='\n'.join(('GET',path,'',digest,stamp))
+    signature=hmac.new(secret.encode('utf-8'),signing.encode('utf-8'),hashlib.sha512).hexdigest()
+    req=Request('https://api-testnet.gateapi.io'+path,method='GET',headers={
+        'KEY':key,'Timestamp':stamp,'SIGN':signature,
+        'Accept':'application/json','User-Agent':'LuxAlgo-PRO-Testnet-Checker/1.0'})
+    try:
+        with urlopen(req,timeout=10) as res:
+            account=json.loads(res.read(65536))
+        if not isinstance(account,dict) or account.get('currency')!='USDT':
+            return jsonify(testnet_connected=False,reason='UNEXPECTED_TESTNET_RESPONSE',
+                           live_trading=False,orders_enabled=False),502
+        result=jsonify(testnet_connected=True,account_currency='USDT',
+                       environment='GATE_FUTURES_TESTNET',read_only=True,
+                       live_trading=False,orders_enabled=False)
+        result.headers['Cache-Control']='no-store'
+        return result
+    except HTTPError as exc:
+        return jsonify(testnet_connected=False,reason='TESTNET_HTTP_REJECTED',
+                       http_status=exc.code,live_trading=False,orders_enabled=False),502
+    except (URLError,TimeoutError,OSError,ValueError,TypeError):
+        return jsonify(testnet_connected=False,reason='TESTNET_READBACK_FAILED',
+                       live_trading=False,orders_enabled=False),502
+
+
 def _gate_read_only_positions():
     """Authenticated read-only GET; return only sanitized open position fields."""
     key = os.getenv('GATE_API_KEY', '').strip()
