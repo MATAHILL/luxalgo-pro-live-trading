@@ -2104,23 +2104,8 @@ def webhook():
     except (psycopg.Error,RuntimeError,OSError):
         app.logger.exception('Cannot durably record incoming LuxAlgo signal')
         return jsonify(error='Signal not stored; retry later',orders_placed=0),503
-    # One-trade handoff: durable first-candidate reservation ONLY. Not an order.
-    # Preserves existing webhook receipt behavior and does not call exchange APIs.
-    one_trade_candidate = 'NOT_ELIGIBLE'
-    if level_status == 'VALID' and not duplicate and tf == '15m':
-        try:
-            with _db_connect() as con:
-                _ensure_schema(con)
-                with con.cursor() as cur:
-                    cur.execute("""INSERT INTO luxalgo_one_trade_candidate
-                        (singleton_id,event_id,symbol,side,timeframe,entry_price,stop_loss,take_profit,status)
-                        VALUES (1,%s,%s,%s,%s,%s,%s,%s,'WAITING_FOR_VERIFIED_EXECUTION')
-                        ON CONFLICT (singleton_id) DO NOTHING RETURNING event_id""",
-                        (event_id,symbol,allowed[side],tf,entry_price,stop_loss,take_profit))
-                    one_trade_candidate = ('RESERVED_NO_ORDER' if cur.fetchone() else 'ALREADY_RESERVED')
-        except (psycopg.Error, RuntimeError, OSError):
-            app.logger.warning('One-trade candidate reservation failed; no execution permitted')
-            one_trade_candidate = 'UNAVAILABLE_NO_ORDER'
+    # Legacy single-candidate reservation retired; five-position handoff below is authoritative.
+    one_trade_candidate = 'LEGACY_RETIRED'
     execution_handoff = (_record_execution_handoff(event_id, symbol, allowed[side], tf, parsed)
                          if level_status == 'VALID' and not duplicate else
                          {'state':'NOT_ELIGIBLE','orders_placed':0})
@@ -5237,12 +5222,27 @@ CREATE UNIQUE INDEX IF NOT EXISTS luxalgo_execution_handoff_one_candidate
 """
 
 
-def _record_execution_handoff(event_id, symbol, side, tf, levels):
-    """Reserve at most ONE valid 15m execution candidate in PostgreSQL.
+# Five-position signal reservations, separate from the legacy single-candidate table.
+# Reservations DO NOT authorize real orders; a separate protected executor is required.
+_EXECUTION_HANDOFF_FIVE_SCHEMA = """
+CREATE TABLE IF NOT EXISTS luxalgo_execution_handoff_five (
+  event_id TEXT PRIMARY KEY,
+  symbol TEXT NOT NULL,
+  side TEXT NOT NULL CHECK(side IN ('LONG','SHORT')),
+  timeframe TEXT NOT NULL CHECK(timeframe='15m'),
+  entry_price NUMERIC NOT NULL CHECK(entry_price>0),
+  stop_loss NUMERIC NOT NULL CHECK(stop_loss>0),
+  take_profit NUMERIC NOT NULL CHECK(take_profit>0),
+  state TEXT NOT NULL DEFAULT 'AWAITING_SAFE_EXECUTOR'
+    CHECK(state IN ('AWAITING_SAFE_EXECUTOR','EXECUTION_REVIEW_REQUIRED','CLOSED','REJECTED')),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS luxalgo_execution_handoff_five_open
+  ON luxalgo_execution_handoff_five(state, created_at);
+"""
 
-    No orders are placed or accepted; duplicate receipts cannot make another
-    candidate. On database failure this always fails closed.
-    """
+def _record_execution_handoff(event_id, symbol, side, tf, levels):
+    """Atomically reserve up to five unique 15m signals. NEVER dispatch orders."""
     if tf != '15m' or side not in ('LONG', 'SHORT') or not isinstance(levels, (list, tuple)) or len(levels)!=3:
         return {'state':'NOT_ELIGIBLE','orders_placed':0}
     try:
@@ -5252,19 +5252,30 @@ def _record_execution_handoff(event_id, symbol, side, tf, levels):
         if not ((side=='LONG' and sl<entry<tp) or (side=='SHORT' and tp<entry<sl)):
             return {'state':'INVALID_LEVELS','orders_placed':0}
         with _db_connect() as conn:
-            # An atomic single row and unique index guard against two workers.
-            conn.execute(_EXECUTION_HANDOFF_SCHEMA)
+            conn.execute(_EXECUTION_HANDOFF_FIVE_SCHEMA)
             with conn.cursor() as cur:
-                cur.execute("""INSERT INTO luxalgo_execution_handoff
+                # Serialize capacity checks across concurrent Flask workers.
+                cur.execute('SELECT pg_advisory_xact_lock(%s)', (65913045,))
+                cur.execute('SELECT state FROM luxalgo_execution_handoff_five WHERE event_id=%s', (event_id,))
+                if cur.fetchone():
+                    return {'state':'ALREADY_RESERVED','orders_placed':0}
+                cur.execute("""SELECT COUNT(*) AS n FROM luxalgo_execution_handoff_five
+                    WHERE state IN ('AWAITING_SAFE_EXECUTOR','EXECUTION_REVIEW_REQUIRED')""")
+                if cur.fetchone()['n'] >= 5:
+                    return {'state':'FIVE_POSITION_RESERVATION_LIMIT','orders_placed':0}
+                # Avoid reserving a second signal for the same contract even in opposite directions.
+                cur.execute("""SELECT 1 FROM luxalgo_execution_handoff_five
+                    WHERE symbol=%s AND state IN ('AWAITING_SAFE_EXECUTOR','EXECUTION_REVIEW_REQUIRED')
+                    LIMIT 1""", (symbol,))
+                if cur.fetchone():
+                    return {'state':'SYMBOL_ALREADY_RESERVED','orders_placed':0}
+                cur.execute("""INSERT INTO luxalgo_execution_handoff_five
                     (event_id,symbol,side,timeframe,entry_price,stop_loss,take_profit,state)
-                    VALUES (%s,%s,%s,%s,%s,%s,%s,'AWAITING_SAFE_EXECUTOR')
-                    ON CONFLICT DO NOTHING RETURNING event_id""",
+                    VALUES (%s,%s,%s,%s,%s,%s,%s,'AWAITING_SAFE_EXECUTOR')""",
                     (event_id,symbol,side,tf,entry,sl,tp))
-                inserted = cur.fetchone() is not None
-        return {'state':'RESERVED_EXECUTION_NOT_ENABLED' if inserted else 'ALREADY_RESERVED',
-                'orders_placed':0}
-    except (psycopg.Error, RuntimeError, OSError):
-        app.logger.warning('Execution handoff database unavailable; live execution remains locked')
+        return {'state':'RESERVED_EXECUTION_NOT_ENABLED','orders_placed':0}
+    except (psycopg.Error,RuntimeError,OSError,InvalidOperation,ValueError,TypeError):
+        app.logger.warning('Five-position handoff failed closed; no exchange order permitted')
         return {'state':'DB_UNAVAILABLE_NO_ORDER','orders_placed':0}
 
 
