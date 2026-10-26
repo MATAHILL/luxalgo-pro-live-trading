@@ -2129,8 +2129,12 @@ def webhook():
         else {'state': ('BLOCKED_MISSING_STABLE_EVENT_ID'
                         if level_status == 'VALID' and tf == '15m'
                         else 'NOT_ELIGIBLE'), 'orders_placed': 0})
+    # A repeated TradingView event may already have a durable reservation.
+    # Display its actual coordinator status instead of misreporting it as
+    # NOT_ELIGIBLE. This is read-only and never re-submits an order.
     execution_coordinator = (_five_position_execution_coordinator(execution_id)
-        if execution_handoff.get('state') == 'RESERVED_EXECUTION_NOT_ENABLED'
+        if execution_handoff.get('state') in
+           ('RESERVED_EXECUTION_NOT_ENABLED','ALREADY_RESERVED')
         else {'state':'NOT_ELIGIBLE','orders_placed':0})
     return jsonify(status='signal_received', mode='SIGNAL_ONLY', symbol=symbol,
                    side=allowed[side], timeframe=tf, duplicate_in_candle=duplicate,
