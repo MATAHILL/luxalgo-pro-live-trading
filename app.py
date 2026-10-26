@@ -133,6 +133,10 @@ CREATE TABLE IF NOT EXISTS luxalgo_hidden_signal_rows (
  event_id TEXT PRIMARY KEY,
  hidden_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+CREATE TABLE IF NOT EXISTS luxalgo_signal_order_types (
+ event_id TEXT PRIMARY KEY,
+ order_type TEXT NOT NULL CHECK(order_type IN ('MARKET','LIMIT'))
+);
 CREATE TABLE IF NOT EXISTS luxalgo_signal_levels (
  event_id TEXT PRIMARY KEY,
  checked_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -714,9 +718,9 @@ header.terminal-header{border-radius:17px!important}
 <div id="gatePositionsBody" class="position-card-list" aria-live="polite"><p class="light">Checking read-only Gate.io open positions…</p></div><p id="gatePositionsUpdated" class="light">Read-only Gate.io account data; manual close disabled. SL/TP order status is not synchronized.</p></section>
 <details id="incomingLuxPanel" class="panel" open style="width:100%;margin:14px 0;max-width:none">
 <summary style="cursor:pointer;font-size:16px;font-weight:850;padding:2px 0 12px">INCOMING LUXALGO ORDERS · WEBHOOK SIGNALS <span class="light" style="font-size:12px">— Click to minimize / maximize</span></summary>
-<p class="light">Received signals and paper processing only. Not Gate.io exchange orders. Market/Limit is NOT SPECIFIED unless an explicit order strategy is implemented.</p>
+<p class="light">Received signals and paper processing only. Not Gate.io exchange orders. Market/Limit is shown only when explicitly supplied in the webhook. No exchange orders are submitted.</p>
 <div class="panel-heading"><span id="incomingLuxInfo" class="light" role="status">Loading latest received signals…</span><button class="btn gloss-action" id="incomingLuxRefresh" type="button">↻ Refresh Signals</button></div>
-<div class="tablewrap" style="width:100%;overflow-x:auto"><table style="min-width:1000px;width:100%"><thead><tr><th>RECEIVED (IST)</th><th>COIN</th><th>SIGNAL</th><th>TF</th><th>ORDER TYPE</th><th>ENTRY</th><th>STOP LOSS</th><th>TAKE PROFIT</th><th>PROCESS STATUS</th><th>DETAIL</th></tr></thead><tbody id="incomingLuxRows"><tr><td colspan="10">Loading…</td></tr></tbody></table></div>
+<div class="tablewrap" style="width:100%;overflow-x:auto"><table style="min-width:1000px;width:100%"><thead><tr><th>S/N</th><th>RECEIVED (IST)</th><th>COIN</th><th>SIGNAL</th><th>TF</th><th>ORDER TYPE</th><th>ENTRY</th><th>STOP LOSS</th><th>TAKE PROFIT</th><th>PROCESS STATUS</th><th>DETAIL</th></tr></thead><tbody id="incomingLuxRows"><tr><td colspan="11">Loading…</td></tr></tbody></table></div>
 </details><div class="market-grid">
 <section class="panel market-panel"><div class="panel-heading"><h2>GATE.IO FUTURES RADAR <span class="gloss-gold">● MARKET LIVE</span></h2><button class="btn gloss-action" id="radarRefresh" type="button">↻ Refresh</button></div>
 <p class="light">All available Gate.io USDT perpetual tickers · 24h rankings · public market data.</p>
@@ -1519,13 +1523,13 @@ draw(true);
      const res=await fetch('/terminal/incoming-signals',{cache:'no-store'}), data=await res.json();
      if(!res.ok)throw Error(data.error||'Monitor unavailable');
      tbody.replaceChildren();
-     for(const s of data.signals){
+     for(const [index,s] of data.signals.entries()){
        const tr=document.createElement('tr');
        let tm='—';try{tm=new Date(s.time).toLocaleString('en-IN',{timeZone:'Asia/Kolkata'});}catch(e){}
-       [tm,s.symbol,s.side,s.timeframe,s.order_type,s.entry,s.stop_loss,s.take_profit,s.state,s.reason].forEach(v=>cell(tr,v));
+       [index+1,tm,s.symbol,s.side,s.timeframe,s.order_type,s.entry,s.stop_loss,s.take_profit,s.state,s.reason].forEach(v=>cell(tr,v));
        tbody.appendChild(tr);
      }
-     if(!data.signals.length){const tr=document.createElement('tr'),td=document.createElement('td');td.colSpan=10;td.textContent='No stored incoming signals yet';tr.appendChild(td);tbody.appendChild(tr);}
+     if(!data.signals.length){const tr=document.createElement('tr'),td=document.createElement('td');td.colSpan=11;td.textContent='No stored incoming signals yet';tr.appendChild(td);tbody.appendChild(tr);}
      info.textContent=data.count+' stored signals · no exchange orders submitted';
    }catch(err){info.textContent='Signal monitor unavailable: '+err.message;}
    finally{btn.disabled=false;}
@@ -2066,6 +2070,9 @@ def webhook():
         level_status='VALID';level_reason='Direction and numeric levels checked; exchange protection still unavailable'
     else:
         level_status='INVALID';level_reason='Stop loss and take profit are on the wrong sides of entry'
+    declared_order_type = str(data.get('order_type', data.get('orderType', ''))).strip().upper()
+    if declared_order_type not in ('MARKET','LIMIT'):
+        declared_order_type = None
     record = {'dt':received_at,'symbol':symbol,'side':allowed[side],'tf':tf}
     # This event key is based on RECEIVE time, not a verified candle ID.
     # For live orders, require a TradingView event/bar identifier and
@@ -2079,6 +2086,10 @@ def webhook():
             con.execute("""INSERT INTO luxalgo_signal_levels(event_id,status,entry_price,stop_loss,take_profit,reason)
                 VALUES (%s,%s,%s,%s,%s,%s) ON CONFLICT (event_id) DO NOTHING""",
                 (event_id,level_status,entry_price,stop_loss,take_profit,level_reason))
+            if declared_order_type:
+                con.execute('''INSERT INTO luxalgo_signal_order_types(event_id,order_type)
+                    VALUES (%s,%s) ON CONFLICT (event_id) DO NOTHING''',
+                    (event_id,declared_order_type))
     except (psycopg.Error,RuntimeError,OSError):
         app.logger.exception('Cannot durably record incoming LuxAlgo signal')
         return jsonify(error='Signal not stored; retry later',orders_placed=0),503
@@ -4222,12 +4233,13 @@ def terminal_incoming_signals():
                 cur.execute('''SELECT i.event_id,i.received_at,i.symbol,i.side,i.timeframe,
                     l.status AS level_status,l.entry_price,l.stop_loss,l.take_profit,
                     q.state AS queue_state,q.note AS queue_note,
-                    s.status AS simulated_status,b.enabled AS bot_enabled
+                    s.status AS simulated_status,b.enabled AS bot_enabled,ot.order_type
                     FROM luxalgo_dry_run_intents i
                     LEFT JOIN luxalgo_signal_levels l ON l.event_id=i.event_id
                     LEFT JOIN luxalgo_auto_paper_queue q ON q.event_id=i.event_id
                     LEFT JOIN luxalgo_simulated_orders s ON s.event_id=i.event_id
                     LEFT JOIN luxalgo_bot_control b ON b.id=1
+                    LEFT JOIN luxalgo_signal_order_types ot ON ot.event_id=i.event_id
                     ORDER BY i.received_at DESC LIMIT 50''')
                 rows=cur.fetchall()
         now=datetime.now(timezone.utc)
@@ -4251,7 +4263,7 @@ def terminal_incoming_signals():
                 entry=str(r['entry_price']) if r['entry_price'] is not None else None,
                 stop_loss=str(r['stop_loss']) if r['stop_loss'] is not None else None,
                 take_profit=str(r['take_profit']) if r['take_profit'] is not None else None,
-                order_type='NOT_SPECIFIED',state=state,
+                order_type=r['order_type'] or 'NO ORDER SENT',state=state,
                 reason=r['queue_note'] or ('Paper bot disabled' if state=='BOT_OFF' else 'No exchange submission implemented' if state=='RECEIVED_NOT_EXECUTED' else 'Missing or invalid entry / SL / TP' if state=='INVALID_LEVELS' else ''),level_status=r['level_status'] or 'UNKNOWN'))
         response=jsonify(signals=signals,count=len(signals),orders_placed=0,
                          mode='WEBHOOK_MONITOR_ONLY',live_trading=False)
