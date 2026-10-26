@@ -5580,6 +5580,7 @@ def _five_position_entry_preflight(event_id):
         raise GateOrderTransportError('Client order identity mismatch')
     wire={k:v for k,v in envelope.items() if not k.startswith('_')}
     return {'state':'PREFLIGHT_VALIDATED_NO_ORDER','order_preview':wire,
+            'entry_reference':str(row['entry_price']),
             'risk_budget_usdt':sizing['risk_budget_usdt'],
             'stop_distance_risk_usdt':sizing['stop_distance_risk_usdt'],
             'positions_observed':len(positions),
@@ -5616,6 +5617,25 @@ def _five_dispatch_plan(event_id, preview):
             raise ValueError()
     except (InvalidOperation,TypeError,ValueError):
         raise GateOrderTransportError('Invalid native protection levels') from None
+    contract=payload['contract']
+    if not isinstance(contract,str) or not re.fullmatch(r'[A-Z0-9]{2,25}_USDT',contract):
+        raise GateOrderTransportError('Invalid dispatch contract')
+    if not re.fullmatch(r't-lux-[a-f0-9]{24}',payload['text']):
+        raise GateOrderTransportError('Invalid client order prefix')
+    # Stop-loss and take-profit must be ordered relative to a fresh reference
+    # price; a payload with reversed protection may not be submitted.
+    reference=preview.get('entry_reference')
+    if reference is None:
+        raise GateOrderTransportError('Missing validated entry reference')
+    try:
+        entry=Decimal(str(reference))
+        if not entry.is_finite() or entry<=0:
+            raise ValueError()
+    except (InvalidOperation,TypeError,ValueError):
+        raise GateOrderTransportError('Invalid dispatch entry reference') from None
+    if not ((size>0 and stop<entry<take) or
+            (size<0 and take<entry<stop)):
+        raise GateOrderTransportError('Native SL/TP direction mismatch')
     return {'event_id':event_id,'client_order_text':payload['text'],
             'contract':payload['contract'],'side':'LONG' if size>0 else 'SHORT',
             'contracts':abs(size),'state':'READY_FOR_OFFLINE_REVIEW',
