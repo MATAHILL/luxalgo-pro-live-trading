@@ -689,11 +689,8 @@ header.terminal-header{border-radius:17px!important}
 <div class="profile-greeting"><div class="profile-avatar" id="avatarDisplay"><span>SD</span></div>
 <div><div class="profile-name">Hello SUBHASISH</div><label class="profile-change" for="profileImageInput" tabindex="0">Change Photo</label><input type="file" id="profileImageInput" accept="image/png,image/jpeg,image/webp" hidden></div></div></div><section class="news-slot" aria-label="Latest crypto news"><div class="news-heading"><span>● CRYPTO NEWS</span><span style="display:flex;align-items:center;gap:7px"><span id="newsFeedStatus">Loading headlines…</span><button type="button" id="newsRefresh" aria-label="Refresh crypto news" title="Refresh crypto news">↻</button></span></div><div class="news-viewport" id="newsViewport"><div class="news-stack" id="newsStack"><span class="news-empty">Retrieving publisher headlines…</span></div></div></section><div class="profile-right">
 <form method="post" action="/logout"><input type="hidden" name="csrf_token" value="{{ csrf_token|e }}"><button class="glossy-logout" type="submit">⇥ LOGOUT</button></form><span id="signalLiveSync" role="status" aria-live="polite" style="font-size:11px;color:#9de7ff">● Signals auto-sync: connecting…</span></div></header>
- <section class="live-ops-banner" aria-label="Live trading execution status"><div><strong>GATE.IO FUTURES · LIVE ACCOUNT DASHBOARD</strong><p>Live exchange balances, positions and market data. Automatic real orders are not armed; SL/TP and recovery verification is pending.</p></div><span class="live-ops-state">LIVE ACCOUNT · AUTO ORDERS NOT ARMED</span></section>
- <section class="bot-control-panel" aria-label="Remote bot control">
- <div><div class="bot-status-line"><strong id="botControlLabel">BOT OFF · PAPER SIMULATION PAUSED</strong><span id="botStateIndicator" class="bot-state-indicator unknown" role="status" aria-live="polite">● CHECKING</span></div><p id="botControlDetail">New LuxAlgo signals remain logged. No live orders are possible.</p></div>
- <div class="bot-control-actions"><button class="btn" id="botTurnOn" type="button" title="Existing paper-simulation control; NOT live order execution">▶ PAPER BOT ON</button><button class="btn" id="botTurnOff" type="button" title="Existing paper-simulation control; NOT an exchange emergency halt">■ PAPER BOT OFF</button></div>
-</section>
+ <section class="live-ops-banner" aria-label="Live trading execution status"><div><strong>GATE.IO FUTURES · LIVE ACCOUNT DASHBOARD</strong><p>Live exchange balances, positions and market data. Automatic real orders are not armed; SL/TP and recovery verification is pending.</p></div><span class="live-ops-state">LIVE ACCOUNT</span></section>
+
 <details class="futures-liquidity" id="futuresLiquidityDetails">
 <summary><span>◈ FUTURES LIQUIDITY DETAILS · USDT</span><span class="liquidity-arrow" aria-hidden="true">⌄</span></summary>
 <div class="liquidity-grid">
@@ -1084,14 +1081,7 @@ header.terminal-header{border-radius:17px!important}
 })();
 
 // Remote control: persisted in PostgreSQL, never enables exchange trading.
-(function(){
- const label=document.getElementById('botControlLabel'),detail=document.getElementById('botControlDetail');
- const on=document.getElementById('botTurnOn'),off=document.getElementById('botTurnOff'),indicator=document.getElementById('botStateIndicator');
- function render(enabled){if(indicator){indicator.className='bot-state-indicator '+(enabled?'on':'off');indicator.textContent=enabled?'● BOT ON':'● BOT OFF';}on.classList.toggle('next-action',!enabled);off.classList.toggle('next-action',enabled);label.textContent=enabled?'BOT ON · AUTO PAPER SIMULATION':'BOT OFF · PAPER SIMULATION PAUSED';label.style.color=enabled?'#6cf3ba':'#ffc47c';detail.textContent=enabled?'Fresh LuxAlgo signals can create simulated intents. LIVE TRADING IS STILL OFF.':'New signals are logged but no new simulated entries are created. Existing paper history remains.';on.disabled=enabled;off.disabled=!enabled;}
- async function refresh(){try{const r=await fetch('/terminal/bot-control',{cache:'no-store'});const d=await r.json();if(!r.ok)throw Error();render(d.bot_enabled);}catch(e){render(false);if(indicator){indicator.className='bot-state-indicator unknown';indicator.textContent='● STATUS UNKNOWN · SAFE OFF';}detail.textContent='Cannot verify saved bot state: treat as OFF.';on.disabled=true;}}
- async function change(enabled){on.disabled=true;off.disabled=true;try{const r=await fetch('/terminal/bot-control',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({enabled}),cache:'no-store'});const d=await r.json();if(!r.ok)throw Error(d.error||'Update rejected');render(d.bot_enabled);}catch(e){detail.textContent='Cannot change bot state: '+e.message;await refresh();}}
- on.addEventListener('click',()=>change(true));off.addEventListener('click',()=>change(false));refresh();setInterval(()=>{if(!document.hidden)refresh();},30000);
-})();
+
 
 const entry=document.getElementById('entry'), sl=document.getElementById('sl'), tp1=document.getElementById('tp1');
 // Removed on-demand signal panel controls and manual dry-run preview UI.
