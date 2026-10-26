@@ -48,5 +48,11 @@ class FivePositionOrderBoundary(unittest.TestCase):
         self.assertIn("order['size']",src)
         self.assertIn("order.get('reduce_only') is True",src)
 
+    def test_recovery_audit_blocks_unreviewed_sixth_journal(self):
+        src=source('_five_position_recovery_audit')
+        self.assertIn('outstanding > limit',src)
+        self.assertIn('BLOCKED_UNAUDITED_EXPOSURE',src)
+        self.assertIn("'close_orders_submitted':0",src)
+
 if __name__=='__main__':
     unittest.main()
