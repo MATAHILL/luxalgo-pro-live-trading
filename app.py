@@ -5687,9 +5687,11 @@ def _five_submit_order_once(event_id):
     order_id=str(ack.get('exchange_order_id') or '')
     if not re.fullmatch(r'[1-9][0-9]{0,19}',order_id):
         raise GateOrderTransportError('ACK_UNKNOWN_DO_NOT_RETRY')
-    # An ACK is never protection evidence or fill confirmation.
+    # Confirm the returned ID, contract, client text, opening side and order
+    # state with an independently authenticated GET before changing the
+    # durable claim to ACKNOWLEDGED. A failed GET leaves DISPATCH_UNCERTAIN.
     try:
-        _five_journal_record_order_ack(event_id,order_id)
+        _five_journal_verify_exchange_order(event_id,order_id)
     except Exception:
         raise GateOrderTransportError('ACK_RECEIVED_JOURNAL_UNCERTAIN_DO_NOT_RETRY') from None
     return {'state':'ACKNOWLEDGED_UNPROTECTED',
