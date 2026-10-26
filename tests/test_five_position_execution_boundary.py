@@ -195,5 +195,12 @@ class FivePositionOrderBoundary(unittest.TestCase):
         self.assertIn("'coverage_verified':False",src)
         self.assertIn("'execution_authorized':False",src)
 
+    def test_acknowledged_signal_reconciles_without_resubmission(self):
+        src=source('_five_position_execution_coordinator')
+        self.assertIn("_five_post_ack_protection_review(event_id)",src)
+        self.assertIn("'EXISTING_ENTRY_PROTECTION_REVIEW'",src)
+        self.assertIn("'exchange_write_enabled':False",src)
+        self.assertNotIn("_five_submit_order_once(",src)
+
 if __name__=='__main__':
     unittest.main()
