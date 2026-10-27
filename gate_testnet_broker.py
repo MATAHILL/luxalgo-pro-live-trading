@@ -25,11 +25,16 @@ def _request_testnet(method, path, *, body=None, query=""):
     if method=="GET":
         permitted=(path in (ROOT+"/accounts",ROOT+"/positions",ROOT+"/price_orders")
                    or bool(re.fullmatch(r"/api/v4/futures/usdt/contracts/[A-Z0-9]{2,28}_USDT",path))
-                   or bool(re.fullmatch(r"/api/v4/futures/usdt/orders/[0-9]{1,20}",path)))
+                   or bool(re.fullmatch(r"/api/v4/futures/usdt/orders/[0-9]{1,20}",path))
+                   or bool(re.fullmatch(r"/api/v4/futures/usdt/orders/t-[A-Za-z0-9_.-]{1,28}",path))
+                   or bool(re.fullmatch(r"/api/v4/futures/usdt/get_leverage/[A-Z0-9]{2,28}_USDT",path)))
         if not permitted or body is not None:
             raise ValueError("Disallowed Testnet read")
-        if query and not (path==ROOT+"/price_orders" and
-            re.fullmatch(r"status=open&contract=[A-Z0-9]{2,28}_USDT",query)):
+        trigger_query=(path==ROOT+"/price_orders" and
+            re.fullmatch(r"status=open&contract=[A-Z0-9]{2,28}_USDT",query))
+        leverage_query=(path.startswith(ROOT+"/get_leverage/") and
+            re.fullmatch(r"pos_margin_mode=cross&dual_side=dual_(long|short)",query))
+        if query and not (trigger_query or leverage_query):
             raise ValueError("Invalid Testnet read query")
     elif method=="POST":
         if path!=ORDER_PATH or query or not isinstance(body,dict):
@@ -90,6 +95,14 @@ class GateFuturesTestnetBroker:
         account=self.request("GET",ROOT+"/accounts")
         spec=self.request("GET",ROOT+"/contracts/"+intent.contract)
         positions=self.positions()
+        leverage_data=self.request("GET",ROOT+"/get_leverage/"+intent.contract,
+            query="pos_margin_mode=cross&dual_side=dual_"+intent.side.lower())
+        try:
+            actual_leverage=Decimal(str(leverage_data["Lever"]))
+            if not actual_leverage.is_finite() or actual_leverage<=0 or actual_leverage>5:
+                return False
+        except (KeyError,ValueError,TypeError,InvalidOperation):
+            return False
         if not isinstance(account,dict) or account.get("currency")!="USDT" or account.get("in_dual_mode") is not True:
             return False
         check=preflight_attached_testnet_entry(payload,spec,positions,account,max_open_positions=5)
@@ -132,6 +145,14 @@ class GateFuturesTestnetBroker:
         if not isinstance(response,dict) or not response.get("id"):
             raise RuntimeError("Ambiguous Testnet order response, manual reconciliation required")
         return response
+
+    def lookup_by_client_id(self,client_id):
+        if not isinstance(client_id,str) or not re.fullmatch(r"t-[A-Za-z0-9_.-]{1,28}",client_id):
+            raise ValueError("Invalid Testnet client ID")
+        result=self.request("GET",ORDER_PATH+"/"+client_id)
+        if not isinstance(result,dict) or result.get("text")!=client_id:
+            raise ValueError("Uncertain Testnet order lookup")
+        return result
 
     def order(self,order_id):
         if not re.fullmatch(r"[0-9]{1,20}",str(order_id)):
