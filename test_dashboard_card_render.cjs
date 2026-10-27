@@ -22,7 +22,7 @@ const fs=require('node:fs'),vm=require('node:vm'),assert=require('node:assert/st
  const holder={querySelectorAll:()=>rows};
  Object.defineProperty(holder,'innerHTML',{get(){return cardHTML},set(v){
    cardHTML=v;rows=[];
-   for(const id of ['fake-one','fake-two']){
+   for(const id of ['TESTNET:ETH_USDT:LONG','fake-one','fake-two']){
      if(!v.includes('data-v45-card="'+id+'"'))continue;
      const fields={pnl:{textContent:'—'},mark:{textContent:'—'},roi:{textContent:'—'}};
      rows.push({dataset:{v45Card:id},querySelector(selector){
@@ -32,16 +32,21 @@ const fs=require('node:fs'),vm=require('node:vm'),assert=require('node:assert/st
    }
  }});
  const demo={onclick:null,textContent:''};
+ const refresh={disabled:false,addEventListener:()=>{}};
  const elems={
   paperBody:{closest:()=>({id:'old-paper'}),querySelectorAll:()=>[]},
   paperRefresh:{click:()=>{}},
   v4Workspace:{querySelector:()=>demo,addEventListener:()=>{}},
   v4PaperCards:holder,v4TabCount:{textContent:''},
-  v4DemoWarning:{hidden:true},v4PaperCardsStatus:status
+  v4DemoWarning:{hidden:true},v4PaperCardsStatus:status,
+  v4TestnetRefresh:refresh,v4TestnetCardsStatus:{textContent:''}
  };
  const document={hidden:false,getElementById:id=>elems[id]??null,addEventListener:()=>{}};
  const fetch=async url=>{
    requests.push(url);
+   if(url==='/terminal/testnet-position-cards')return {ok:true,json:async()=>({environment:'GATE_FUTURES_TESTNET',fetched_at:1800000000,positions:[
+    {contract:'ETH_USDT',symbol:'ETHUSDT',side:'LONG',size_contracts:1,entry_price:2400,mark_price:2410,unrealized_pnl:0.10,leverage_label:'5×',roi_percent:2,margin_usdt:4.8,liquidation_price:1800,protection_state:'EXCHANGE_VERIFIED',origin:'ONE_SHOT_TESTNET_TRIAL',stop_loss:'2380',take_profit:'2450',stop_order_id:'222',take_order_id:'333'}
+   ]})};
    if(url==='/terminal/paper-open-direct')return {ok:true,json:async()=>({positions:[
     {event_id:'fake-one',symbol:'ETHUSDT',side:'LONG',entry:'2400',stop_loss:'2380',take_profit:'2450',size_contracts:1},
     {event_id:'fake-two',symbol:'SOLUSDT',side:'SHORT',entry:'160',stop_loss:'164',take_profit:'154',size_contracts:2}
@@ -59,15 +64,19 @@ const fs=require('node:fs'),vm=require('node:vm'),assert=require('node:assert/st
   MutationObserver:Observer,setTimeout:()=>0,clearTimeout:()=>{},setInterval:()=>{}},
   {timeout:3000});
  for(let n=0;n<4;n++)await new Promise(resolve=>setImmediate(resolve));
- assert.equal(rows.length,2,'Expected two individual paper cards');
+ assert.equal(rows.length,3,'Expected one exchange Testnet card plus two paper cards');
  assert.match(cardHTML,/ETHUSDT/);assert.match(cardHTML,/SOLUSDT/);
  assert.match(cardHTML,/STOP LOSS/);assert.match(cardHTML,/TAKE PROFIT \(TP1\)/);
  assert.match(cardHTML,/disabled title="No exchange position exists/);
- assert.equal(elems.v4TabCount.textContent,'Paper Positions (2)');
- assert.equal(rows[0].fields.mark.textContent,'2412');
- assert.equal(rows[0].fields.pnl.textContent,'+0.12');
- assert.equal(rows[1].fields.pnl.textContent,'+0.22');
+ assert.equal(elems.v4TabCount.textContent,'Testnet (1) · Paper (2)');
+ assert.equal(rows[1].fields.mark.textContent,'2412');
+ assert.equal(rows[1].fields.pnl.textContent,'+0.12');
+ assert.equal(rows[2].fields.pnl.textContent,'+0.22');
+ assert.match(cardHTML,/TESTNET · EXCHANGE/);
+ assert.match(cardHTML,/Native SL\/TP: EXCHANGE_VERIFIED/);
+ assert.match(cardHTML,/SL #222 · TP #333/);
+ assert(requests.includes('/terminal/testnet-position-cards'));
  assert(requests.includes('/terminal/paper-open-direct'));
  assert(requests.includes('/terminal/paper-live-pnl'));
- console.log('PASS: restored individual cards visible, two simulated positions, SL/TP, public mark and paper PnL');
+ console.log('PASS: exchange Testnet card + two paper cards, separately labeled, PnL and native SL/TP, orders locked');
 })().catch(err=>{console.error(err);process.exitCode=1;});
