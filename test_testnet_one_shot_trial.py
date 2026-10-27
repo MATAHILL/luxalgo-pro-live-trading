@@ -33,6 +33,17 @@ class TestOneShot(unittest.TestCase):
         self.assertEqual(r["order_submitted"],False)
         self.assertGreaterEqual(len(calls),5)
 
+    def test_read_only_preflight_accepts_realistic_eth_minimum(self):
+        def realistic(method,path,*,query="",body=None):
+            if path==ROOT+"/contracts/ETH_USDT":
+                return {**SPEC,"mark_price":"2332.7",
+                        "quanto_multiplier":"0.01"}
+            return request(method,path,query=query,body=body)
+        r=inspect_one_shot_trial_preflight(request=realistic)
+        self.assertEqual(r["state"],"BUDGET_PASS_NO_ORDER")
+        self.assertEqual(r["one_contract_notional_usdt"],"23.327")
+        self.assertFalse(r["order_submitted"])
+
     def test_read_only_preflight_rejects_budget_violation(self):
         def expensive(method,path,*,query="",body=None):
             if path==ROOT+"/contracts/ETH_USDT":
