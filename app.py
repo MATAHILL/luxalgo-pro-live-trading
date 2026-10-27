@@ -5792,6 +5792,11 @@ def _testnet_startup_readiness_probe():
             from testnet_leverage_prepare import prepare_testnet_leverage_5x
             leverage_result=prepare_testnet_leverage_5x()
         report=inspect_testnet_readiness()
+        # Read-only one-contract trial sizing check, persisted for safe diagnosis.
+        # Never schedules or submits an exchange order.
+        if report.get('ready') is True:
+            from testnet_one_shot_trial import inspect_one_shot_trial_preflight
+            report['one_shot_trial_preflight']=inspect_one_shot_trial_preflight()
         if mode_result is not None:
             report['mode_setup_state']=mode_result.get('state','UNKNOWN')
         if leverage_result is not None:
@@ -5803,7 +5808,8 @@ def _testnet_startup_readiness_probe():
                 ON CONFLICT(id) DO UPDATE SET state=excluded.state,
                     details=excluded.details,checked_at=excluded.checked_at""",
                 ('READY' if report.get('ready') else 'BLOCKED',json.dumps(report,allow_nan=False)))
-        app.logger.info("Testnet readiness checked; ready=%s",report.get('ready'))
+        app.logger.info("Testnet readiness checked; ready=%s; one_shot_preflight=%s",
+                        report.get('ready'),(report.get('one_shot_trial_preflight') or {}).get('state','NOT_CHECKED'))
     except (psycopg.Error,RuntimeError,OSError,ValueError,TypeError) as exc:
         app.logger.warning('Testnet readiness startup probe failed safely: %s',type(exc).__name__)
 
