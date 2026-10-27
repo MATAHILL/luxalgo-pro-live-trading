@@ -73,3 +73,53 @@ def run_one_shot_protected_testnet_trial(*,request=None,broker=None,journal=None
     except Exception as exc:
         # Never retry a write or assume it failed after a timeout.
         return {"state":"TRIAL_UNCERTAIN_"+type(exc).__name__.upper(),"submitted":"UNKNOWN"}
+
+
+def inspect_one_shot_trial_preflight(*, request=None):
+    """READ-ONLY account-flat and one-contract budget diagnostic.
+
+    No flags are changed, no journal reservation occurs, and no exchange POST
+    is possible through this function. Do not mistake READY for a verified fill.
+    """
+    from gate_testnet_broker import _request_testnet
+    read = request or _request_testnet
+    report = {"environment":"GATE_FUTURES_TESTNET", "read_only":True,
+              "contract":CONTRACT, "order_submitted":False}
+    try:
+        acct = read("GET",ROOT+"/accounts")
+        spec = read("GET",ROOT+"/contracts/"+CONTRACT)
+        pos = read("GET",ROOT+"/positions")
+        orders = read("GET",ROOT+"/orders",query="status=open")
+        triggers = read("GET",ROOT+"/price_orders",query="status=open")
+        if (not isinstance(acct,dict) or not isinstance(spec,dict)
+            or spec.get("name")!=CONTRACT or not isinstance(pos,list)
+            or not isinstance(orders,list) or not isinstance(triggers,list)
+            or not all(isinstance(row,dict) for row in pos+orders+triggers)):
+            return {**report,"state":"INVALID_READBACK"}
+        if any(_nonzero_position(p) for p in pos) or orders or triggers:
+            return {**report,"state":"ACCOUNT_NOT_FLAT"}
+        mark=Decimal(str(spec["mark_price"]))
+        tick=Decimal(str(spec["order_price_round"]))
+        multiplier=Decimal(str(spec["quanto_multiplier"]))
+        available=Decimal(str(acct["available"]))
+        if not all(v.is_finite() and v>0 for v in (mark,tick,multiplier,available)):
+            return {**report,"state":"INVALID_MARKET_METADATA"}
+        stop=_rounded(mark*Decimal("0.990"),tick,ROUND_FLOOR)
+        target=_rounded(mark*Decimal("1.015"),tick,ROUND_CEILING)
+        notional=mark*multiplier
+        max_notional=min(available*Decimal("0.025"),Decimal("10"))
+        risk=(mark-stop)*multiplier
+        max_risk=available*Decimal("0.005")
+        summary={**report,"one_contract_notional_usdt":str(notional),
+                 "maximum_trial_notional_usdt":str(max_notional),
+                 "one_contract_stop_risk_usdt":str(risk),
+                 "maximum_trial_risk_usdt":str(max_risk)}
+        if not stop<mark<target:
+            return {**summary,"state":"INVALID_STOP_TARGET_GEOMETRY"}
+        if risk>max_risk:
+            return {**summary,"state":"TRIAL_STOP_RISK_EXCEEDS_TESTNET_LIMIT"}
+        if notional>max_notional:
+            return {**summary,"state":"TRIAL_NOTIONAL_LIMIT"}
+        return {**summary,"state":"BUDGET_PASS_NO_ORDER"}
+    except Exception as exc:
+        return {**report,"state":"READBACK_UNAVAILABLE_"+type(exc).__name__.upper()}
