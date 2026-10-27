@@ -790,7 +790,7 @@ header.terminal-header{border-radius:17px!important}
 <div class="tablewrap"><table style="width:100%;min-width:600px"><thead><tr><th>CONTRACT</th><th>ORDER ID</th><th>SIZE</th><th>PRICE</th><th>REMAINING</th><th>TIME IN FORCE</th><th>STATUS</th></tr></thead><tbody id="testnetOrdersRows"><tr><td colspan="7">Expand to load</td></tr></tbody></table></div></details>
 <details id="incomingLuxPanel" class="panel" open style="width:100%;margin:14px 0;max-width:none">
 <summary style="cursor:pointer;font-size:16px;font-weight:850;padding:2px 0 12px">INCOMING LUXALGO ORDERS · WEBHOOK SIGNALS <span class="light" style="font-size:12px">— Click to minimize / maximize</span></summary>
-<p class="light">Incoming LuxAlgo signals are stored and independently assessed for protected Gate.io Testnet execution. Only verified exchange fills count as trades. Market/Limit is shown only when explicitly supplied in the webhook. No exchange orders are submitted.</p>
+<p class="light">Latest 25 incoming LuxAlgo signals. Only a Gate.io TESTNET verified exchange journal state indicates an actual executed trade. Incoming signals alone are not exchange orders. Real-money trading remains OFF.</p>
 <div class="panel-heading"><span id="incomingLuxInfo" class="light" role="status">Loading latest received signals…</span><button class="btn gloss-action" id="incomingLuxRefresh" type="button">↻ Refresh Signals</button></div>
 <div class="tablewrap" style="width:100%;overflow-x:auto"><table style="min-width:1000px;width:100%"><thead><tr><th>S/N</th><th>RECEIVED (IST)</th><th>COIN</th><th>SIGNAL</th><th>TF</th><th>ORDER TYPE</th><th>ENTRY</th><th>STOP LOSS</th><th>TAKE PROFIT</th><th>PROCESS STATUS</th><th>DETAIL</th></tr></thead><tbody id="incomingLuxRows"><tr><td colspan="11">Loading…</td></tr></tbody></table></div>
 </details><div class="market-grid">
@@ -1741,7 +1741,7 @@ document.addEventListener('visibilitychange',()=>{if(!document.hidden)syncTestne
        tbody.appendChild(tr);
      }
      if(!data.signals.length){const tr=document.createElement('tr'),td=document.createElement('td');td.colSpan=11;td.textContent='No stored incoming signals yet';tr.appendChild(td);tbody.appendChild(tr);}
-     info.textContent=data.count+' stored signals · no exchange orders submitted';
+     info.textContent=data.count+' most recent webhook signals (maximum 25) · verify actual fills in PROCESS STATUS';
    }catch(err){info.textContent='Signal monitor unavailable: '+err.message;}
    finally{btn.disabled=false;}
  }
@@ -4908,7 +4908,7 @@ def terminal_testnet_order_readiness():
 
 @app.get('/terminal/incoming-signals')
 def terminal_incoming_signals():
-    """Recent webhook receipts and paper state only; never exchange orders."""
+    """Latest 25 webhook receipts and independently verified Testnet states."""
     if not _terminal_permitted():
         return _terminal_guard()
     try:
@@ -4917,25 +4917,27 @@ def terminal_incoming_signals():
                 cur.execute('''SELECT i.event_id,i.received_at,i.symbol,i.side,i.timeframe,
                     l.status AS level_status,l.entry_price,l.stop_loss,l.take_profit,
                     q.state AS queue_state,q.note AS queue_note,
-                    s.status AS simulated_status,b.enabled AS bot_enabled,ot.order_type
+                    s.status AS simulated_status,b.enabled AS bot_enabled,ot.order_type,
+                    j.state AS testnet_execution_state
                     FROM luxalgo_dry_run_intents i
                     LEFT JOIN luxalgo_signal_levels l ON l.event_id=i.event_id
                     LEFT JOIN luxalgo_auto_paper_queue q ON q.event_id=i.event_id
                     LEFT JOIN luxalgo_simulated_orders s ON s.event_id=i.event_id
                     LEFT JOIN luxalgo_bot_control b ON b.id=1
                     LEFT JOIN luxalgo_signal_order_types ot ON ot.event_id=i.event_id
-                    ORDER BY i.received_at DESC LIMIT 50''')
+                    LEFT JOIN luxalgo_testnet_protected_journal j ON j.signal_id=i.event_id
+                    ORDER BY i.received_at DESC LIMIT 25''')
                 rows=cur.fetchall()
         now=datetime.now(timezone.utc)
         signals=[]
         for r in rows:
             age=(now-r['received_at']).total_seconds()
-            if r['simulated_status']=='SIMULATED_ONLY':
-                state='PAPER_CREATED'
+            if r['testnet_execution_state']:
+                state='TESTNET_'+str(r['testnet_execution_state'])
             elif r['queue_state']=='REJECTED':
-                state='REJECTED'
+                state='NOT_EXECUTED'
             elif r['queue_state']=='PENDING':
-                state='EXPIRED_PENDING' if age>120 else 'PAPER_PENDING'
+                state='EXPIRED_NOT_EXECUTED' if age>120 else 'PENDING_TESTNET_SIGNAL'
             elif r['level_status'] in ('MISSING','INVALID'):
                 state='INVALID_LEVELS'
             elif r['queue_state'] is None:
@@ -4950,9 +4952,14 @@ def terminal_incoming_signals():
                 stop_loss=str(r['stop_loss']) if r['stop_loss'] is not None else None,
                 take_profit=str(r['take_profit']) if r['take_profit'] is not None else None,
                 order_type=r['order_type'] or 'NO ORDER SENT',state=state,
-                reason=r['queue_note'] or ('Paper bot disabled' if state=='BOT_OFF' else 'No paper queue entry at receipt; switching BOT ON later does not enqueue earlier signals' if state=='RECEIVED_NOT_QUEUED' else 'No exchange submission implemented' if state=='RECEIVED_NOT_EXECUTED' else 'Missing or invalid entry / SL / TP' if state=='INVALID_LEVELS' else ''),level_status=r['level_status'] or 'UNKNOWN'))
-        response=jsonify(signals=signals,count=len(signals),orders_placed=0,
-                         mode='WEBHOOK_MONITOR_ONLY',live_trading=False)
+                reason=(('Gate Testnet journal state: '+str(r['testnet_execution_state'])) if r['testnet_execution_state'] else
+                        (r['queue_note'] or ('Bot OFF when signal was received' if state=='BOT_OFF' else
+                         'Received before bot activation: no historical replay' if state=='RECEIVED_NOT_QUEUED' else
+                         'No verified Gate Testnet order' if state=='RECEIVED_NOT_EXECUTED' else
+                         'Missing or invalid entry / SL / TP' if state=='INVALID_LEVELS' else ''))),
+                level_status=r['level_status'] or 'UNKNOWN'))
+        response=jsonify(signals=signals,count=len(signals),display_limit=25,
+                         mode='TESTNET_SIGNAL_MONITOR',live_trading=False)
         response.headers['Cache-Control']='no-store'
         return response
     except (psycopg.Error,RuntimeError,OSError):
