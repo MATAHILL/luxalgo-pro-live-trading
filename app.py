@@ -1493,7 +1493,26 @@ function card(d){
  return '<article class="v4-trade" data-v45-card="'+esc(sym)+'"><div class="v4-trade-top"><div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap"><span class="v4-side '+(d.side==='SHORT'?'short':'')+'">'+(d.side==='SHORT'?'S':'L')+'</span><button class="v4-token" type="button" data-v45-toggle="'+esc(sym)+'">'+esc(sym)+'</button><span class="v4-tag">Perp</span><span class="v4-tag">'+esc(d.leverage)+'</span><span class="v4-tag">'+(demo?'DEMO':'PAPER')+'</span><div class="v45-tools"><button class="v45-refresh" type="button" data-v45-refresh="'+esc(sym)+'" title="Refresh position" aria-label="Refresh '+esc(sym)+' position">↻</button><button class="v45-indicator-toggle" type="button" data-v45-toggle="'+esc(sym)+'" aria-expanded="'+String(open)+'">'+(open?'▲ CLOSE':'▼ INDICATOR')+'</button></div></div><div style="text-align:right"><div class="v4-number-label">ROI (estimated)</div><div class="v4-number-value big '+cl+'" data-v45-field="roi">'+esc(d.roi)+'</div></div></div><div class="v4-numbers">'+numCell('UNREALIZED P&L (USDT)',pnl,cl+' big','pnl')+numCell('SIZE (USDT)',d.size)+numCell('MARGIN (USDT)',d.margin)+numCell('ENTRY PRICE',d.entry)+numCell('MARK PRICE',d.mark,'','mark')+numCell('LIQ. PRICE',d.liq)+numCell('STOP LOSS',d.sl)+numCell('TAKE PROFIT',d.tp)+'</div><div class="v4-controls"><button disabled title="Exchange execution not implemented">TP/SL</button><button disabled title="Exchange execution not implemented">Reverse</button><button disabled title="Exchange execution not implemented">Market Close</button><button disabled title="Exchange execution not implemented">Close</button></div><div class="v45-refresh-state" data-v45-state="1">'+(demo?'DEMO — simulated values':'Paper quote refresh runs automatically')+'</div>'+ (open?chartMarkup(d):'')+'</article>';
 }
 function fromTable(){const rows=[...table.querySelectorAll('tr[data-paper-event-id]')].filter(r=>r.dataset.paperState==='OPEN');return rows.map(r=>{const c=[...r.cells].map(x=>x.textContent.trim());return {symbol:c[1],side:c[2],leverage:'Not verified',pnl:c[8],roi:'—',size:'Not verified',margin:'Not verified',entry:c[3],mark:c[7],liq:'Not available',sl:c[4],tp:c[5]}})}
-function currentData(){return demo?examples.map(x=>({symbol:x[0],side:x[1],leverage:'Cross '+x[2]+'x',pnl:x[3],roi:x[4]+'%',size:x[5],margin:x[6],entry:x[7],mark:x[8],liq:x[9],sl:'Sample only',tp:'Sample only'})):fromTable()}
+let directPaperOpen=null;
+function currentData(){return demo?examples.map(x=>({symbol:x[0],side:x[1],leverage:'Cross '+x[2]+'x',pnl:x[3],roi:x[4]+'%',size:x[5],margin:x[6],entry:x[7],mark:x[8],liq:x[9],sl:'Sample only',tp:'Sample only'})):(directPaperOpen===null?fromTable():directPaperOpen)}
+async function syncDirectPaperCards(){
+ if(document.hidden||demo)return;
+ try{
+  const ctl=new AbortController(),timer=setTimeout(()=>ctl.abort(),7000);
+  let response;
+  try{response=await fetch('/terminal/paper-open-direct',{cache:'no-store',signal:ctl.signal});}finally{clearTimeout(timer);}
+  const payload=await response.json();
+  if(!response.ok||!Array.isArray(payload.positions))throw Error('Paper records unavailable');
+  directPaperOpen=payload.positions.map(p=>({symbol:p.symbol,side:p.side,
+   leverage:'PAPER · no exchange leverage',pnl:'—',roi:'—',
+   size:p.size_contracts??'Not verified',margin:'Not verified',
+   entry:p.entry??'—',mark:'—',liq:'Not available',
+   sl:p.stop_loss??'—',tp:p.take_profit??'—'}));
+  draw();
+ }catch(error){
+  // Preserve existing cards if the independent read-only feed is unavailable.
+ }
+}
 let lastStructure='';
 function draw(force=false){
  const data=currentData();const cards=document.getElementById('v4PaperCards');
@@ -1526,8 +1545,11 @@ workspace.addEventListener('click',e=>{
  if(openIndicators.has(sym)){openIndicators.clear();}else{openIndicators.clear();openIndicators.add(sym);}
  draw(true);
 });
-new MutationObserver(()=>{if(!demo)draw()}).observe(table,{childList:true,subtree:true,characterData:true});
+new MutationObserver(()=>{if(!demo&&directPaperOpen===null)draw()}).observe(table,{childList:true,subtree:true,characterData:true});
 draw(true);
+syncDirectPaperCards();
+setInterval(syncDirectPaperCards,12000);
+document.addEventListener('visibilitychange',()=>{if(!document.hidden)syncDirectPaperCards()});
 })();
 </script>
 <script>
