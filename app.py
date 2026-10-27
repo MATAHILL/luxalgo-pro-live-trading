@@ -5155,9 +5155,15 @@ def _testnet_recovery_monitor():
             if unknown.get("reports"):
                 app.logger.info("Testnet unknown-exposure audit: %s",
                                 [(r["contract"],r["state"]) for r in unknown["reports"]])
-            if any(x in ('HALTED_UNKNOWN','HALTED_UNPROTECTED') for x in
-                   report.get('outcomes',[])+audit.get('outcomes',[])):
-                app.logger.error('Testnet protection audit or recovery requires manual intervention')
+            outcomes=report.get('outcomes',[])+audit.get('outcomes',[])
+            if any(x=='HALTED_UNPROTECTED' for x in outcomes):
+                app.logger.error('Testnet exposure is unprotected; manual intervention required')
+            elif any(x=='HALTED_UNKNOWN' for x in outcomes):
+                from testnet_unknown_exposure import unknown_exposure_gate
+                if unknown_exposure_gate():
+                    app.logger.info('Historical unknown Testnet order retained for audit; repeat current-exposure checks passed')
+                else:
+                    app.logger.error('Unknown current Testnet exposure is not cleared; new entries remain blocked')
         except (psycopg.Error,RuntimeError,OSError,ValueError,TypeError,KeyError) as exc:
             app.logger.warning('Testnet recovery polling unavailable: %s',type(exc).__name__)
 
