@@ -4919,8 +4919,11 @@ def terminal_incoming_signals():
     if not _terminal_permitted():
         return _terminal_guard()
     try:
+        from testnet_execution_attempts import DDL as _execution_attempts_schema
         with _db_connect() as con:
             with con.cursor() as cur:
+                # Dashboard works before the first successful Testnet event.
+                cur.execute(_execution_attempts_schema)
                 cur.execute('''SELECT i.event_id,i.received_at,i.symbol,i.side,i.timeframe,
                     l.status AS level_status,l.entry_price,l.stop_loss,l.take_profit,
                     q.state AS queue_state,q.note AS queue_note,
