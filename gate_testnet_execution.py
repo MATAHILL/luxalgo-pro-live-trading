@@ -99,6 +99,58 @@ def verify_attached_tpsl_readback(order: dict, submitted: dict) -> dict:
                 fill_verified=False,active_native_trigger_verified=False)
 
 
+def preflight_attached_testnet_entry(payload: dict, contract_spec: dict, positions: list,
+                                     account: dict, *, max_open_positions: int = 5) -> dict:
+    """Fail-closed, read-only exchange preflight of an attached-protection entry.
+
+    Does not submit an order. Callers must obtain FRESH Testnet account, contract
+    and positions data and independently verify hedging/leverage/margin settings.
+    """
+    from decimal import Decimal, InvalidOperation
+    reasons=[]
+    if not isinstance(payload,dict) or not isinstance(contract_spec,dict) or not isinstance(positions,list) or not isinstance(account,dict):
+        return dict(approved=False,reasons=["INCOMPLETE_EXCHANGE_READBACK"])
+    contract=payload.get("contract")
+    if contract_spec.get("name")!=contract or contract_spec.get("in_delisting"):
+        reasons.append("CONTRACT_NOT_ACTIVE_OR_MISMATCH")
+    if payload.get("tif")!="ioc" or str(payload.get("price"))!="0" or payload.get("size") not in (1,-1):
+        reasons.append("ENTRY_NOT_ONE_CONTRACT_IOC")
+    if not payload.get("tpsl_tp_trigger_price") or not payload.get("tpsl_sl_trigger_price"):
+        reasons.append("ATTACHED_PROTECTION_MISSING")
+    try:
+        available=Decimal(str(account["available"]))
+        mark=Decimal(str(contract_spec["mark_price"]))
+        multiplier=Decimal(str(contract_spec["quanto_multiplier"]))
+        size_min=Decimal(str(contract_spec["order_size_min"]))
+        size_max=Decimal(str(contract_spec["order_size_max"]))
+        leverage=Decimal(str(contract_spec["leverage_max"]))
+        if not all(x.is_finite() for x in (available,mark,multiplier,size_min,size_max,leverage)):
+            raise ValueError
+        if min(mark,multiplier,size_max,leverage)<=0 or size_min>1 or size_max<1 or leverage<5:
+            reasons.append("CONTRACT_SIZE_OR_LEVERAGE_UNSUPPORTED")
+        if available<=0 or mark*multiplier/Decimal(5)>available:
+            reasons.append("INSUFFICIENT_AVAILABLE_TESTNET_MARGIN")
+    except (KeyError,ValueError,InvalidOperation,TypeError):
+        reasons.append("CONTRACT_OR_MARGIN_METADATA_INVALID")
+    active=[]
+    for p in positions:
+        if not isinstance(p,dict):
+            reasons.append("POSITION_READBACK_INVALID")
+            continue
+        try:
+            qty=Decimal(str(p.get("size",0)))
+            if not qty.is_finite(): raise ValueError
+            if qty!=0: active.append(p)
+        except (ValueError,InvalidOperation,TypeError):
+            reasons.append("POSITION_READBACK_INVALID")
+    if not type(max_open_positions) is int or not 1<=max_open_positions<=5 or len(active)>=max_open_positions:
+        reasons.append("POSITION_CONCURRENCY_LIMIT")
+    if any(p.get("contract")==contract for p in active):
+        reasons.append("CONTRACT_ALREADY_HAS_OPEN_POSITION")
+    return dict(approved=not reasons,reasons=reasons,
+                note="Read-only illustration; NOT authorization for Testnet submission")
+
+
 def prepare_order_for_review(payload: dict) -> dict:
     """Only prepare validated data; deliberately never submit an order."""
     checked = order_payload(payload["contract"], payload["size"], payload["order_type"],
