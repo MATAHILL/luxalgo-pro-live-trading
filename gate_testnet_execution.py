@@ -138,6 +138,58 @@ def signed_testnet_request(method: str, path: str, body: dict | None = None,
     return result
 
 
+def verify_testnet_protection(order: dict, positions: list, triggers: list,
+                              *, expected_contract: str, expected_side: str,
+                              stop_price: str, target_price: str) -> dict:
+    """Fail-closed reconciliation of observed exchange data. Read-only/pure.
+
+    An accepted order is not a fill; a position alone is not protection.
+    Trigger orders must match the same contract and close the relevant side.
+    """
+    from decimal import Decimal, InvalidOperation
+    if not isinstance(order,dict) or not isinstance(positions,list) or not isinstance(triggers,list):
+        raise ValueError("Incomplete exchange readback")
+    if expected_side not in ("LONG","SHORT"):
+        raise ValueError("Unknown side")
+    if order.get("contract") != expected_contract or str(order.get("finish_as","")).lower() != "filled":
+        return dict(verified=False,reason="ENTRY_FILL_NOT_VERIFIED")
+    close_action="close_long" if expected_side=="LONG" else "close_short"
+    relevant=[p for p in positions if isinstance(p,dict)
+              and p.get("contract")==expected_contract and
+              p.get("mode")==("dual_long" if expected_side=="LONG" else "dual_short")
+              and str(p.get("size","0")) not in ("0","0.0","")]
+    if len(relevant)!=1:
+        return dict(verified=False,reason="OPEN_POSITION_NOT_VERIFIED")
+    required=[]
+    for price,rule in ((stop_price,2 if expected_side=="LONG" else 1),
+                       (target_price,1 if expected_side=="LONG" else 2)):
+        try:
+            target=Decimal(str(price))
+        except (InvalidOperation,TypeError,ValueError):
+            return dict(verified=False,reason="INVALID_PROTECTION_PRICE")
+        matched=[]
+        for item in triggers:
+            if not isinstance(item,dict) or item.get("status")!="open":
+                continue
+            initial=item.get("initial") or {}
+            trigger=item.get("trigger") or {}
+            if initial.get("contract")!=expected_contract or initial.get("auto_size")!=close_action:
+                continue
+            try:
+                ok=Decimal(str(trigger.get("price")))==target and int(trigger.get("rule"))==rule
+            except (InvalidOperation,TypeError,ValueError):
+                ok=False
+            if ok:
+                matched.append(str(item.get("id") or ""))
+        if len(matched)!=1 or not matched[0]:
+            return dict(verified=False,reason="NATIVE_STOP_OR_TARGET_NOT_VERIFIED")
+        required.append(matched[0])
+    if len(set(required))!=2:
+        return dict(verified=False,reason="PROTECTIVE_ORDER_IDS_NOT_DISTINCT")
+    return dict(verified=True,reason="ENTRY_POSITION_AND_TWO_NATIVE_TRIGGERS_VERIFIED",
+                protective_order_ids=required)
+
+
 def submit_testnet_entry(payload: dict, *, allow_unprotected_entry: bool = False) -> dict:
     """Signed Gate Futures TESTNET order transport, isolated from webhooks.
 
