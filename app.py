@@ -322,7 +322,9 @@ def terminal_bot_control_get():
             with con.cursor() as cur:
                 enabled=_bot_enabled(cur)
         from testnet_automation import testnet_automation_armed
-        return jsonify(bot_enabled=enabled,testnet_automation_armed=testnet_automation_armed(),
+        from testnet_unknown_exposure import unknown_exposure_gate
+        armed=testnet_automation_armed() and unknown_exposure_gate()
+        return jsonify(bot_enabled=enabled,testnet_automation_armed=armed,
                        scope='GATE_TESTNET_SIGNAL_CONTROL_ONLY', live_trading=False, orders_enabled=False)
     except (psycopg.Error,RuntimeError,OSError):
         return jsonify(error='Bot state unavailable; treat as OFF',bot_enabled=False,orders_enabled=False),503
@@ -364,7 +366,9 @@ def terminal_bot_control_post():
                 if not desired:
                     cur.execute("UPDATE luxalgo_auto_paper_queue SET state='REJECTED', checked_at=NOW(),note='Bot manually switched OFF' WHERE state='PENDING'")
         from testnet_automation import testnet_automation_armed
-        return jsonify(bot_enabled=desired,testnet_automation_armed=testnet_automation_armed(),
+        from testnet_unknown_exposure import unknown_exposure_gate
+        armed=testnet_automation_armed() and unknown_exposure_gate()
+        return jsonify(bot_enabled=desired,testnet_automation_armed=armed,
                        scope='GATE_TESTNET_SIGNAL_CONTROL_ONLY',orders_enabled=False,live_trading=False)
     except (psycopg.Error,RuntimeError,OSError):
         return jsonify(error='Unable to save bot state; treat as OFF',orders_enabled=False),503
@@ -5146,6 +5150,11 @@ def _testnet_recovery_monitor():
             from testnet_protection_watchdog import audit_protected_testnet_once
             report=recover_testnet_once(limit=3)
             audit=audit_protected_testnet_once(limit=3)
+            from testnet_unknown_exposure import check_unknown_once
+            unknown=check_unknown_once()
+            if unknown.get("reports"):
+                app.logger.info("Testnet unknown-exposure audit: %s",
+                                [(r["contract"],r["state"]) for r in unknown["reports"]])
             if any(x in ('HALTED_UNKNOWN','HALTED_UNPROTECTED') for x in
                    report.get('outcomes',[])+audit.get('outcomes',[])):
                 app.logger.error('Testnet protection audit or recovery requires manual intervention')
