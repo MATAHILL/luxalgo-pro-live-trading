@@ -321,7 +321,7 @@ def terminal_bot_control_get():
             _ensure_schema(con)
             with con.cursor() as cur:
                 enabled=_bot_enabled(cur)
-        return jsonify(bot_enabled=enabled, scope='AUTOMATIC_PAPER_SIMULATION_ONLY', live_trading=False, orders_enabled=False)
+        return jsonify(bot_enabled=enabled, scope='GATE_TESTNET_SIGNAL_CONTROL_ONLY', live_trading=False, orders_enabled=False)
     except (psycopg.Error,RuntimeError,OSError):
         return jsonify(error='Bot state unavailable; treat as OFF',bot_enabled=False,orders_enabled=False),503
 
@@ -361,7 +361,7 @@ def terminal_bot_control_post():
                 cur.execute('UPDATE luxalgo_bot_control SET enabled=%s, changed_at=NOW() WHERE id=1',(desired,))
                 if not desired:
                     cur.execute("UPDATE luxalgo_auto_paper_queue SET state='REJECTED', checked_at=NOW(),note='Bot manually switched OFF' WHERE state='PENDING'")
-        return jsonify(bot_enabled=desired, scope='AUTOMATIC_PAPER_SIMULATION_ONLY',orders_enabled=False,live_trading=False)
+        return jsonify(bot_enabled=desired, scope='GATE_TESTNET_SIGNAL_CONTROL_ONLY',orders_enabled=False,live_trading=False)
     except (psycopg.Error,RuntimeError,OSError):
         return jsonify(error='Unable to save bot state; treat as OFF',orders_enabled=False),503
 
@@ -726,8 +726,8 @@ header.terminal-header{border-radius:17px!important}
 <form method="post" action="/logout"><input type="hidden" name="csrf_token" value="{{ csrf_token|e }}"><button class="glossy-logout" type="submit">⇥ LOGOUT</button></form><span id="signalLiveSync" role="status" aria-live="polite" style="font-size:11px;color:#9de7ff">● Signals auto-sync: connecting…</span></div></header>
  <section class="live-ops-banner" aria-label="Live trading execution status"><div><strong>GATE.IO FUTURES · LIVE ACCOUNT DASHBOARD</strong><p>Live exchange balances, positions and market data. Automatic real orders are not armed; SL/TP and recovery verification is pending.</p></div><span class="live-ops-state">LIVE ACCOUNT</span></section>
 <section class="bot-control-panel" aria-label="Remote bot control">
- <div><div class="bot-status-line"><strong id="botControlLabel">BOT OFF · SIGNAL PROCESSING PAUSED</strong><span id="botStateIndicator" class="bot-state-indicator unknown" role="status" aria-live="polite">● CHECKING</span></div><p id="botControlDetail">New LuxAlgo signals remain logged. No live orders are possible.</p></div>
- <div class="bot-control-actions"><button class="btn" id="botTurnOn" type="button" title="Controls signal simulation only; NOT live order execution">▶ SIGNAL BOT ON</button><button class="btn" id="botTurnOff" type="button" title="Controls signal simulation only; NOT an exchange emergency halt">■ SIGNAL BOT OFF</button></div>
+ <div><div class="bot-status-line"><strong id="botControlLabel">BOT OFF · TESTNET SIGNALS PAUSED</strong><span id="botStateIndicator" class="bot-state-indicator unknown" role="status" aria-live="polite">● CHECKING</span></div><p id="botControlDetail">New LuxAlgo signals remain logged. No live orders are possible.</p></div>
+ <div class="bot-control-actions"><button class="btn" id="botTurnOn" type="button" title="Controls fresh LuxAlgo testnet signals only; NEVER real-money orders">▶ TESTNET BOT ON</button><button class="btn" id="botTurnOff" type="button" title="Pauses new Testnet entries; does not close existing Testnet positions">■ TESTNET BOT OFF</button></div>
 </section>
 
 <details class="futures-liquidity" id="futuresLiquidityDetails">
@@ -1162,13 +1162,13 @@ header.terminal-header{border-radius:17px!important}
  });
 })();
 
-// Remote control: persisted in PostgreSQL, never enables exchange trading.
+// Remote bot control: only new Gate Testnet signals, never real-money execution.
 
 
 (function(){
  const label=document.getElementById('botControlLabel'),detail=document.getElementById('botControlDetail');
  const on=document.getElementById('botTurnOn'),off=document.getElementById('botTurnOff'),indicator=document.getElementById('botStateIndicator');
- function render(enabled){if(indicator){indicator.className='bot-state-indicator '+(enabled?'on':'off');indicator.textContent=enabled?'● BOT ON':'● BOT OFF';}on.classList.toggle('next-action',!enabled);off.classList.toggle('next-action',enabled);label.textContent=enabled?'BOT ON · SIGNAL PROCESSING':'BOT OFF · SIGNAL PROCESSING PAUSED';label.style.color=enabled?'#6cf3ba':'#ffc47c';detail.textContent=enabled?'LuxAlgo signals are processed for simulation only. REAL ORDERS REMAIN DISABLED.':'New signals are logged, with simulated entries paused. Existing simulated history remains.';on.disabled=enabled;off.disabled=!enabled;}
+ function render(enabled){if(indicator){indicator.className='bot-state-indicator '+(enabled?'on':'off');indicator.textContent=enabled?'● BOT ON':'● BOT OFF';}on.classList.toggle('next-action',!enabled);off.classList.toggle('next-action',enabled);label.textContent=enabled?'BOT ON · TESTNET SIGNALS':'BOT OFF · TESTNET SIGNALS PAUSED';label.style.color=enabled?'#6cf3ba':'#ffc47c';detail.textContent=enabled?'Fresh LuxAlgo signals are eligible for protected Gate.io Testnet execution only when the separate testnet safety switches are enabled. Real-money orders remain OFF.':'New signals are logged, with new Testnet entries paused. Existing protected Testnet positions remain monitored.';on.disabled=enabled;off.disabled=!enabled;}
  async function refresh(){try{const r=await fetch('/terminal/bot-control',{cache:'no-store'});const d=await r.json();if(!r.ok)throw Error();render(d.bot_enabled);}catch(e){render(false);if(indicator){indicator.className='bot-state-indicator unknown';indicator.textContent='● STATUS UNKNOWN · SAFE OFF';}detail.textContent='Cannot verify saved bot state: treat as OFF.';on.disabled=true;}}
  async function change(enabled){on.disabled=true;off.disabled=true;try{const r=await fetch('/terminal/bot-control',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({enabled}),cache:'no-store'});const d=await r.json();if(!r.ok)throw Error(d.error||'Update rejected');render(d.bot_enabled);}catch(e){detail.textContent='Cannot change bot state: '+e.message;await refresh();}}
  on.addEventListener('click',()=>change(true));off.addEventListener('click',()=>change(false));refresh();setInterval(()=>{if(!document.hidden)refresh();},30000);
