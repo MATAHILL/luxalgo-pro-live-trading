@@ -4,6 +4,7 @@ from gate_testnet_execution import (
     TestnetExecutionDisabled, order_payload, prepare_order_for_review,
     send_protected_order, signing_message, protective_trigger_payload, verify_testnet_protection,
     submit_testnet_entry, ORDER_PATH, atomic_protected_entry_payload, verify_attached_tpsl_readback, preflight_attached_testnet_entry,
+    reconcile_unknown_testnet_entry, signed_testnet_request,
 )
 
 class TestnetExecutionSafetyTests(unittest.TestCase):
@@ -49,18 +50,44 @@ class TestnetExecutionSafetyTests(unittest.TestCase):
             protective_trigger_payload("BTC_USDT","LONG","STOP_LOSS","110","100")
 
     def test_fill_and_native_protection_readback(self):
-        order={"contract":"BTC_USDT","finish_as":"filled"}
+        order={"id":456,"contract":"BTC_USDT","status":"finished","finish_as":"filled"}
         positions=[{"contract":"BTC_USDT","mode":"dual_long","size":1}]
         triggers=[
-          {"id":123,"status":"open","initial":{"contract":"BTC_USDT","auto_size":"close_long"},"trigger":{"price":"90","rule":2}},
-          {"id":124,"status":"open","initial":{"contract":"BTC_USDT","auto_size":"close_long"},"trigger":{"price":"110","rule":1}},
+          {"id":123,"status":"open","order_type":"close-long-order","me_order_id":456,
+           "initial":{"contract":"BTC_USDT"},"trigger":{"price":"90","rule":2}},
+          {"id":124,"status":"open","order_type":"close-long-order","me_order_id":456,
+           "initial":{"contract":"BTC_USDT"},"trigger":{"price":"110","rule":1}},
         ]
         args=dict(expected_contract="BTC_USDT",expected_side="LONG",stop_price="90",target_price="110")
         self.assertTrue(verify_testnet_protection(order,positions,triggers,**args)["verified"])
-        self.assertFalse(verify_testnet_protection(order,positions,triggers[:1],**args)["verified"])
+        for invalid in (triggers[:1],
+                        [triggers[0],{**triggers[1],"me_order_id":999}],
+                        [triggers[0],{**triggers[1],"order_type":"close-long-position"}],
+                        [triggers[0],{**triggers[1],"id":123}]):
+            self.assertFalse(verify_testnet_protection(order,positions,invalid,**args)["verified"])
         self.assertFalse(verify_testnet_protection({**order,"finish_as":"cancelled"},positions,triggers,**args)["verified"])
         self.assertFalse(verify_testnet_protection(order,[],triggers,**args)["verified"])
-        self.assertFalse(verify_testnet_protection(order,positions,triggers[:1]+[dict(triggers[1],id=123)],**args)["verified"])
+
+    def test_unknown_entry_recovered_by_custom_id(self):
+        with patch("gate_testnet_execution.signed_testnet_request",return_value={
+                 "id":456,"text":"t-abc123","contract":"BTC_USDT","size":1,
+                 "status":"finished","finish_as":"filled"}) as signed:
+            r=reconcile_unknown_testnet_entry("t-abc123","BTC_USDT",1)
+            self.assertEqual(r["state"],"FOUND_RECONCILE_PROTECTION")
+            signed.assert_called_once_with("GET",ORDER_PATH+"/t-abc123")
+
+    def test_unknown_entry_fail_closed_on_missing_order_or_mismatch(self):
+        with patch("gate_testnet_execution.signed_testnet_request",side_effect=TimeoutError):
+            self.assertEqual(reconcile_unknown_testnet_entry("t-abc123","BTC_USDT",1)["state"],"UNKNOWN_HALT")
+        with patch("gate_testnet_execution.signed_testnet_request",return_value={
+                 "id":456,"text":"t-abc123","contract":"ETH_USDT","size":1}):
+            self.assertEqual(reconcile_unknown_testnet_entry("t-abc123","BTC_USDT",1)["state"],"UNKNOWN_HALT")
+
+    def test_client_order_lookup_restricted_to_get(self):
+        with self.assertRaises(ValueError):
+            signed_testnet_request("POST", ORDER_PATH+"/t-abc123",body={"contract":"BTC_USDT"})
+        with self.assertRaises(ValueError):
+            signed_testnet_request("GET", ORDER_PATH+"/../accounts")
 
     def test_testnet_entry_off_by_default(self):
         payload=dict(contract="BTC_USDT",size=1,order_type="MARKET",client_id="t-unit001")
