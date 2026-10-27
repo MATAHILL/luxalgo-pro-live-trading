@@ -12,7 +12,17 @@ from psycopg.rows import dict_row
 LOCK_ID=667420215
 OPEN_STATES=("RESERVED","SUBMISSION_UNKNOWN","ENTRY_ACK","HALTED_UNKNOWN",
              "EMERGENCY_CLOSE_REQUIRED","HALTED_UNPROTECTED","PROTECTED_VERIFIED")
-STATES=set(OPEN_STATES) | {"BLOCKED","DUPLICATE_BLOCKED","EMERGENCY_CLOSED"}
+STATES=set(OPEN_STATES) | {"BLOCKED","DUPLICATE_BLOCKED","EMERGENCY_CLOSED","CLOSED_VERIFIED"}
+ALLOWED_TRANSITIONS={
+    "RESERVED":{"BLOCKED","SUBMISSION_UNKNOWN","HALTED_UNKNOWN"},
+    "SUBMISSION_UNKNOWN":{"ENTRY_ACK","HALTED_UNKNOWN","EMERGENCY_CLOSE_REQUIRED"},
+    "ENTRY_ACK":{"PROTECTED_VERIFIED","HALTED_UNKNOWN","EMERGENCY_CLOSE_REQUIRED"},
+    "HALTED_UNKNOWN":{"ENTRY_ACK","EMERGENCY_CLOSE_REQUIRED","HALTED_UNPROTECTED"},
+    "EMERGENCY_CLOSE_REQUIRED":{"EMERGENCY_CLOSED","HALTED_UNPROTECTED","HALTED_UNKNOWN"},
+    "HALTED_UNPROTECTED":{"EMERGENCY_CLOSED"},
+    "PROTECTED_VERIFIED":{"CLOSED_VERIFIED","HALTED_UNPROTECTED"},
+    "BLOCKED":set(),"EMERGENCY_CLOSED":set(),"CLOSED_VERIFIED":set(),
+}
 # ACTIVE verified positions keep a slot until an exchange reconciliation retires them.
 DDL="""
 CREATE TABLE IF NOT EXISTS luxalgo_testnet_protected_journal (
@@ -91,12 +101,18 @@ class PostgresTestnetJournal:
             raise ValueError("Journal metadata must be a mapping")
         with self._connect() as conn:
             with conn.cursor() as cur:
+                cur.execute("SELECT state FROM luxalgo_testnet_protected_journal WHERE signal_id=%s FOR UPDATE",
+                            (signal_id,))
+                existing=cur.fetchone()
+                if not existing:
+                    raise RuntimeError("Unreserved Testnet signal cannot transition")
+                prior=existing["state"]
+                if state not in ALLOWED_TRANSITIONS.get(prior,set()):
+                    raise RuntimeError("Invalid Testnet journal transition: "+prior+" to "+state)
                 cur.execute("""UPDATE luxalgo_testnet_protected_journal
                     SET state=%s, details=COALESCE(details,'{}'::jsonb)||%s::jsonb,
-                        updated_at=NOW() WHERE signal_id=%s
-                    RETURNING signal_id""",(state,json.dumps(details,allow_nan=False),signal_id))
-                if cur.fetchone() is None:
-                    raise RuntimeError("Unreserved Testnet signal cannot transition")
+                        updated_at=NOW() WHERE signal_id=%s""",
+                    (state,json.dumps(details,allow_nan=False),signal_id))
 
     def recovery_candidates(self, limit=20):
         """Read-only candidates, never replays orders."""
