@@ -224,6 +224,15 @@ class GateFuturesTestnetBroker:
                      expected_contract=intent.contract,expected_side=intent.side,
                      stop_price=intent.stop,target_price=intent.target)
         verified=(attached.get("verified") is True and linked.get("verified") is True)
+        if not verified:
+            # The reason is a bounded enum from validated exchange readbacks.
+            reason=(attached.get("reason") if attached.get("verified") is not True
+                    else linked.get("reason"))
+            value=str(reason or "UNVERIFIED")
+            self.last_protection_reason=(value if re.fullmatch(r"[A-Z0-9_]{2,90}",value)
+                                         else "UNVERIFIED")
+        else:
+            self.last_protection_reason="NATIVE_TPSL_VERIFIED"
         if verified:
             self.last_protection_evidence={
                 "entry_id":str(order["id"]),
