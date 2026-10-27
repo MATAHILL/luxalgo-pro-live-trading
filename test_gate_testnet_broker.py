@@ -62,6 +62,33 @@ class TestnetBrokerTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             _request_testnet("POST","/api/v4/futures/btc/orders",body=ORDER)
 
+    def test_testnet_close_accepts_filled_order_and_confirmed_flat_position(self):
+        calls=[]
+        def fake(method,path,*,body=None,query=""):
+            calls.append((method,path))
+            if method=="POST" and path==ROOT+"/orders":
+                self.assertTrue(body["reduce_only"])
+                self.assertEqual(body["auto_size"],"close_long")
+                return {"id":999}
+            if method=="GET" and path==ROOT+"/orders/999":
+                return {"id":999,"contract":"BTC_USDT","status":"finished","finish_as":"filled"}
+            if method=="GET" and path==ROOT+"/positions":
+                return []  # Gate may omit positions closed to zero
+            raise AssertionError((method,path))
+        broker=GateFuturesTestnetBroker(fake)
+        self.assertTrue(broker.emergency_close(INTENT))
+        self.assertEqual(calls.count(("GET",ROOT+"/positions")),2)
+
+    def test_testnet_close_fails_if_any_remaining_position(self):
+        def fake(method,path,*,body=None,query=""):
+            if method=="POST":return {"id":999}
+            if path==ROOT+"/orders/999":
+                return {"id":999,"contract":"BTC_USDT","status":"finished","finish_as":"filled"}
+            if path==ROOT+"/positions":
+                return [{"contract":"BTC_USDT","mode":"dual_long","size":1}]
+            raise AssertionError((method,path))
+        self.assertFalse(GateFuturesTestnetBroker(fake).emergency_close(INTENT))
+
     def test_native_attached_trigger_verification(self):
         broker=GateFuturesTestnetBroker(fake_testnet_request)
         order={"id":123,"contract":"BTC_USDT","status":"finished","finish_as":"filled",
