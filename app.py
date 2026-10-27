@@ -713,8 +713,8 @@ header.terminal-header{border-radius:17px!important}
 .v45-entry{color:#ffda7c;font-weight:800}
 .v45-refresh-state{font-size:10px;color:#99bbd4;margin-top:7px}
 @media(max-width:550px){.v45-widget{height:265px;min-height:265px}}
-/* Live-terminal presentation. Preserve legacy nodes for existing JS/backend but remove paper UI from view. */
-#liveReadinessPanel,.legacy-paper-panel,#paperClosedHistoryPanel,#v4Workspace,#v4PaperCards{display:none!important}
+/* Keep diagnostics and old paper table hidden; the real LuxAlgo paper position CARDS remain visible. */
+#liveReadinessPanel,.legacy-paper-panel,#paperClosedHistoryPanel{display:none!important}
 .bot-control-panel{display:flex!important;gap:12px;align-items:center;flex-wrap:wrap;margin:10px 0}
 .bot-control-panel .bot-control-actions .btn{font-size:11px;padding:6px 10px;min-width:75px}
 .live-ops-banner{margin:14px 0;padding:16px 19px;border:1px solid #47779a;border-radius:12px;background:linear-gradient(110deg,#102b45,#081b2f);display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:10px}
@@ -747,14 +747,13 @@ header.terminal-header{border-radius:17px!important}
 <div class="metric"><small>DATABASE SIGNALS</small><strong>{{ count }}</strong><span>Webhook: {{ 'configured' if configured else 'not configured' }}</span></div>
 </div><section class="panel position-panel"><div class="panel-heading"><h2>OPEN POSITIONS <span class="gloss-cyan">· GATE.IO FUTURES</span></h2><button class="btn gloss-action" id="positionRefresh" type="button">↻ Refresh Positions</button></div>
 <div id="gatePositionsBody" class="position-card-list" aria-live="polite"><p class="light">Checking read-only Gate.io open positions…</p></div><p id="gatePositionsUpdated" class="light">Read-only Gate.io account data; manual close disabled. SL/TP order status is not synchronized.</p></section>
-<section class="panel" id="luxalgoStoredPaperPositions" style="width:100%;margin:14px 0;max-width:none">
-<div class="panel-heading"><h2>LUXALGO AUTOMATED PAPER POSITIONS <span class="gloss-cyan">· DATABASE VERIFIED</span></h2>
-<button class="btn gloss-action" type="button" id="paperDirectRefresh">↻ Refresh Paper Positions</button></div>
-<p class="light"><strong>PAPER ONLY — NO GATE.IO EXCHANGE FILLS.</strong> Shows stored open LuxAlgo simulations directly from PostgreSQL. Does not require live candle-price service.</p>
-<p class="light" id="paperDirectStatus" role="status">Checking the latest stored paper positions…</p>
-<p class="light" id="paperDirectPnlStatus" role="status">Estimated paper P&L: checking public futures quotes; not an exchange fill…</p>
-<div class="tablewrap"><table style="min-width:760px;width:100%"><thead><tr><th>CREATED (IST)</th><th>COIN</th><th>SIGNAL</th><th>TF</th><th>SIMULATED ENTRY</th><th>STOP LOSS</th><th>TAKE PROFIT</th><th>PUBLIC LAST PRICE</th><th>EST. UNREALIZED P&L (USDT)</th><th>PAPER STATUS</th></tr></thead>
-<tbody id="paperDirectRows"><tr><td colspan="10">Loading open LuxAlgo paper positions…</td></tr></tbody></table></div>
+<section class="panel" id="v4Workspace" aria-label="LuxAlgo open paper position cards">
+<div class="v4-head"><div><strong>LUXALGO PRO · INDIVIDUAL POSITION CARDS</strong><p class="light">Real LuxAlgo webhook signals, simulated position data · Public last prices and estimated unrealized P&amp;L · NOT exchange orders</p></div>
+<button id="v4DemoToggle" type="button">SHOW SAMPLE LAYOUT</button></div>
+<div class="v4-tabs"><strong id="v4TabCount">Paper Positions (checking…)</strong><span>PAPER · NO EXCHANGE FILL</span></div>
+<div id="v4DemoWarning" hidden class="v4-demo-banner">SAMPLE LAYOUT ONLY — Sample positions, balances and profit figures are fabricated for visual review, never actual trades.</div>
+<div id="v4PaperCards" role="status" aria-live="polite"><div class="v4-prompt">Loading verified open paper records from PostgreSQL…</div></div>
+<p id="v4PaperCardsStatus" class="light" role="status" style="padding:0 18px 14px">Paper trade cards will update automatically. Real-money trading stays OFF.</p>
 </section>
 <section class="panel" id="testnetReadinessPanel" style="width:100%;margin:14px 0;max-width:none" aria-label="Gate.io Testnet execution readiness">
 <div class="panel-heading"><h2>TESTNET EXECUTION READINESS <span class="gloss-cyan">· GATE.IO</span></h2>
@@ -1460,22 +1459,13 @@ loadRadar();loadScanner();setInterval(()=>{if(!document.hidden)loadRadar()},6000
 'use strict';
 const table=document.getElementById('paperBody');
 const btn=document.getElementById('paperRefresh');
-const sourceChart=document.getElementById('chartShell');
-const sourcePanel=sourceChart&&sourceChart.closest('.panel');
+const workspace=document.getElementById('v4Workspace');
+const cardStatus=document.getElementById('v4PaperCardsStatus');
 const legacyPaper=table&&table.closest('.panel');
-const legacyGate=document.getElementById('gatePositionsBody')?.closest('.panel');
-const strip=document.querySelector('.metric-grid');
-const radar=document.querySelector('.market-grid');
-const recent=document.querySelector('.bottom-grid');
-if(!table||!sourcePanel||!strip||!radar)return;
+if(!workspace||!document.getElementById('v4PaperCards'))return;
 if(legacyPaper)legacyPaper.id='v4LegacyPaperHost';
-if(legacyGate)legacyGate.id='v4LegacyGateHost';
-sourcePanel.id='v4ChartOriginal';
-const workspace=document.createElement('section');workspace.id='v4Workspace';
-workspace.innerHTML='<div class="v4-head"><div><strong>SIMULATED POSITIONS · NOT LIVE ORDERS</strong><br><small>Click a token to open its TradingView chart · one chart at a time · Price estimates are NOT exchange fills</small></div><button id="v4DemoToggle" type="button">SHOW SAMPLE LAYOUT</button></div><div class="v4-tabs"><strong id="v4TabCount">Positions (0)</strong><span>Open Orders (0)</span><span>Paper BOT</span></div><div id="v4DemoWarning" hidden class="v4-demo-banner">SAMPLE LAYOUT ONLY — Positions, balances and profit figures below are fabricated for visual review, never actual trades.</div><div id="v4PaperCards"><div class="v4-prompt">Checking the stored paper trade positions…</div></div>';
-strip.after(workspace);
-// The previous full-screen chart modal is no longer used. Charts belong to cards.
-sourcePanel.style.display='none';
+// DO NOT hide the separate Gate.io real position cards.
+// V4 card UI exists in the page; no obsolete chartShell/metric-grid dependency.
 let demo=false;
 const openIndicators=new Set(); // Only one chart is open at a time.
 const examples=[['IRYSUSDT','LONG',20,.04,15.12,6,.29,.0734006,.07396,.063115],['BIRBUSDT','SHORT',50,-.03,-11.78,9.92,.19,.08079,.080634,.087],['INITUSDT','LONG',20,.00,3.26,5.98,.29,.153,.1533165,.1301081],['AKEUSDT','LONG',10,.01,2,5.5,.54,.039726,.039815,.0330489],['SOLUSDT','SHORT',5,.87,1.45,300,60,166.5,166.02,199.0],['AVAXUSDT','LONG',5,-.42,-.70,300,60,9.092,9.079,7.2]];
@@ -1515,8 +1505,10 @@ async function syncDirectPaperCards(){
    liq:'Not available',sl:p.stop_loss??'—',tp:p.take_profit??'—'
   }));
   draw();
+  if(cardStatus)cardStatus.textContent=directPaperOpen.length+' OPEN LuxAlgo PAPER position cards · Data from PostgreSQL · Not Gate.io exchange fills';
   syncDirectPaperQuotes();
  }catch(error){
+  if(cardStatus)cardStatus.textContent='Open paper positions temporarily unavailable: '+error.message+' · Existing cards retained';
   // Preserve existing cards if the independent read-only position feed is unavailable.
  }
 }
@@ -1538,17 +1530,19 @@ async function syncDirectPaperQuotes(){
    d.pnl=mark?.unrealized_pnl_usdt??'—';
   }
   draw();
+  if(cardStatus)cardStatus.textContent=directPaperOpen.length+' OPEN PAPER position cards · Public quote refresh checked · Unrealized P&L is estimated, NOT an exchange fill';
  }catch(error){
   // Never turn a missing quote into zero profit; leave unpriced placeholders.
   for(const d of directPaperOpen){d.mark='—';d.pnl='—';}
   draw();
+  if(cardStatus)cardStatus.textContent='Paper cards visible · Public quotes unavailable ('+error.message+') · P&L not verified; NOT exchange P&L';
  }finally{priceBusy=false;}
 }
 let lastStructure='';
 function draw(force=false){
  const data=currentData();const cards=document.getElementById('v4PaperCards');
  const structure=(demo?'DEMO':'PAPER')+'|'+data.map(d=>String(d.event_id||d.symbol)+'/'+d.side+'/'+openIndicators.has(String(d.symbol))).join('|');
- document.getElementById('v4TabCount').textContent='Positions ('+data.length+')';
+ document.getElementById('v4TabCount').textContent='Paper Positions ('+data.length+')';
  if(force||structure!==lastStructure){
   cards.innerHTML=data.length?data.map(card).join(''):'<div class="v4-prompt">No OPEN paper positions currently. Closed paper trades remain in history. Use SHOW SAMPLE LAYOUT to inspect six example cards without placing trades.</div>';
   lastStructure=structure;
@@ -1576,7 +1570,7 @@ workspace.addEventListener('click',e=>{
  if(openIndicators.has(sym)){openIndicators.clear();}else{openIndicators.clear();openIndicators.add(sym);}
  draw(true);
 });
-new MutationObserver(()=>{if(!demo&&directPaperOpen===null)draw()}).observe(table,{childList:true,subtree:true,characterData:true});
+if(table)new MutationObserver(()=>{if(!demo&&directPaperOpen===null)draw()}).observe(table,{childList:true,subtree:true,characterData:true});
 draw(true);
 syncDirectPaperCards();
 setInterval(syncDirectPaperCards,12000);
@@ -1742,89 +1736,7 @@ refresh();
 setInterval(()=>{if(!document.hidden)refresh();},120000);
 })();
 </script>
-<script>
-(function(){'use strict';
-const rows=document.getElementById('paperDirectRows');
-const status=document.getElementById('paperDirectStatus');
-const pnlStatus=document.getElementById('paperDirectPnlStatus');
-const button=document.getElementById('paperDirectRefresh');
-if(!rows||!status||!pnlStatus||!button)return;
-let busy=false,quoteBusy=false;
-function cell(row,text){
- const td=document.createElement('td');
- td.textContent=String(text===null||text===undefined||text===''?'—':text);
- row.appendChild(td);return td;
-}
-async function refresh(){
- if(busy)return;
- busy=true;button.disabled=true;
- try{
-   const ctl=new AbortController(),timer=setTimeout(()=>ctl.abort(),7000);
-   let response;
-   try{response=await fetch('/terminal/paper-open-direct',{cache:'no-store',credentials:'same-origin',signal:ctl.signal});}
-   finally{clearTimeout(timer);}
-   const data=await response.json();
-   if(!response.ok||!Array.isArray(data.positions))throw Error(data.error||'Position feed unavailable');
-   rows.replaceChildren();
-   for(const p of data.positions){
-     const row=document.createElement('tr');
-     row.dataset.paperEventId=p.event_id;
-     const tm=new Date(p.created_at).toLocaleString('en-IN',{timeZone:'Asia/Kolkata'});
-     [tm+' IST',p.symbol,p.side,p.timeframe,p.entry,p.stop_loss,p.take_profit,'—','—','OPEN · PAPER ONLY'].forEach(v=>cell(row,v));
-     rows.appendChild(row);
-   }
-   if(!data.positions.length){
-     const row=document.createElement('tr'),td=document.createElement('td');
-     td.colSpan=10;td.textContent='No OPEN simulated positions in PostgreSQL; not an exchange position feed.';
-     row.appendChild(td);rows.appendChild(row);
-   }
-   const checked=new Date(data.checked_at).toLocaleTimeString('en-IN',{timeZone:'Asia/Kolkata'});
-   status.textContent=data.visible_count+' OPEN paper positions (latest 30) · PostgreSQL verified at '+checked+' IST · No exchange fills implied';
-   refreshPaperQuotes();
- }catch(e){
-   status.textContent='Paper position feed unavailable: '+e.message+' · Existing records retained';
- }finally{button.disabled=false;busy=false;}
-}
-async function refreshPaperQuotes(){
- if(quoteBusy||document.hidden)return;
- quoteBusy=true;
- try{
-   const ctl=new AbortController(),timer=setTimeout(()=>ctl.abort(),6500);
-   let response;
-   try{response=await fetch('/terminal/paper-live-pnl',{cache:'no-store',credentials:'same-origin',signal:ctl.signal});}
-   finally{clearTimeout(timer);}
-   const data=await response.json();
-   if(!response.ok||data.source!=='GATE_IO_PUBLIC_LAST_PRICE'||!data.marks||typeof data.marks!=='object')
-      throw Error(data.error||'Public futures quotes unavailable');
-   for(const row of rows.querySelectorAll('tr[data-paper-event-id]')){
-     const mark=data.marks[row.dataset.paperEventId];
-     if(!mark){row.cells[7].textContent='—';row.cells[8].textContent='—';continue;}
-     row.cells[7].textContent=mark.mark_price??'—';
-     row.cells[8].textContent=mark.unrealized_pnl_usdt??'—';
-     const v=Number(mark.unrealized_pnl_usdt);
-     row.cells[8].classList.toggle('positive',mark.unrealized_pnl_usdt!==null&&Number.isFinite(v)&&v>0);
-     row.cells[8].classList.toggle('negative',mark.unrealized_pnl_usdt!==null&&Number.isFinite(v)&&v<0);
-   }
-   const total=data.open_unrealized_pnl_usdt;
-   const complete=total!==null&&total!==undefined;
-   const at=data.as_of?new Date(data.as_of).toLocaleTimeString('en-IN',{timeZone:'Asia/Kolkata'}):'—';
-   pnlStatus.textContent='Estimated open PAPER P&L: '+(complete?total+' USDT':'UNAVAILABLE / partial quotes')+
-     ' · Priced '+data.priced+'/'+data.open_count+' open simulations · Public last prices at '+at+
-     ' IST · Excludes trading fees, funding and slippage · NOT exchange P&L.';
- }catch(e){
-   for(const row of rows.querySelectorAll('tr[data-paper-event-id]')){
-     row.cells[7].textContent='—';row.cells[8].textContent='—';
-   }
-   pnlStatus.textContent='Estimated PAPER P&L unavailable (public quotes could not be verified). No exchange P&L asserted.';
- }finally{quoteBusy=false;}
-}
-button.addEventListener('click',()=>{refresh();refreshPaperQuotes();});
-refresh();
-setInterval(()=>{if(!document.hidden)refresh()},12000);
-setInterval(()=>{if(!document.hidden)refreshPaperQuotes()},5000);
-document.addEventListener('visibilitychange',()=>{if(!document.hidden){refresh();refreshPaperQuotes();}});
-})();
-</script>
+
 </body></html>'''
 
 
