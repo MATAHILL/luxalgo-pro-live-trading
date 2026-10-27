@@ -57,6 +57,65 @@ class TestnetBrokerTests(unittest.TestCase):
         self.assertEqual(broker.last_preflight_stage,"CONTRACT")
         self.assertNotIn("https://",broker.last_preflight_reason)
 
+    def test_contract_http_400_not_listed_on_testnet_is_not_an_order(self):
+        from urllib.error import HTTPError
+        calls=[]
+        def fake(method,path,*,body=None,query=""):
+            calls.append((method,path,query))
+            if path==ROOT+"/contracts/BTC_USDT":
+                raise HTTPError("https://redacted.invalid",400,"rejected",{},None)
+            if path==ROOT+"/contracts" and query=="limit=100&offset=0":
+                return [{"name":"ETH_USDT"},{"name":"SOL_USDT"}]
+            return fake_testnet_request(method,path,body=body,query=query)
+        gw=GateFuturesTestnetBroker(fake)
+        with patch.dict("os.environ",{"GATE_TESTNET_PROTECTED_EXECUTION_ENABLED":"true"}):
+            self.assertFalse(gw.preflight(INTENT,ORDER))
+        self.assertEqual(gw.last_preflight_reason,"CONTRACT_NOT_LISTED_ON_TESTNET")
+        self.assertNotIn(("POST",ROOT+"/orders",""),calls)
+        self.assertEqual(calls[-1],("GET",ROOT+"/contracts","limit=100&offset=0"))
+
+    def test_listed_contract_http_400_remains_exchange_metadata_error(self):
+        from urllib.error import HTTPError
+        def fake(method,path,*,body=None,query=""):
+            if path==ROOT+"/contracts/BTC_USDT":
+                raise HTTPError("https://redacted.invalid",400,"rejected",{},None)
+            if path==ROOT+"/contracts":
+                return [{"name":"BTC_USDT"}]
+            return fake_testnet_request(method,path,body=body,query=query)
+        gw=GateFuturesTestnetBroker(fake)
+        with patch.dict("os.environ",{"GATE_TESTNET_PROTECTED_EXECUTION_ENABLED":"true"}):
+            self.assertFalse(gw.preflight(INTENT,ORDER))
+        self.assertEqual(gw.last_preflight_reason,
+                         "CONTRACT_LISTED_BUT_DETAIL_HTTP_400")
+
+    def test_catalog_pages_checked_without_false_unlisted_result(self):
+        calls=[]
+        def fake(method,path,*,body=None,query=""):
+            if path==ROOT+"/contracts":
+                calls.append(query)
+                if query=="limit=100&offset=0":
+                    return [{"name":"SYM"+str(i)+"_USDT"} for i in range(100)]
+                if query=="limit=100&offset=100":
+                    return [{"name":"BTC_USDT"}]
+            return fake_testnet_request(method,path,body=body,query=query)
+        gw=GateFuturesTestnetBroker(fake)
+        self.assertEqual(gw._testnet_catalog_status("BTC_USDT"),
+                         "CATALOG_CONTRACT_LISTED_DETAIL_REJECTED")
+        self.assertEqual(calls,["limit=100&offset=0","limit=100&offset=100"])
+
+    def test_catalog_error_does_not_override_original_http_status(self):
+        from urllib.error import HTTPError
+        def fake(method,path,*,body=None,query=""):
+            if path==ROOT+"/contracts/BTC_USDT":
+                raise HTTPError("https://redacted.invalid",400,"rejected",{},None)
+            if path==ROOT+"/contracts":
+                raise TimeoutError("testnet catalog unavailable")
+            return fake_testnet_request(method,path,body=body,query=query)
+        gw=GateFuturesTestnetBroker(fake)
+        with patch.dict("os.environ",{"GATE_TESTNET_PROTECTED_EXECUTION_ENABLED":"true"}):
+            self.assertFalse(gw.preflight(INTENT,ORDER))
+        self.assertEqual(gw.last_preflight_reason,"CONTRACT_HTTP_400")
+
     def test_stale_signal_reference_reports_exact_rejection(self):
         old=TestnetIntent(INTENT.signal_id,INTENT.contract,INTENT.side,
             "98","90","110",INTENT.client_id)
