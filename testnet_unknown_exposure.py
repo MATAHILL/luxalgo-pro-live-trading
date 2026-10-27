@@ -115,7 +115,9 @@ def unknown_exposure_gate(database_url=None,now=None):
                     LEFT JOIN luxalgo_testnet_uncertain_exposure_audit a
                     ON a.signal_id=j.signal_id
                     WHERE j.state IN ('HALTED_UNKNOWN','HALTED_UNPROTECTED',
-                                      'EMERGENCY_CLOSE_REQUIRED','RECOVERING')
+                                      'EMERGENCY_CLOSE_REQUIRED')
+                       OR (j.state='RECOVERING'
+                           AND COALESCE(j.details->>'order_id','')='')
                     ORDER BY j.created_at""")
                 records=cur.fetchall()
         for row in records:
