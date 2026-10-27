@@ -5,6 +5,7 @@ Entry is permitted only if a durable reservation and broker verification exist.
 """
 from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation
+import time
 from gate_testnet_execution import atomic_protected_entry_payload, TestnetExecutionDisabled
 
 
@@ -56,11 +57,22 @@ def execute_protected_testnet(intent, broker, journal):
         if str(order.get("finish_as","")).lower()!="filled":
             journal.transition(intent.signal_id,"HALTED_UNKNOWN",{"reason":"FILL_NOT_VERIFIED"})
             return {"state":"HALTED_UNKNOWN","submitted":True}
-        position=broker.positions()
-        triggers=broker.native_triggers()
-        coverage=broker.verify_protection(order,position,triggers,intent,payload)
+        # Gate may publish attached native triggers just AFTER an IOC fill.
+        # Retry authenticated GET only, with a hard short bound; NEVER resend
+        # the entry. If coverage is still unverified, reduce-only close.
+        coverage=False
+        for check_index in range(3):
+            if check_index:
+                time.sleep(0.65)
+            position=broker.positions()
+            triggers=broker.native_triggers()
+            coverage=broker.verify_protection(order,position,triggers,intent,payload)
+            if coverage is True:
+                break
         if coverage is not True:
-            journal.transition(intent.signal_id,"EMERGENCY_CLOSE_REQUIRED",{"order_id":order_id})
+            journal.transition(intent.signal_id,"EMERGENCY_CLOSE_REQUIRED",
+                               {"order_id":order_id,
+                                "reason":"NATIVE_TPSL_NOT_VERIFIED_AFTER_THREE_READBACKS"})
             # Broker adapter must use reduce-only/close side on Testnet and verify flat.
             flat=broker.emergency_close(intent)
             if flat is True:
