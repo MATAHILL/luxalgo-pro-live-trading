@@ -747,6 +747,22 @@ header.terminal-header{border-radius:17px!important}
 <div class="metric"><small>DATABASE SIGNALS</small><strong>{{ count }}</strong><span>Webhook: {{ 'configured' if configured else 'not configured' }}</span></div>
 </div><section class="panel position-panel"><div class="panel-heading"><h2>OPEN POSITIONS <span class="gloss-cyan">· GATE.IO FUTURES</span></h2><button class="btn gloss-action" id="positionRefresh" type="button">↻ Refresh Positions</button></div>
 <div id="gatePositionsBody" class="position-card-list" aria-live="polite"><p class="light">Checking read-only Gate.io open positions…</p></div><p id="gatePositionsUpdated" class="light">Read-only Gate.io account data; manual close disabled. SL/TP order status is not synchronized.</p></section>
+<section class="panel" id="testnetReadinessPanel" style="width:100%;margin:14px 0;max-width:none" aria-label="Gate.io Testnet execution readiness">
+<div class="panel-heading"><h2>TESTNET EXECUTION READINESS <span class="gloss-cyan">· GATE.IO</span></h2>
+<button class="btn gloss-action" id="testnetReadinessRefresh" type="button">↻ Check Testnet Status</button></div>
+<p class="light">Actual Testnet API readback, not paper-trade status. Real-money execution remains OFF.</p>
+<div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(150px,1fr))">
+  <div class="metric"><small>TESTNET CONNECTION</small><strong id="tnReadConnection">Checking…</strong></div>
+  <div class="metric"><small>HEDGE MODE</small><strong id="tnReadHedge">Checking…</strong></div>
+  <div class="metric"><small>ACCOUNT LEVERAGE</small><strong id="tnReadLeverage">Checking…</strong></div>
+  <div class="metric"><small>PROTECTION API ACCESS</small><strong id="tnReadProtection">Checking…</strong></div>
+  <div class="metric"><small>TRIAL READINESS</small><strong id="tnReadStatus">Checking…</strong></div>
+  <div class="metric"><small>REAL-MONEY ORDERS</small><strong class="off">OFF</strong></div>
+</div>
+<p id="tnReadBlockers" class="light" role="status">Checking exchange readiness…</p>
+<p id="tnReadChecked" class="light">Last API check: —</p>
+<p id="tnReadJournal" class="light">Testnet order journal: checking…</p>
+</section>
 <details id="gateTestnetPositionPanel" class="panel" open style="width:100%;margin:14px 0;max-width:none">
 <summary style="cursor:pointer;font-size:16px;font-weight:850;padding:2px 0 12px">OPEN POSITIONS · GATE.IO FUTURES TESTNET — Click to minimize / maximize</summary>
 <p class="light">Separate Testnet account readback · Not production · No automatic order submission enabled</p>
@@ -1607,6 +1623,47 @@ rows.replaceChildren();for(const o of data.orders){const tr=document.createEleme
 if(!data.orders.length){const tr=document.createElement('tr'),td=document.createElement('td');td.colSpan=7;td.textContent='Gate.io reports no unfilled Testnet orders';tr.appendChild(td);rows.appendChild(tr);}status.textContent=data.count+' actual open Testnet orders';}
 catch(err){status.textContent='Unable to verify: '+err.message;rows.replaceChildren();}finally{btn.disabled=false;}}
 btn.addEventListener('click',refresh);pane.addEventListener('toggle',()=>{if(pane.open)refresh()});
+})();
+</script>
+<script>
+(function(){'use strict';
+const get=id=>document.getElementById(id);
+const button=get('testnetReadinessRefresh');
+if(!button)return;
+const set=(id,value)=>{const target=get(id);if(target)target.textContent=String(value);};
+let refreshing=false;
+async function refresh(){
+  if(refreshing)return;
+  refreshing=true;button.disabled=true;
+  set('tnReadStatus','Checking…');
+  try{
+    const response=await fetch('/terminal/testnet-live-readiness',{cache:'no-store'});
+    const data=await response.json();
+    if(!response.ok)throw Error(data.error||'Exchange readiness unavailable');
+    set('tnReadConnection',data.account_connected===true?'CONNECTED':'NOT VERIFIED');
+    set('tnReadHedge',data.dual_mode===true?'ON · Dual':'OFF / UNVERIFIED');
+    set('tnReadLeverage',data.configured_leverage?String(data.configured_leverage)+'×':'UNVERIFIED');
+    set('tnReadProtection',data.native_protection_readback===true?'READABLE':'NOT VERIFIED');
+    set('tnReadStatus',data.ready===true?'PREFLIGHT PASS':'BLOCKED');
+    const reasons=Array.isArray(data.blockers)?data.blockers:[];
+    set('tnReadBlockers',reasons.length?'Blocking checks: '+reasons.join(' · '):'Read-only checks passed; actual protected Testnet trade still unverified.');
+    set('tnReadChecked','Last API check: '+new Date(data.checked_at).toLocaleString('en-IN',{timeZone:'Asia/Kolkata'})+' IST');
+  }catch(error){
+    set('tnReadStatus','UNAVAILABLE');
+    set('tnReadBlockers','Cannot verify Testnet readiness: '+error.message);
+    set('tnReadChecked','Readiness data unavailable');
+  }finally{refreshing=false;button.disabled=false;}
+  try{
+    const response=await fetch('/terminal/testnet-protected-journal',{cache:'no-store'});
+    if(!response.ok)throw Error('journal unreachable');
+    const data=await response.json();
+    const rows=Array.isArray(data.journal)?data.journal:[];
+    set('tnReadJournal','Actual Testnet execution journal: '+rows.length+' record(s); automatic Testnet entries '+(data.testnet_automation_enabled?'ENABLED':'OFF')+'. '+(rows.length?'Latest state: '+rows[0].state:'No Testnet entries confirmed.'));
+  }catch(error){set('tnReadJournal','Execution journal unavailable: '+error.message);}
+}
+button.addEventListener('click',refresh);
+refresh();
+setInterval(()=>{if(!document.hidden)refresh();},120000);
 })();
 </script>
 </body></html>'''
@@ -3977,6 +4034,25 @@ def terminal_testnet_open_orders():
         return jsonify(error='Testnet orders API rejected request',http_status=exc.code,orders_enabled=False),502
     except (URLError,TimeoutError,OSError,ValueError,TypeError):
         return jsonify(error='Testnet open orders unavailable',orders_enabled=False),502
+
+
+@app.get('/terminal/testnet-live-readiness')
+def terminal_testnet_live_readiness():
+    """Authenticated live Testnet GET-only preflight, without order submission."""
+    if not _terminal_permitted():
+        return _terminal_guard()
+    try:
+        from testnet_readiness import inspect_testnet_readiness
+        report=inspect_testnet_readiness()
+        report['production_trading_enabled']=False
+        report['orders_placed']=0
+        response=jsonify(report)
+        response.headers['Cache-Control']='private, no-store'
+        return response
+    except (RuntimeError,OSError,ValueError,TypeError) as exc:
+        app.logger.warning('Read-only Testnet readiness unavailable: %s',type(exc).__name__)
+        return jsonify(ready=False,error='Live Testnet readiness check failed',
+                       production_trading_enabled=False,orders_placed=0),503
 
 
 @app.get('/terminal/testnet-readiness')
