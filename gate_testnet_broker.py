@@ -100,25 +100,42 @@ class GateFuturesTestnetBroker:
         return result
 
     def preflight(self,intent,payload):
+        """Read-only stepwise Testnet preflight; diagnose without relaxing limits."""
         self._approved=None
-        if os.getenv("GATE_TESTNET_PROTECTED_EXECUTION_ENABLED","false").lower()!="true":
+        self.last_preflight_reason="UNVERIFIED"
+        self.last_preflight_stage="START"
+        def failed(reason):
+            self.last_preflight_reason=reason
             return False
-        account=self.request("GET",ROOT+"/accounts")
-        spec=self.request("GET",ROOT+"/contracts/"+intent.contract)
-        positions=self.positions()
-        leverage_data=self.request("GET",ROOT+"/get_leverage/"+intent.contract,
-            query="pos_margin_mode=cross&dual_side=dual_"+intent.side.lower())
+        if os.getenv("GATE_TESTNET_PROTECTED_EXECUTION_ENABLED","false").lower()!="true":
+            return failed("TESTNET_ENTRY_PERMISSION_OFF")
+        try:
+            self.last_preflight_stage="ACCOUNT"
+            account=self.request("GET",ROOT+"/accounts")
+            self.last_preflight_stage="CONTRACT"
+            spec=self.request("GET",ROOT+"/contracts/"+intent.contract)
+            self.last_preflight_stage="POSITIONS"
+            positions=self.positions()
+            self.last_preflight_stage="LEVERAGE"
+            leverage_data=self.request("GET",ROOT+"/get_leverage/"+intent.contract,
+                query="pos_margin_mode=cross&dual_side=dual_"+intent.side.lower())
+        except Exception as exc:
+            # Expose only the check name and HTTP status/type, never API keys,
+            # request authorization headers, response body or credentials.
+            code=getattr(exc,"code",None)
+            reason=("HTTP_"+str(code) if isinstance(code,int) else type(exc).__name__.upper())
+            return failed(self.last_preflight_stage+"_"+reason)
         try:
             actual_leverage=Decimal(str(leverage_data["Lever"]))
             if not actual_leverage.is_finite() or actual_leverage<=0 or actual_leverage>5:
-                return False
+                return failed("LEVERAGE_EXCEEDS_TESTNET_MAX_5X")
         except (KeyError,ValueError,TypeError,InvalidOperation):
-            return False
+            return failed("LEVERAGE_READBACK_INVALID")
         if not isinstance(account,dict) or account.get("currency")!="USDT" or account.get("in_dual_mode") is not True:
-            return False
+            return failed("ACCOUNT_USDT_HEDGE_MODE_UNVERIFIED")
         check=preflight_attached_testnet_entry(payload,spec,positions,account,max_open_positions=5)
         if not check["approved"]:
-            return False
+            return failed("CONTRACT_PREFLIGHT_"+",".join(check.get("reasons",["UNVERIFIED"])))
         try:
             mark=Decimal(str(spec["mark_price"]))
             reference=Decimal(str(intent.reference))
@@ -127,23 +144,25 @@ class GateFuturesTestnetBroker:
             available=Decimal(str(account["available"]))
             if (not all(v.is_finite() for v in (mark,reference,stop,multiplier,available))
                 or min(mark,reference,stop,multiplier,available)<=0):
-                return False
+                return failed("MARK_RISK_METADATA_INVALID")
             if abs(mark-reference)/mark>Decimal("0.005"):
-                return False
+                return failed("REFERENCE_PRICE_OUTSIDE_0_5_PERCENT_MARK_BAND")
             if abs(mark-stop)*multiplier>available*Decimal("0.005"):
-                return False  # 0.5% Testnet risk ceiling; no live financial order.
+                return failed("STOP_RISK_EXCEEDS_0_5_PERCENT_MARGIN")
         except (KeyError,ValueError,InvalidOperation,TypeError):
-            return False
+            return failed("MARK_RISK_METADATA_INVALID")
         try:
             required=atomic_protected_entry_payload(intent.contract,intent.side,
                 intent.reference,intent.stop,intent.target,intent.client_id)
         except (ValueError,TypeError):
-            return False
+            return failed("PROTECTED_TPSL_GEOMETRY_INVALID")
         if payload!=required:
-            return False
+            return failed("PROTECTED_ORDER_PAYLOAD_MISMATCH")
         self._contract=intent.contract
         self._approved=hashlib.sha256(json.dumps(payload,sort_keys=True).encode()).hexdigest()
         self._approved_at=time.monotonic()
+        self.last_preflight_reason="PASS"
+        self.last_preflight_stage="COMPLETE"
         return True
 
     def submit(self,payload):
