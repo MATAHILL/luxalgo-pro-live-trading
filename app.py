@@ -762,6 +762,7 @@ header.terminal-header{border-radius:17px!important}
 <p id="tnReadBlockers" class="light" role="status">Checking exchange readiness…</p>
 <p id="tnReadChecked" class="light">Last API check: —</p>
 <p id="tnReadJournal" class="light">Testnet order journal: checking…</p>
+<p id="tnReadLatestSignal" class="light" role="status">Latest LuxAlgo signal: checking paper versus exchange execution…</p>
 </section>
 <details id="gateTestnetPositionPanel" class="panel" open style="width:100%;margin:14px 0;max-width:none">
 <summary style="cursor:pointer;font-size:16px;font-weight:850;padding:2px 0 12px">OPEN POSITIONS · GATE.IO FUTURES TESTNET — Click to minimize / maximize</summary>
@@ -1660,6 +1661,19 @@ async function refresh(){
     const rows=Array.isArray(data.journal)?data.journal:[];
     set('tnReadJournal','Actual Testnet execution journal: '+rows.length+' record(s); automatic Testnet entries '+(data.testnet_automation_enabled?'ENABLED':'OFF')+'. '+(rows.length?'Latest state: '+rows[0].state:'No Testnet entries confirmed.'));
   }catch(error){set('tnReadJournal','Execution journal unavailable: '+error.message);}
+  try{
+    const response=await fetch('/terminal/testnet-signal-trace',{cache:'no-store'});
+    if(!response.ok)throw Error('signal trace unavailable');
+    const data=await response.json(),r=data.latest_signal;
+    if(!r){set('tnReadLatestSignal','No LuxAlgo webhook signals have been received.');}
+    else{
+      const time=new Date(r.received_at).toLocaleString('en-IN',{timeZone:'Asia/Kolkata'});
+      const paper=r.paper_status==='SIMULATED_ONLY'?'PAPER ONLY (no exchange fill)':(r.paper_status||'NOT RECORDED');
+      const exchange=r.testnet_state||'NO TESTNET ORDER RECORDED';
+      const why=r.handoff_reason?' · Testnet handoff: '+r.handoff_reason:'';
+      set('tnReadLatestSignal','Latest webhook: '+r.symbol+' '+r.side+' ('+r.timeframe+') · '+time+' IST · '+paper+' · '+exchange+why);
+    }
+  }catch(error){set('tnReadLatestSignal','Latest signal trace unavailable: '+error.message);}
 }
 button.addEventListener('click',refresh);
 refresh();
@@ -2245,7 +2259,14 @@ def webhook():
         if elapsed < 0 or elapsed > 120: reasons.append('SIGNAL_EXPIRED')
         if level_status!='VALID': reasons.append('INVALID_OR_MISSING_ENTRY_SL_TP')
         if declared_order_type not in ('MARKET','LIMIT'): reasons.append('ORDER_TYPE_NOT_DECLARED')
-        reasons.append('PROTECTED_TESTNET_EXECUTION_NOT_IMPLEMENTED')
+        # Always audit independently of Testnet order submission.
+        # The configured Testnet execution path is OFF unless both switches
+        # are explicitly enabled; this audit record is not a fill confirmation.
+        if (os.getenv('GATE_TESTNET_PROTECTED_EXECUTION_ENABLED','false').lower()!='true' or
+            os.getenv('GATE_TESTNET_WEBHOOK_AUTOMATION_ENABLED','false').lower()!='true'):
+            reasons.append('TESTNET_AUTOMATION_DISABLED')
+        else:
+            reasons.append('TESTNET_HANDOFF_AUDIT_NOT_EXCHANGE_FILL')
         with _db_connect() as con:
             _ensure_schema(con)
             con.execute("""INSERT INTO luxalgo_testnet_execution_handoff
@@ -4078,6 +4099,47 @@ def terminal_testnet_readiness():
         return response
     except (psycopg.Error,RuntimeError,OSError,ValueError,TypeError):
         return jsonify(ready=False,blockers=['READINESS_DATABASE_UNAVAILABLE'],
+                       production_trading_enabled=False),503
+
+
+@app.get('/terminal/testnet-signal-trace')
+def terminal_testnet_signal_trace():
+    """Authenticated, read-only distinction between webhook/paper and exchange fills.
+
+    A LuxAlgo receipt, paper simulation, or handoff entry must never be
+    presented as proof that Gate Testnet accepted an order.
+    """
+    if not _terminal_permitted():
+        return _terminal_guard()
+    try:
+        with _db_connect() as con:
+            _ensure_schema(con)
+            with con.cursor() as cur:
+                cur.execute("""SELECT r.event_id,r.symbol,r.side,r.timeframe,r.received_at,
+                    p.status AS paper_status,
+                    h.status AS handoff_status,h.reason AS handoff_reason,
+                    j.state AS testnet_state
+                    FROM luxalgo_signal_receipts r
+                    LEFT JOIN luxalgo_simulated_orders p ON p.event_id=r.event_id
+                    LEFT JOIN luxalgo_testnet_execution_handoff h ON h.event_id=r.event_id
+                    LEFT JOIN luxalgo_testnet_protected_journal j ON j.signal_id=r.event_id
+                    ORDER BY r.id DESC LIMIT 1""")
+                found=cur.fetchone()
+        latest=None
+        if found:
+            latest=dict(event_id=found['event_id'],symbol=found['symbol'],
+                side=found['side'],timeframe=found['timeframe'],
+                received_at=found['received_at'].isoformat(),
+                paper_status=found['paper_status'],
+                handoff_status=found['handoff_status'],
+                handoff_reason=found['handoff_reason'],
+                testnet_state=found['testnet_state'])
+        response=jsonify(latest_signal=latest,read_only=True,
+                         production_trading_enabled=False)
+        response.headers['Cache-Control']='private, no-store'
+        return response
+    except (psycopg.Error,RuntimeError,OSError,ValueError,TypeError,KeyError):
+        return jsonify(error='Signal trace temporarily unavailable',
                        production_trading_enabled=False),503
 
 
