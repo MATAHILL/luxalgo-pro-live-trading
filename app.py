@@ -4925,7 +4925,8 @@ def terminal_incoming_signals():
                     l.status AS level_status,l.entry_price,l.stop_loss,l.take_profit,
                     q.state AS queue_state,q.note AS queue_note,
                     s.status AS simulated_status,b.enabled AS bot_enabled,ot.order_type,
-                    j.state AS testnet_execution_state
+                    j.state AS testnet_execution_state,j.payload AS testnet_payload,
+                    a.state AS attempt_state,a.detail AS attempt_detail
                     FROM luxalgo_dry_run_intents i
                     LEFT JOIN luxalgo_signal_levels l ON l.event_id=i.event_id
                     LEFT JOIN luxalgo_auto_paper_queue q ON q.event_id=i.event_id
@@ -4933,6 +4934,7 @@ def terminal_incoming_signals():
                     LEFT JOIN luxalgo_bot_control b ON b.id=1
                     LEFT JOIN luxalgo_signal_order_types ot ON ot.event_id=i.event_id
                     LEFT JOIN luxalgo_testnet_protected_journal j ON j.signal_id=i.event_id
+                    LEFT JOIN luxalgo_testnet_execution_attempts a ON a.event_id=i.event_id
                     ORDER BY i.received_at DESC LIMIT 25''')
                 rows=cur.fetchall()
         now=datetime.now(timezone.utc)
@@ -4941,6 +4943,10 @@ def terminal_incoming_signals():
             age=(now-r['received_at']).total_seconds()
             if r['testnet_execution_state']:
                 state='TESTNET_'+str(r['testnet_execution_state'])
+            elif r['attempt_state']:
+                state='TESTNET_'+str(r['attempt_state'])
+                if r['attempt_state']=='WORKER_QUEUED' and age>90:
+                    state='TESTNET_WORKER_OUTCOME_NOT_RECORDED'
             elif r['queue_state']=='REJECTED':
                 state='NOT_EXECUTED'
             elif r['queue_state']=='PENDING':
@@ -4958,12 +4964,19 @@ def terminal_incoming_signals():
                 entry=str(r['entry_price']) if r['entry_price'] is not None else None,
                 stop_loss=str(r['stop_loss']) if r['stop_loss'] is not None else None,
                 take_profit=str(r['take_profit']) if r['take_profit'] is not None else None,
-                order_type=r['order_type'] or 'NO ORDER SENT',state=state,
+                order_type=(r['order_type'] or
+                   ('MARKET (TESTNET)' if isinstance(r['testnet_payload'],dict)
+                      and r['testnet_payload'].get('tif')=='ioc'
+                      and str(r['testnet_payload'].get('price'))=='0'
+                    else 'UNDECLARED')),state=state,
                 reason=(('Gate Testnet journal state: '+str(r['testnet_execution_state'])) if r['testnet_execution_state'] else
-                        (r['queue_note'] or ('Bot OFF when signal was received' if state=='BOT_OFF' else
+                        (('Testnet worker: '+str(r['attempt_state'])+
+                          (' · '+str(r['attempt_detail']) if r['attempt_detail'] else ''))
+                         if r['attempt_state'] else
+                         (r['queue_note'] or ('Bot OFF when signal was received' if state=='BOT_OFF' else
                          'Received before bot activation: no historical replay' if state=='RECEIVED_NOT_QUEUED' else
                          'No verified Gate Testnet order' if state=='RECEIVED_NOT_EXECUTED' else
-                         'Missing or invalid entry / SL / TP' if state=='INVALID_LEVELS' else ''))),
+                         'Missing or invalid entry / SL / TP' if state=='INVALID_LEVELS' else '')))),
                 level_status=r['level_status'] or 'UNKNOWN'))
         response=jsonify(signals=signals,count=len(signals),display_limit=25,
                          mode='TESTNET_SIGNAL_MONITOR',live_trading=False)
