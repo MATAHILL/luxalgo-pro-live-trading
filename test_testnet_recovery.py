@@ -22,7 +22,8 @@ class RecoveryTests(unittest.TestCase):
         broker.verify_protection.return_value=protected
         broker.emergency_close.return_value=close_success
         with patch.dict("os.environ",{"GATE_TESTNET_PROTECTED_EXECUTION_ENABLED":"true",
-                                      "GATE_TESTNET_WEBHOOK_AUTOMATION_ENABLED":"true"}):
+                                      "GATE_TESTNET_WEBHOOK_AUTOMATION_ENABLED":"true",
+                                      "GATE_TESTNET_RECOVERY_ENABLED":"true"}):
             result=recover_testnet_once(journal=journal,broker_factory=lambda:broker)
         return result,journal,broker
 
@@ -37,6 +38,23 @@ class RecoveryTests(unittest.TestCase):
         result,journal,broker=self.run_case(protected=False)
         self.assertEqual(result["outcomes"],["EMERGENCY_CLOSED"])
         broker.emergency_close.assert_called_once()
+        broker.submit.assert_not_called()
+
+    def test_known_order_id_recovery_uses_numeric_get_not_client_text(self):
+        journal=Mock()
+        journal.recovery_candidates.return_value=[{"signal_id":ROW["signal_id"]}]
+        journal.claim_recovery.return_value={**ROW,"details":{"order_id":"321"}}
+        broker=Mock()
+        broker.order.return_value={"id":321,"contract":"BTC_USDT",
+            "text":"t-recovery123","size":1,"status":"finished","finish_as":"filled"}
+        broker.positions.return_value=[{"contract":"BTC_USDT","mode":"dual_long","size":1}]
+        broker.native_triggers.return_value=[{"id":1}]
+        broker.verify_protection.return_value=True
+        with patch.dict("os.environ",{"GATE_TESTNET_RECOVERY_ENABLED":"true"}):
+            result=recover_testnet_once(journal=journal,broker_factory=lambda:broker)
+        self.assertEqual(result["outcomes"],["PROTECTED_VERIFIED"])
+        broker.order.assert_called_once_with("321")
+        broker.lookup_by_client_id.assert_not_called()
         broker.submit.assert_not_called()
 
     def test_unknown_client_id_never_retries_entry(self):
@@ -59,7 +77,8 @@ class RecoveryTests(unittest.TestCase):
         broker.positions.return_value=[]
         broker.native_triggers.return_value=[]
         with patch.dict("os.environ",{"GATE_TESTNET_PROTECTED_EXECUTION_ENABLED":"true",
-             "GATE_TESTNET_WEBHOOK_AUTOMATION_ENABLED":"true"}):
+             "GATE_TESTNET_WEBHOOK_AUTOMATION_ENABLED":"true",
+                                      "GATE_TESTNET_RECOVERY_ENABLED":"true"}):
             result=recover_testnet_once(journal=journal,broker_factory=lambda:broker)
         self.assertEqual(result["outcomes"],["CLOSED_VERIFIED"])
         broker.emergency_close.assert_not_called()
@@ -67,7 +86,8 @@ class RecoveryTests(unittest.TestCase):
 
     def test_disabled_recovery_does_not_contact_exchange(self):
         with patch.dict("os.environ",{"GATE_TESTNET_PROTECTED_EXECUTION_ENABLED":"false",
-                 "GATE_TESTNET_WEBHOOK_AUTOMATION_ENABLED":"false"}):
+                 "GATE_TESTNET_WEBHOOK_AUTOMATION_ENABLED":"false",
+                 "GATE_TESTNET_RECOVERY_ENABLED":"false"}):
             journal=Mock()
             result=recover_testnet_once(journal=journal)
             self.assertEqual(result["state"],"TESTNET_DISABLED")
