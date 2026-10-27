@@ -1,0 +1,30 @@
+name: Production ledger safety (no order writes)
+on:
+  push:
+    branches:
+      - live-execution-safety-20261027
+    paths:
+      - live_execution_safety.py
+      - test_live_execution_safety.py
+      - .github/workflows/live-execution-safety.yml
+  pull_request:
+    paths:
+      - live_execution_safety.py
+      - test_live_execution_safety.py
+      - .github/workflows/live-execution-safety.yml
+permissions:
+  contents: read
+jobs:
+  ledger-only:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install database driver
+        run: python -m pip install 'psycopg[binary]>=3.2,<4'
+      - name: Compile and test without exchange credentials
+        run: |
+          python -m py_compile live_execution_safety.py test_live_execution_safety.py
+          python -m unittest -v test_live_execution_safety.py
