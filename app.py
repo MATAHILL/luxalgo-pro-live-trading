@@ -47,6 +47,12 @@ _lock = Lock()
 # Do not fall back to RAM on DB failures: that would lose duplicate protection.
 DB_SCHEMA = '''
 -- Testnet-only order journal: separate from production exchange execution.
+CREATE TABLE IF NOT EXISTS luxalgo_testnet_readiness (
+ id SMALLINT PRIMARY KEY CHECK (id=1),
+ state TEXT NOT NULL,
+ details JSONB NOT NULL,
+ checked_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
 CREATE TABLE IF NOT EXISTS luxalgo_testnet_protected_journal (
  signal_id TEXT PRIMARY KEY,
  client_id TEXT NOT NULL UNIQUE,
@@ -3973,6 +3979,32 @@ def terminal_testnet_open_orders():
         return jsonify(error='Testnet open orders unavailable',orders_enabled=False),502
 
 
+@app.get('/terminal/testnet-readiness')
+def terminal_testnet_readiness():
+    """Signed-in private, read-only snapshot of Testnet readiness."""
+    if not _terminal_permitted():
+        return _terminal_guard()
+    try:
+        with _db_connect() as conn:
+            _ensure_schema(conn)
+            with conn.cursor() as cur:
+                cur.execute("SELECT state,details,checked_at FROM luxalgo_testnet_readiness WHERE id=1")
+                saved=cur.fetchone()
+        if saved is None:
+            return jsonify(ready=False,blockers=['READINESS_CHECK_NOT_YET_RUN'],
+                           production_trading_enabled=False),503
+        payload=dict(saved['details'])
+        payload['snapshot_state']=saved['state']
+        payload['checked_at']=saved['checked_at'].isoformat()
+        payload['production_trading_enabled']=False
+        response=jsonify(payload)
+        response.headers['Cache-Control']='private, no-store'
+        return response
+    except (psycopg.Error,RuntimeError,OSError,ValueError,TypeError):
+        return jsonify(ready=False,blockers=['READINESS_DATABASE_UNAVAILABLE'],
+                       production_trading_enabled=False),503
+
+
 @app.get('/terminal/testnet-protected-journal')
 def terminal_testnet_protected_journal():
     """Authenticated read-only order journal, no exchange write or secret fields."""
@@ -5480,6 +5512,30 @@ def _five_journal_verify_exchange_order(event_id, exchange_order_id):
                        and order.get('text')==expected_text),
             'order_id':str(exchange_order_id),'orders_placed':0,
             'fill_verified':False,'protection_verified':False}
+
+
+def _testnet_startup_readiness_probe():
+    """Read-only Testnet account diagnostic. No entry orders, even when armed."""
+    try:
+        from testnet_readiness import inspect_testnet_readiness
+        report=inspect_testnet_readiness()
+        with _db_connect() as con:
+            _ensure_schema(con)
+            con.execute("""INSERT INTO luxalgo_testnet_readiness(id,state,details,checked_at)
+                VALUES(1,%s,%s::jsonb,NOW())
+                ON CONFLICT(id) DO UPDATE SET state=excluded.state,
+                    details=excluded.details,checked_at=excluded.checked_at""",
+                ('READY' if report.get('ready') else 'BLOCKED',json.dumps(report,allow_nan=False)))
+        app.logger.info("Testnet readiness checked; ready=%s",report.get('ready'))
+    except (psycopg.Error,RuntimeError,OSError,ValueError,TypeError) as exc:
+        app.logger.warning('Testnet readiness startup probe failed safely: %s',type(exc).__name__)
+
+
+# Runs exactly one read-only readiness probe per imported app process.
+# Neither setting can be used to enable live funds or place an order here.
+from threading import Thread
+Thread(target=_testnet_startup_readiness_probe,daemon=True,
+       name='gate-testnet-readiness').start()
 
 
 if __name__ == '__main__':
