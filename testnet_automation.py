@@ -14,6 +14,7 @@ from testnet_protected_coordinator import TestnetIntent, execute_protected_testn
 from gate_testnet_execution import atomic_protected_entry_payload
 from testnet_execution_journal import PostgresTestnetJournal
 from gate_testnet_broker import GateFuturesTestnetBroker
+from testnet_unknown_exposure import unknown_exposure_gate
 
 
 def testnet_automation_armed():
@@ -45,6 +46,8 @@ def run_fresh_luxalgo_testnet_signal(event_id, *, broker=None, journal=None, now
     database_url=os.getenv("DATABASE_URL","")
     if not database_url:
         return {"state":"DB_UNAVAILABLE","submitted":False}
+    if not unknown_exposure_gate(database_url):
+        return {"state":"ACCOUNT_UNCERTAIN_EXPOSURE_SAFETY_PAUSE","submitted":False}
     with psycopg.connect(database_url,connect_timeout=5,row_factory=dict_row) as con:
         with con.cursor() as cur:
             cur.execute("""SELECT i.event_id,i.received_at,i.symbol,i.side,i.timeframe,
