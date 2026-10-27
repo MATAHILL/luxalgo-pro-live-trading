@@ -1,7 +1,7 @@
 import unittest
 from gate_testnet_execution import (
     TestnetExecutionDisabled, order_payload, prepare_order_for_review,
-    send_protected_order, signing_message, protective_trigger_payload,
+    send_protected_order, signing_message, protective_trigger_payload, verify_testnet_protection,
 )
 
 class TestnetExecutionSafetyTests(unittest.TestCase):
@@ -45,6 +45,20 @@ class TestnetExecutionSafetyTests(unittest.TestCase):
     def test_wrong_side_trigger_rejected(self):
         with self.assertRaises(ValueError):
             protective_trigger_payload("BTC_USDT","LONG","STOP_LOSS","110","100")
+
+    def test_fill_and_native_protection_readback(self):
+        order={"contract":"BTC_USDT","finish_as":"filled"}
+        positions=[{"contract":"BTC_USDT","mode":"dual_long","size":1}]
+        triggers=[
+          {"id":123,"status":"open","initial":{"contract":"BTC_USDT","auto_size":"close_long"},"trigger":{"price":"90","rule":2}},
+          {"id":124,"status":"open","initial":{"contract":"BTC_USDT","auto_size":"close_long"},"trigger":{"price":"110","rule":1}},
+        ]
+        args=dict(expected_contract="BTC_USDT",expected_side="LONG",stop_price="90",target_price="110")
+        self.assertTrue(verify_testnet_protection(order,positions,triggers,**args)["verified"])
+        self.assertFalse(verify_testnet_protection(order,positions,triggers[:1],**args)["verified"])
+        self.assertFalse(verify_testnet_protection({**order,"finish_as":"cancelled"},positions,triggers,**args)["verified"])
+        self.assertFalse(verify_testnet_protection(order,[],triggers,**args)["verified"])
+        self.assertFalse(verify_testnet_protection(order,positions,triggers[:1]+[dict(triggers[1],id=123)],**args)["verified"])
 
     def test_submit_disabled(self):
         with self.assertRaises(TestnetExecutionDisabled):
