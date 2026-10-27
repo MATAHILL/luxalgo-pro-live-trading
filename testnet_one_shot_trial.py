@@ -2,6 +2,7 @@
 
 Requires three independent opt-in flags. Never touches production keys or hosts.
 A fixed journal signal/client ID prevents any retry on redeploy or ambiguous POST.
+The one-contract trial is capped at 25 USDT notional, 2.5% of margin, and 0.5% stop risk.
 Both webhook automation and real-money dispatch MUST remain off.
 """
 import os
@@ -65,7 +66,7 @@ def run_one_shot_protected_testnet_trial(*,request=None,broker=None,journal=None
         if not stop<mark<target or (mark-stop)*mult>available*Decimal("0.005"):
             return {"state":"TRIAL_STOP_RISK_EXCEEDS_TESTNET_LIMIT","submitted":False}
         notional=mark*mult
-        if notional>min(available*Decimal("0.025"),Decimal("10")):
+        if notional>min(available*Decimal("0.025"),Decimal("25")):
             return {"state":"TRIAL_NOTIONAL_LIMIT","submitted":False}
         intent=TestnetIntent(SIGNAL_ID,CONTRACT,"LONG",str(mark),str(stop),
                             str(target),CLIENT_ID)
@@ -107,7 +108,7 @@ def inspect_one_shot_trial_preflight(*, request=None):
         stop=_rounded(mark*Decimal("0.990"),tick,ROUND_FLOOR)
         target=_rounded(mark*Decimal("1.015"),tick,ROUND_CEILING)
         notional=mark*multiplier
-        max_notional=min(available*Decimal("0.025"),Decimal("10"))
+        max_notional=min(available*Decimal("0.025"),Decimal("25"))
         risk=(mark-stop)*multiplier
         max_risk=available*Decimal("0.005")
         summary={**report,"one_contract_notional_usdt":str(notional),
