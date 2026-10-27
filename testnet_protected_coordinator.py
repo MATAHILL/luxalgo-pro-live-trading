@@ -6,6 +6,7 @@ Entry is permitted only if a durable reservation and broker verification exist.
 from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation
 import time
+import re
 from gate_testnet_execution import atomic_protected_entry_payload, TestnetExecutionDisabled
 
 
@@ -70,9 +71,13 @@ def execute_protected_testnet(intent, broker, journal):
             if coverage is True:
                 break
         if coverage is not True:
+            why=str(getattr(broker,"last_protection_reason","UNVERIFIED") or "UNVERIFIED")
+            if not re.fullmatch(r"[A-Z0-9_]{2,90}",why):
+                why="UNVERIFIED"
             journal.transition(intent.signal_id,"EMERGENCY_CLOSE_REQUIRED",
                                {"order_id":order_id,
-                                "reason":"NATIVE_TPSL_NOT_VERIFIED_AFTER_THREE_READBACKS"})
+                                "reason":"NATIVE_TPSL_NOT_VERIFIED_AFTER_THREE_READBACKS",
+                                "protection_readback_reason":why})
             # Broker adapter must use reduce-only/close side on Testnet and verify flat.
             flat=broker.emergency_close(intent)
             if flat is True:
