@@ -46,6 +46,20 @@ _lock = Lock()
 # Durable signal-only audit store. All trade execution remains disabled.
 # Do not fall back to RAM on DB failures: that would lose duplicate protection.
 DB_SCHEMA = '''
+-- Testnet-only order journal: separate from production exchange execution.
+CREATE TABLE IF NOT EXISTS luxalgo_testnet_protected_journal (
+ signal_id TEXT PRIMARY KEY,
+ client_id TEXT NOT NULL UNIQUE,
+ contract TEXT NOT NULL,
+ side TEXT NOT NULL,
+ state TEXT NOT NULL,
+ payload JSONB NOT NULL,
+ details JSONB NOT NULL DEFAULT '{}'::jsonb,
+ created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+ updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_testnet_journal_state
+ ON luxalgo_testnet_protected_journal(state,updated_at);
 
 CREATE TABLE IF NOT EXISTS luxalgo_testnet_execution_handoff (
  event_id TEXT PRIMARY KEY,
@@ -3957,6 +3971,33 @@ def terminal_testnet_open_orders():
         return jsonify(error='Testnet orders API rejected request',http_status=exc.code,orders_enabled=False),502
     except (URLError,TimeoutError,OSError,ValueError,TypeError):
         return jsonify(error='Testnet open orders unavailable',orders_enabled=False),502
+
+
+@app.get('/terminal/testnet-protected-journal')
+def terminal_testnet_protected_journal():
+    """Authenticated read-only order journal, no exchange write or secret fields."""
+    if not _terminal_permitted():
+        return _terminal_guard()
+    try:
+        with _db_connect() as con:
+            _ensure_schema(con)
+            with con.cursor() as cur:
+                cur.execute("""SELECT signal_id,contract,side,state,updated_at
+                    FROM luxalgo_testnet_protected_journal
+                    ORDER BY updated_at DESC LIMIT 25""")
+                rows=cur.fetchall()
+        report=[dict(signal_id=x['signal_id'],contract=x['contract'],
+                     side=x['side'],state=x['state'],
+                     updated_at=x['updated_at'].isoformat()) for x in rows]
+        response=jsonify(environment='GATE_FUTURES_TESTNET',journal=report,
+            testnet_automation_enabled=(
+                os.getenv('GATE_TESTNET_PROTECTED_EXECUTION_ENABLED','false').lower()=='true' and
+                os.getenv('GATE_TESTNET_WEBHOOK_AUTOMATION_ENABLED','false').lower()=='true'),
+            live_trading=False)
+        response.headers['Cache-Control']='private, no-store'
+        return response
+    except (psycopg.Error,RuntimeError,OSError,ValueError,TypeError,KeyError):
+        return jsonify(error='Testnet journal temporarily unavailable',live_trading=False),503
 
 
 @app.get('/terminal/testnet-positions')
