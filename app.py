@@ -4701,6 +4701,29 @@ _paper_auto_executor = ThreadPoolExecutor(max_workers=1,thread_name_prefix='luxa
 # Testnet opt-in variables. Never reads production trading credentials.
 _testnet_auto_executor = ThreadPoolExecutor(max_workers=1,thread_name_prefix='luxalgo-testnet')
 
+def _testnet_recovery_monitor():
+    """Readback-only timeout reconciliation + Testnet emergency close if needed.
+
+    Never replays an entry order. DB claims protect against duplicate recovery
+    across workers/redeploys. Only starts under BOTH independent Testnet flags.
+    """
+    while (os.getenv('GATE_TESTNET_PROTECTED_EXECUTION_ENABLED','false').lower()=='true' and
+           os.getenv('GATE_TESTNET_WEBHOOK_AUTOMATION_ENABLED','false').lower()=='true'):
+        time.sleep(20)
+        try:
+            from testnet_recovery import recover_testnet_once
+            report=recover_testnet_once(limit=3)
+            if any(x in ('HALTED_UNKNOWN','HALTED_UNPROTECTED') for x in report.get('outcomes',[])):
+                app.logger.error('Testnet recovery requires manual intervention')
+        except (psycopg.Error,RuntimeError,OSError,ValueError,TypeError,KeyError) as exc:
+            app.logger.warning('Testnet recovery polling unavailable: %s',type(exc).__name__)
+
+if (os.getenv('GATE_TESTNET_PROTECTED_EXECUTION_ENABLED','false').lower()=='true' and
+    os.getenv('GATE_TESTNET_WEBHOOK_AUTOMATION_ENABLED','false').lower()=='true'):
+    from threading import Thread
+    Thread(target=_testnet_recovery_monitor,daemon=True,
+           name='luxalgo-testnet-recovery').start()
+
 def _process_testnet_webhook_soon(event_id):
     try:
         from testnet_automation import run_fresh_luxalgo_testnet_signal
