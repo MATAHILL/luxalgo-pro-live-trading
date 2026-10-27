@@ -23,7 +23,7 @@ ROOT="/api/v4/futures/usdt"
 def _request_testnet(method, path, *, body=None, query=""):
     """Testnet-pinned transport; never retries writes or accesses production."""
     if method=="GET":
-        permitted=(path in (ROOT+"/accounts",ROOT+"/positions",ROOT+"/price_orders",ORDER_PATH)
+        permitted=(path in (ROOT+"/accounts",ROOT+"/positions",ROOT+"/price_orders",ORDER_PATH,ROOT+"/contracts")
                    or bool(re.fullmatch(r"/api/v4/futures/usdt/contracts/[A-Z0-9]{2,28}_USDT",path))
                    or bool(re.fullmatch(r"/api/v4/futures/usdt/orders/[0-9]{1,20}",path))
                    or bool(re.fullmatch(r"/api/v4/futures/usdt/orders/t-[A-Za-z0-9_.-]{1,28}",path))
@@ -35,7 +35,9 @@ def _request_testnet(method, path, *, body=None, query=""):
         leverage_query=(path.startswith(ROOT+"/get_leverage/") and
             re.fullmatch(r"pos_margin_mode=cross&dual_side=dual_(long|short)",query))
         orders_query=(path==ORDER_PATH and query=="status=open")
-        if query and not (trigger_query or leverage_query or orders_query):
+        catalog_query=(path==ROOT+"/contracts" and
+            bool(re.fullmatch(r"limit=100&offset=(?:0|[1-9][0-9]{0,4})",query)))
+        if query and not (trigger_query or leverage_query or orders_query or catalog_query):
             raise ValueError("Invalid Testnet read query")
     elif method=="POST":
         if path!=ORDER_PATH or query or not isinstance(body,dict):
@@ -99,6 +101,26 @@ class GateFuturesTestnetBroker:
             raise ValueError("Invalid Testnet native triggers")
         return result
 
+    def _testnet_catalog_status(self, contract):
+        """Read ONLY the Testnet market catalog to explain contract HTTP 400.
+
+        Paginate published active futures contracts. Fail closed if the list
+        cannot be fetched or is too large to inspect exhaustively.
+        """
+        if not re.fullmatch(r"[A-Z0-9]{2,28}_USDT",str(contract)):
+            return "CATALOG_INVALID_CONTRACT"
+        for offset in range(0,1500,100):
+            page=self.request("GET",ROOT+"/contracts",
+                              query="limit=100&offset="+str(offset))
+            if not isinstance(page,list) or not all(isinstance(x,dict) for x in page):
+                return "CATALOG_READBACK_INVALID"
+            names={x.get("name") for x in page if isinstance(x.get("name"),str)}
+            if contract in names:
+                return "CATALOG_CONTRACT_LISTED_DETAIL_REJECTED"
+            if len(page)<100:
+                return "CONTRACT_NOT_LISTED_ON_TESTNET"
+        return "CATALOG_PAGINATION_INCOMPLETE"
+
     def preflight(self,intent,payload):
         """Read-only stepwise Testnet preflight; diagnose without relaxing limits."""
         self._approved=None
@@ -120,10 +142,24 @@ class GateFuturesTestnetBroker:
             leverage_data=self.request("GET",ROOT+"/get_leverage/"+intent.contract,
                 query="pos_margin_mode=cross&dual_side=dual_"+intent.side.lower())
         except Exception as exc:
-            # Expose only the check name and HTTP status/type, never API keys,
-            # request authorization headers, response body or credentials.
+            # HTTP 400 on contract metadata often means the requested futures
+            # pair exists elsewhere but is not listed on TESTNET. Confirm
+            # against Gate's independent, paginated Testnet contract catalog.
+            # This is GET only. No fallback exchange and no substituted coin.
             code=getattr(exc,"code",None)
+            if self.last_preflight_stage=="CONTRACT" and code in (400,404):
+                try:
+                    listed=self._testnet_catalog_status(intent.contract)
+                    if listed=="CONTRACT_NOT_LISTED_ON_TESTNET":
+                        return failed(listed)
+                    if listed=="CATALOG_CONTRACT_LISTED_DETAIL_REJECTED":
+                        return failed("CONTRACT_LISTED_BUT_DETAIL_HTTP_"+str(code))
+                except Exception:
+                    pass  # Preserve original HTTP status if catalog unavailable.
+            # Expose only check stage/status/type, never API keys or response.
             reason=("HTTP_"+str(code) if isinstance(code,int) else type(exc).__name__.upper())
+            if not re.fullmatch(r"[A-Z0-9_]{2,50}",reason):
+                reason="UNVERIFIED"
             return failed(self.last_preflight_stage+"_"+reason)
         try:
             actual_leverage=Decimal(str(leverage_data["Lever"]))
