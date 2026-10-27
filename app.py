@@ -1491,7 +1491,7 @@ function card(d){
  const sizeLabel=testnet?'SIZE (GATE CONTRACTS)':'SIZE (CONTRACTS · PAPER)';
  const roiLabel=testnet?'ROI (exchange-derived)':'ROI (estimated)';
  const state=testnet?(d.feedStale?'STALE FEED · P&L NOT CURRENT':('Native SL/TP: '+String(d.protection||'UNVERIFIED')+' · '+String(d.origin||'TESTNET'))):(demo?'DEMO — simulated values':'Paper quote refresh runs automatically');
- const canClose=testnet&&d.protection==='EXCHANGE_VERIFIED'&&d.signalId&&/^\d+$/.test(String(d.entryOrderId||''));
+ const canClose=testnet&&d.protection==='EXCHANGE_VERIFIED'&&d.signalId&&/^[0-9]+$/.test(String(d.entryOrderId||''));
  const controls=testnet?('<button type="button" data-v45-inspect="1">VIEW TP/SL</button>'+
    '<button disabled title="Reversal requires a new opposite protected order with user-approved SL/TP">Reverse · LOCKED</button>'+
    '<button type="button" data-v45-close="market" '+(canClose?'':'disabled title="Verified exchange-linked position required"')+'>Market Close</button>'+
