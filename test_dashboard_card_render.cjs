@@ -45,7 +45,7 @@ const fs=require('node:fs'),vm=require('node:vm'),assert=require('node:assert/st
  const fetch=async url=>{
    requests.push(url);
    if(url==='/terminal/testnet-position-cards')return {ok:true,json:async()=>({environment:'GATE_FUTURES_TESTNET',fetched_at:1800000000,positions:[
-    {contract:'ETH_USDT',symbol:'ETHUSDT',side:'LONG',size_contracts:1,entry_price:2400,mark_price:2410,unrealized_pnl:0.10,leverage_label:'5×',roi_percent:2,margin_usdt:4.8,liquidation_price:1800,protection_state:'EXCHANGE_VERIFIED',origin:'ONE_SHOT_TESTNET_TRIAL',stop_loss:'2380',take_profit:'2450',stop_order_id:'222',take_order_id:'333'}
+    {contract:'ETH_USDT',symbol:'ETHUSDT',side:'LONG',size_contracts:1,entry_price:2400,mark_price:2410,unrealized_pnl:0.10,leverage_label:'5×',roi_percent:2,margin_usdt:4.8,liquidation_price:1800,protection_state:'EXCHANGE_VERIFIED',origin:'ONE_SHOT_TESTNET_TRIAL',signal_id:'testnet-trial-20261027-a',entry_order_id:'12345',stop_loss:'2380',take_profit:'2450',stop_order_id:'222',take_order_id:'333'}
    ]})};
    if(url==='/terminal/paper-open-direct')return {ok:true,json:async()=>({positions:[
     {event_id:'fake-one',symbol:'ETHUSDT',side:'LONG',entry:'2400',stop_loss:'2380',take_profit:'2450',size_contracts:1},
@@ -67,7 +67,11 @@ const fs=require('node:fs'),vm=require('node:vm'),assert=require('node:assert/st
  assert.equal(rows.length,1,'Expected exactly one exchange Testnet card');
  assert.match(cardHTML,/ETHUSDT/);assert.doesNotMatch(cardHTML,/SOLUSDT/);
  assert.match(cardHTML,/STOP LOSS/);assert.match(cardHTML,/TAKE PROFIT \(TP1\)/);
- assert.match(cardHTML,/disabled title="Read-only Testnet; order actions disabled/);
+ assert.match(cardHTML,/data-v45-inspect="1"/);
+ assert.match(cardHTML,/data-v45-close="market"/);
+ assert.match(cardHTML,/data-v45-close="close"/);
+ assert.match(cardHTML,/Reverse · LOCKED/);
+ assert(!cardHTML.includes('data-v45-close="market" disabled'));
  assert.equal(elems.v4TabCount.textContent,'Gate.io Testnet Positions (1)');
  assert.match(cardHTML,/EXCHANGE UNREALIZED P&L/);
  assert.match(cardHTML,/2410/);
@@ -78,5 +82,5 @@ const fs=require('node:fs'),vm=require('node:vm'),assert=require('node:assert/st
  assert(requests.includes('/terminal/testnet-position-cards'));
  assert(!requests.includes('/terminal/paper-open-direct'));
  assert(!requests.includes('/terminal/paper-live-pnl'));
- console.log('PASS: Gate Testnet ONLY; native SL/TP and exchange PnL; no paper card polling; actions remain locked');
+ console.log('PASS: Testnet-only card, native TP/SL and PnL; view and guarded close controls, Reverse locked');
 })().catch(err=>{console.error(err);process.exitCode=1;});
