@@ -22,7 +22,7 @@ const fs=require('node:fs'),vm=require('node:vm'),assert=require('node:assert/st
  const holder={querySelectorAll:()=>rows};
  Object.defineProperty(holder,'innerHTML',{get(){return cardHTML},set(v){
    cardHTML=v;rows=[];
-   for(const id of ['TESTNET:ETH_USDT:LONG','fake-one','fake-two']){
+   for(const id of ['TESTNET:ETH_USDT:LONG']){
      if(!v.includes('data-v45-card="'+id+'"'))continue;
      const fields={pnl:{textContent:'—'},mark:{textContent:'—'},roi:{textContent:'—'}};
      rows.push({dataset:{v45Card:id},querySelector(selector){
@@ -64,19 +64,19 @@ const fs=require('node:fs'),vm=require('node:vm'),assert=require('node:assert/st
   MutationObserver:Observer,setTimeout:()=>0,clearTimeout:()=>{},setInterval:()=>{}},
   {timeout:3000});
  for(let n=0;n<4;n++)await new Promise(resolve=>setImmediate(resolve));
- assert.equal(rows.length,3,'Expected one exchange Testnet card plus two paper cards');
- assert.match(cardHTML,/ETHUSDT/);assert.match(cardHTML,/SOLUSDT/);
+ assert.equal(rows.length,1,'Expected exactly one exchange Testnet card');
+ assert.match(cardHTML,/ETHUSDT/);assert.doesNotMatch(cardHTML,/SOLUSDT/);
  assert.match(cardHTML,/STOP LOSS/);assert.match(cardHTML,/TAKE PROFIT \(TP1\)/);
- assert.match(cardHTML,/disabled title="No exchange position exists/);
- assert.equal(elems.v4TabCount.textContent,'Testnet (1) · Paper (2)');
- assert.equal(rows[1].fields.mark.textContent,'2412');
- assert.equal(rows[1].fields.pnl.textContent,'+0.12');
- assert.equal(rows[2].fields.pnl.textContent,'+0.22');
+ assert.match(cardHTML,/disabled title="Read-only Testnet; order actions disabled/);
+ assert.equal(elems.v4TabCount.textContent,'Gate.io Testnet Positions (1)');
+ assert.match(cardHTML,/EXCHANGE UNREALIZED P&L/);
+ assert.match(cardHTML,/2410/);
+ assert.match(cardHTML,/>\+0.1</);
  assert.match(cardHTML,/TESTNET · EXCHANGE/);
  assert.match(cardHTML,/Native SL\/TP: EXCHANGE_VERIFIED/);
  assert.match(cardHTML,/SL #222 · TP #333/);
  assert(requests.includes('/terminal/testnet-position-cards'));
- assert(requests.includes('/terminal/paper-open-direct'));
- assert(requests.includes('/terminal/paper-live-pnl'));
- console.log('PASS: exchange Testnet card + two paper cards, separately labeled, PnL and native SL/TP, orders locked');
+ assert(!requests.includes('/terminal/paper-open-direct'));
+ assert(!requests.includes('/terminal/paper-live-pnl'));
+ console.log('PASS: Gate Testnet ONLY; native SL/TP and exchange PnL; no paper card polling; actions remain locked');
 })().catch(err=>{console.error(err);process.exitCode=1;});
