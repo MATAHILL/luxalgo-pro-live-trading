@@ -204,12 +204,24 @@ class GateFuturesTestnetBroker:
             close_order=self.order(str(ack["id"]))
             if (str(close_order.get("id"))!=str(ack["id"])
                 or close_order.get("contract")!=intent.contract
+                or str(close_order.get("status","")).lower()!="finished"
                 or str(close_order.get("finish_as","")).lower()!="filled"):
                 return False
-            positions=self.positions()
+            # Gate may omit fully closed positions entirely. Treat that as
+            # flat only with TWO valid complete position-list readbacks after
+            # the uniquely filled reduce-only close; never rely on an empty
+            # partial/invalid response or the POST acknowledgment.
             side="dual_long" if intent.side=="LONG" else "dual_short"
-            relevant=[p for p in positions if p.get("contract")==intent.contract and p.get("mode")==side]
-            # An empty/missing position readback cannot prove the account is flat.
-            return bool(relevant) and all(Decimal(str(p["size"]))==0 for p in relevant)
+            for _ in range(2):
+                positions=self.positions()
+                if not isinstance(positions,list) or not all(isinstance(p,dict) for p in positions):
+                    return False
+                for p in positions:
+                    if p.get("contract")!=intent.contract or p.get("mode")!=side:
+                        continue
+                    qty=Decimal(str(p["size"]))
+                    if not qty.is_finite() or qty!=0:
+                        return False
+            return True
         except (ValueError,KeyError,TypeError,InvalidOperation,TimeoutError,OSError):
             return False
