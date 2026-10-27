@@ -20,6 +20,12 @@ def testnet_automation_armed():
             os.getenv("GATE_TESTNET_WEBHOOK_AUTOMATION_ENABLED","false").lower()=="true")
 
 
+def testnet_recovery_armed():
+    """Independent Testnet protection recovery flag; never authorizes an entry."""
+    return (os.getenv("GATE_TESTNET_RECOVERY_ENABLED","false").lower()=="true"
+            or testnet_automation_armed())
+
+
 def run_fresh_luxalgo_testnet_signal(event_id, *, broker=None, journal=None, now=None):
     """Execute only a newly RECEIVED & committed LuxAlgo event from PostgreSQL.
 
