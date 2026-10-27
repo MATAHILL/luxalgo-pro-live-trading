@@ -2343,14 +2343,8 @@ def webhook():
     except (psycopg.Error,RuntimeError,OSError):
         app.logger.exception('Cannot durably record incoming LuxAlgo signal')
         return jsonify(error='Signal not stored; retry later',orders_placed=0),503
-    # Process the existing paper queue promptly, not only when a dashboard tab
-    # happens to request /terminal/paper-trades minutes later.
-    # This function is SIMULATION ONLY, with no Gate.io order-writing path.
-    if not duplicate and level_status=='VALID':
-        try:
-            _paper_auto_executor.submit(_process_paper_webhook_soon)
-        except RuntimeError:
-            app.logger.warning('Paper background executor unavailable; queue stays durable')
+    # Testnet-only workflow: preserve signal receipts and the durable
+    # eligibility queue, but never enqueue hypothetical paper executions.
     # TESTNET-only optional webhook pipeline. Both independent switches default OFF.
     # No production exchange order-writing API is imported here.
     if (not duplicate and level_status=='VALID' and
@@ -5109,7 +5103,9 @@ def _process_paper_webhook_soon():
 
 
 def _auto_paper_process(max_items=5):
-    # Durable PAPER queue; no exchange write API.
+    # Legacy paper history remains readable; no new simulations are allowed.
+    # The existing queue is retained as the Testnet signal eligibility handoff.
+    return 0
     from decimal import Decimal, InvalidOperation
     if os.getenv('LIVE_TRADING_ENABLED','false').strip().lower() != 'false':
         return 0
