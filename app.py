@@ -321,7 +321,9 @@ def terminal_bot_control_get():
             _ensure_schema(con)
             with con.cursor() as cur:
                 enabled=_bot_enabled(cur)
-        return jsonify(bot_enabled=enabled, scope='GATE_TESTNET_SIGNAL_CONTROL_ONLY', live_trading=False, orders_enabled=False)
+        from testnet_automation import testnet_automation_armed
+        return jsonify(bot_enabled=enabled,testnet_automation_armed=testnet_automation_armed(),
+                       scope='GATE_TESTNET_SIGNAL_CONTROL_ONLY', live_trading=False, orders_enabled=False)
     except (psycopg.Error,RuntimeError,OSError):
         return jsonify(error='Bot state unavailable; treat as OFF',bot_enabled=False,orders_enabled=False),503
 
@@ -361,7 +363,9 @@ def terminal_bot_control_post():
                 cur.execute('UPDATE luxalgo_bot_control SET enabled=%s, changed_at=NOW() WHERE id=1',(desired,))
                 if not desired:
                     cur.execute("UPDATE luxalgo_auto_paper_queue SET state='REJECTED', checked_at=NOW(),note='Bot manually switched OFF' WHERE state='PENDING'")
-        return jsonify(bot_enabled=desired, scope='GATE_TESTNET_SIGNAL_CONTROL_ONLY',orders_enabled=False,live_trading=False)
+        from testnet_automation import testnet_automation_armed
+        return jsonify(bot_enabled=desired,testnet_automation_armed=testnet_automation_armed(),
+                       scope='GATE_TESTNET_SIGNAL_CONTROL_ONLY',orders_enabled=False,live_trading=False)
     except (psycopg.Error,RuntimeError,OSError):
         return jsonify(error='Unable to save bot state; treat as OFF',orders_enabled=False),503
 
@@ -1168,9 +1172,9 @@ header.terminal-header{border-radius:17px!important}
 (function(){
  const label=document.getElementById('botControlLabel'),detail=document.getElementById('botControlDetail');
  const on=document.getElementById('botTurnOn'),off=document.getElementById('botTurnOff'),indicator=document.getElementById('botStateIndicator');
- function render(enabled){if(indicator){indicator.className='bot-state-indicator '+(enabled?'on':'off');indicator.textContent=enabled?'● BOT ON':'● BOT OFF';}on.classList.toggle('next-action',!enabled);off.classList.toggle('next-action',enabled);label.textContent=enabled?'BOT ON · TESTNET SIGNALS':'BOT OFF · TESTNET SIGNALS PAUSED';label.style.color=enabled?'#6cf3ba':'#ffc47c';detail.textContent=enabled?'Fresh LuxAlgo signals are eligible for protected Gate.io Testnet execution only when the separate testnet safety switches are enabled. Real-money orders remain OFF.':'New signals are logged, with new Testnet entries paused. Existing protected Testnet positions remain monitored.';on.disabled=enabled;off.disabled=!enabled;}
- async function refresh(){try{const r=await fetch('/terminal/bot-control',{cache:'no-store'});const d=await r.json();if(!r.ok)throw Error();render(d.bot_enabled);}catch(e){render(false);if(indicator){indicator.className='bot-state-indicator unknown';indicator.textContent='● STATUS UNKNOWN · SAFE OFF';}detail.textContent='Cannot verify saved bot state: treat as OFF.';on.disabled=true;}}
- async function change(enabled){on.disabled=true;off.disabled=true;try{const r=await fetch('/terminal/bot-control',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({enabled}),cache:'no-store'});const d=await r.json();if(!r.ok)throw Error(d.error||'Update rejected');render(d.bot_enabled);}catch(e){detail.textContent='Cannot change bot state: '+e.message;await refresh();}}
+ function render(enabled,armed){const active=enabled&&armed;if(indicator){indicator.className='bot-state-indicator '+(active?'on':'off');indicator.textContent=active?'● TESTNET ON':'● TESTNET PAUSED';}on.classList.toggle('next-action',!enabled);off.classList.toggle('next-action',enabled);label.textContent=active?'BOT ON · TESTNET EXECUTION ACTIVE':(enabled?'BOT ON · TESTNET SAFETY PAUSE':'BOT OFF · TESTNET SIGNALS PAUSED');label.style.color=active?'#6cf3ba':'#ffc47c';detail.textContent=active?'Only eligible fresh LuxAlgo signals can submit Gate.io Testnet protected orders. Real-money OFF.':(enabled?'Testnet entry permissions are disabled for safety. No new exchange orders; recovery monitoring remains independent.':'New signals are logged; new Testnet entries paused. Existing positions remain monitored.');on.disabled=enabled;off.disabled=!enabled;}
+ async function refresh(){try{const r=await fetch('/terminal/bot-control',{cache:'no-store'});const d=await r.json();if(!r.ok)throw Error();render(d.bot_enabled,d.testnet_automation_armed===true);}catch(e){render(false,false);if(indicator){indicator.className='bot-state-indicator unknown';indicator.textContent='● STATUS UNKNOWN · SAFE OFF';}detail.textContent='Cannot verify saved bot state: treat as OFF.';on.disabled=true;}}
+ async function change(enabled){on.disabled=true;off.disabled=true;try{const r=await fetch('/terminal/bot-control',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({enabled}),cache:'no-store'});const d=await r.json();if(!r.ok)throw Error(d.error||'Update rejected');render(d.bot_enabled,d.testnet_automation_armed===true);}catch(e){detail.textContent='Cannot change bot state: '+e.message;await refresh();}}
  on.addEventListener('click',()=>change(true));off.addEventListener('click',()=>change(false));refresh();setInterval(()=>{if(!document.hidden)refresh();},30000);
 })();
 
