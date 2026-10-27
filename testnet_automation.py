@@ -11,6 +11,7 @@ import psycopg
 from psycopg.rows import dict_row
 
 from testnet_protected_coordinator import TestnetIntent, execute_protected_testnet
+from gate_testnet_execution import atomic_protected_entry_payload
 from testnet_execution_journal import PostgresTestnetJournal
 from gate_testnet_broker import GateFuturesTestnetBroker
 
@@ -78,5 +79,17 @@ def run_fresh_luxalgo_testnet_signal(event_id, *, broker=None, journal=None, now
     intent=TestnetIntent(event_id,symbol[:-4]+"_USDT",r["side"],
                          str(entry),str(stop),str(target),"t-lx-"+event_id)
     gateway=broker or GateFuturesTestnetBroker()
+    # Read-only contract/margin/leverage eligibility BEFORE reserving an
+    # exchange order client ID; unavailable Testnet symbols cannot strand
+    # permanent HALTED_UNKNOWN reservations.
+    try:
+        proposal=atomic_protected_entry_payload(intent.contract,intent.side,
+                      intent.reference,intent.stop,intent.target,intent.client_id)
+        if gateway.preflight(intent,proposal) is not True:
+            return {"state":"TESTNET_PREFLIGHT_BLOCKED","submitted":False}
+    except Exception:
+        return {"state":"TESTNET_MARKET_READBACK_UNAVAILABLE","submitted":False}
     ledger=journal or PostgresTestnetJournal(database_url)
+    # Coordinator independently revalidates the complete preflight after
+    # reserving, so no check here authorizes a write by itself.
     return execute_protected_testnet(intent,gateway,ledger)
