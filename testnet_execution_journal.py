@@ -129,7 +129,7 @@ class PostgresTestnetJournal:
                   SET state='RECOVERING', updated_at=NOW()
                   WHERE signal_id=%s AND (
                     state IN ('SUBMISSION_UNKNOWN','ENTRY_ACK','HALTED_UNKNOWN',
-                              'EMERGENCY_CLOSE_REQUIRED','HALTED_UNPROTECTED')
+                              'EMERGENCY_CLOSE_REQUIRED')
                     OR (state='RECOVERING' AND updated_at < NOW()-INTERVAL '120 seconds')
                   ) RETURNING signal_id,client_id,contract,side,payload,state""",
                   (signal_id,))
@@ -144,7 +144,7 @@ class PostgresTestnetJournal:
                 cur.execute("""SELECT signal_id,client_id,contract,side,state,payload,details,updated_at
                   FROM luxalgo_testnet_protected_journal
                   WHERE (state IN ('SUBMISSION_UNKNOWN','ENTRY_ACK','HALTED_UNKNOWN',
-                                   'EMERGENCY_CLOSE_REQUIRED','HALTED_UNPROTECTED')
+                                   'EMERGENCY_CLOSE_REQUIRED')
                         AND updated_at < NOW()-INTERVAL '10 seconds')
                      OR (state='RECOVERING' AND updated_at < NOW()-INTERVAL '120 seconds')
                   ORDER BY updated_at LIMIT %s""",(limit,))
