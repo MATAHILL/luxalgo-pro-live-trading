@@ -116,8 +116,10 @@ def signed_testnet_request(method: str, path: str, body: dict | None = None,
     if method == "POST":
         if path != ORDER_PATH:
             raise TestnetExecutionDisabled("Native protection writer is not independently verified")
-        if os.getenv("GATE_TESTNET_ENTRY_WRITE_ENABLED", "false").lower() != "true":
-            raise TestnetExecutionDisabled("Testnet entry order writing is OFF")
+        # A single environment toggle is NOT authorization to create an unprotected position.
+        # Fail closed until the protected execution coordinator has been implemented,
+        # tested against the exchange and given its own guarded submission path.
+        raise TestnetExecutionDisabled("Protected Testnet order coordinator not verified; no entry sent")
         if not isinstance(body, dict) or body.get("contract") is None:
             raise ValueError("Explicit validated Testnet entry payload required")
     if method == "GET" and body is not None:
@@ -206,6 +208,7 @@ def submit_testnet_entry(payload: dict, *, allow_unprotected_entry: bool = False
         raise TestnetExecutionDisabled("Unprotected entry override prohibited")
     if os.getenv("GATE_TESTNET_ENTRY_WRITE_ENABLED", "false").lower() != "true":
         raise TestnetExecutionDisabled("Testnet entry writing disabled by default")
+    raise TestnetExecutionDisabled("Protected execution coordinator not ready; no entry sent")
     if not isinstance(payload, dict):
         raise ValueError("Order request must be a dict")
     validated=order_payload(payload["contract"],payload["size"],payload["order_type"],
