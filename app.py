@@ -2150,6 +2150,15 @@ def webhook():
             _paper_auto_executor.submit(_process_paper_webhook_soon)
         except RuntimeError:
             app.logger.warning('Paper background executor unavailable; queue stays durable')
+    # TESTNET-only optional webhook pipeline. Both independent switches default OFF.
+    # No production exchange order-writing API is imported here.
+    if (not duplicate and level_status=='VALID' and
+        os.getenv('GATE_TESTNET_PROTECTED_EXECUTION_ENABLED','false').lower()=='true' and
+        os.getenv('GATE_TESTNET_WEBHOOK_AUTOMATION_ENABLED','false').lower()=='true'):
+        try:
+            _testnet_auto_executor.submit(_process_testnet_webhook_soon,event_id)
+        except RuntimeError:
+            app.logger.error('Testnet worker unavailable; signal not executed')
     # Every newly received signal is durably passed into TESTNET pre-execution
     # validation. The handoff is permanently fail-closed: no exchange write.
     try:
@@ -4646,6 +4655,21 @@ def _paper_trade_snapshot(order):
 # Single paper worker keeps slow public-market requests off webhook response threads.
 # Durable PostgreSQL queue remains the source of truth; no exchange order writes.
 _paper_auto_executor = ThreadPoolExecutor(max_workers=1,thread_name_prefix='luxalgo-paper')
+
+# Separate TESTNET-only serialized executor. Remains OFF without BOTH dedicated
+# Testnet opt-in variables. Never reads production trading credentials.
+_testnet_auto_executor = ThreadPoolExecutor(max_workers=1,thread_name_prefix='luxalgo-testnet')
+
+def _process_testnet_webhook_soon(event_id):
+    try:
+        from testnet_automation import run_fresh_luxalgo_testnet_signal
+        result=run_fresh_luxalgo_testnet_signal(event_id)
+        if result.get('state') not in ('PROTECTED_VERIFIED','TESTNET_DISABLED'):
+            app.logger.warning('Testnet protected execution not verified: %s',
+                               result.get('state','UNKNOWN'))
+    except (psycopg.Error,RuntimeError,OSError,ValueError,TypeError,KeyError) as exc:
+        app.logger.error('Testnet execution halted safely: %s',type(exc).__name__)
+
 
 def _process_paper_webhook_soon():
     try:
