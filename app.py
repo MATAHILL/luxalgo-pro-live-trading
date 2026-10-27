@@ -5753,6 +5753,32 @@ def _five_journal_verify_exchange_order(event_id, exchange_order_id):
             'fill_verified':False,'protection_verified':False}
 
 
+def _testnet_one_shot_trial_worker():
+    """One-shot protected Testnet trial; requires independent opt-in flags.
+
+    No production keys. A fixed persistent PostgreSQL reservation prevents
+    duplicate entries across processes/redeploys and uncertain outcomes.
+    """
+    try:
+        from testnet_one_shot_trial import run_one_shot_protected_testnet_trial
+        result=run_one_shot_protected_testnet_trial()
+        app.logger.info("One-shot Testnet trial state: %s",result.get('state','UNKNOWN'))
+        if result.get('state')!='PROTECTED_VERIFIED':
+            app.logger.warning('Testnet trial not verified; real trading remains disabled')
+    except Exception as exc:
+        app.logger.error('Testnet one-shot trial halted: %s',type(exc).__name__)
+
+if (os.getenv('GATE_TESTNET_ONE_SHOT_PROTECTED_TRIAL','false').lower()=='true' and
+    os.getenv('GATE_TESTNET_PROTECTED_EXECUTION_ENABLED','false').lower()=='true' and
+    os.getenv('GATE_TESTNET_RECOVERY_ENABLED','false').lower()=='true' and
+    os.getenv('GATE_TESTNET_WEBHOOK_AUTOMATION_ENABLED','false').lower()!='true' and
+    os.getenv('LIVE_TRADING_ENABLED','false').lower()!='true' and
+    os.getenv('ORDERS_ENABLED','false').lower()!='true'):
+    from threading import Thread
+    Thread(target=_testnet_one_shot_trial_worker,daemon=True,
+           name='gate-testnet-one-shot-trial').start()
+
+
 def _testnet_startup_readiness_probe():
     """Read-only Testnet account diagnostic. No entry orders, even when armed."""
     try:
