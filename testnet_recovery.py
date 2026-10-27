@@ -36,8 +36,19 @@ def recover_testnet_once(*, broker_factory=None, journal=None, limit=3):
                 ledger.transition(event_id,"HALTED_UNKNOWN",{"reason":"JOURNAL_PAYLOAD_MISMATCH"})
                 outcomes.append("HALTED_UNKNOWN")
                 continue
-            # No retry: the only possible first action is GET by original client_id.
-            order=gateway.lookup_by_client_id(client_id)
+            # No retry: prefer the durable exchange numeric ID when already
+            # known. Some Gate Testnet environments cannot resolve historical
+            # orders by client text ID even though numeric GET still succeeds.
+            details=claim.get("details") or {}
+            known_id=details.get("order_id") if isinstance(details,dict) else None
+            if known_id is not None:
+                if not str(known_id).isdigit():
+                    raise ValueError("Invalid persisted numeric order ID")
+                order=gateway.order(str(known_id))
+                if str(order.get("id"))!=str(known_id):
+                    raise ValueError("Mismatched numeric order readback")
+            else:
+                order=gateway.lookup_by_client_id(client_id)
             if str(order.get("text") or "")!=client_id or order.get("contract")!=contract:
                 raise ValueError("Mismatched exchange recovery readback")
             if type(order.get("size")) is not int:
