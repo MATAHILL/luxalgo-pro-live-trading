@@ -5115,14 +5115,13 @@ def terminal_incoming_signals():
                       and r['testnet_payload'].get('tif')=='ioc'
                       and str(r['testnet_payload'].get('price'))=='0'
                     else 'UNDECLARED')),state=state,
-                reason=(('Gate Testnet journal state: '+str(r['testnet_execution_state'])) if r['testnet_execution_state'] else
-                        (('Testnet worker: '+str(r['attempt_state'])+
-                          (' · '+str(r['attempt_detail']) if r['attempt_detail'] else ''))
+                reason=(('Gate Testnet journal: '+str(r['testnet_execution_state'])) if r['testnet_execution_state'] else
+                        ('Testnet worker: '+str(r['attempt_state'])+
+                         (' · '+str(r['attempt_detail']) if r['attempt_detail'] else '')
                          if r['attempt_state'] else
-                         (r['queue_note'] or ('Bot OFF when signal was received' if state=='BOT_OFF' else
-                         'Received before bot activation: no historical replay' if state=='RECEIVED_NOT_QUEUED' else
-                         'No verified Gate Testnet order' if state=='RECEIVED_NOT_EXECUTED' else
-                         'Missing or invalid entry / SL / TP' if state=='INVALID_LEVELS' else '')))),
+                         ('Awaiting a fresh Testnet execution result'
+                          if state=='WAITING FOR EXECUTION'
+                          else 'No exchange-confirmed Testnet entry; signal not executed'))),
                 level_status=r['level_status'] or 'UNKNOWN',
                 status_label=state))
         response=jsonify(signals=signals,count=len(signals),display_limit=25,
