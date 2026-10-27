@@ -22,7 +22,7 @@ ALLOWED_TRANSITIONS={
     "HALTED_UNPROTECTED":{"EMERGENCY_CLOSED","RECOVERING"},
     "RECOVERING":{"HALTED_UNKNOWN","EMERGENCY_CLOSE_REQUIRED","PROTECTED_VERIFIED","CLOSED_VERIFIED"},
 
-    "PROTECTED_VERIFIED":{"CLOSED_VERIFIED","HALTED_UNPROTECTED"},
+    "PROTECTED_VERIFIED":{"RECOVERING","CLOSED_VERIFIED","HALTED_UNPROTECTED"},
     "BLOCKED":set(),"EMERGENCY_CLOSED":set(),"CLOSED_VERIFIED":set(),
 }
 # ACTIVE verified positions keep a slot until an exchange reconciliation retires them.
@@ -132,6 +132,33 @@ class PostgresTestnetJournal:
                               'EMERGENCY_CLOSE_REQUIRED')
                     OR (state='RECOVERING' AND updated_at < NOW()-INTERVAL '120 seconds')
                   ) RETURNING signal_id,client_id,contract,side,payload,state""",
+                  (signal_id,))
+                return cur.fetchone()
+
+    def protected_audit_candidates(self, limit=5):
+        """Return due protected positions for a read-only exchange-side audit."""
+        if type(limit) is not int or not 1<=limit<=5:
+            raise ValueError("Invalid audit limit")
+        with self._connect() as conn:
+            with conn.cursor() as cur:
+                cur.execute("""SELECT signal_id,client_id,contract,side,state,payload,details,updated_at
+                  FROM luxalgo_testnet_protected_journal
+                  WHERE state='PROTECTED_VERIFIED'
+                    AND updated_at < NOW()-INTERVAL '30 seconds'
+                  ORDER BY updated_at LIMIT %s""",(limit,))
+                return list(cur.fetchall())
+
+    def claim_protected_audit(self, signal_id):
+        """Acquire an atomic lease before checking an already filled position."""
+        if not isinstance(signal_id,str) or not re.fullmatch(r"[0-9A-Za-z_.-]{4,128}",signal_id):
+            raise ValueError("Invalid audit signal ID")
+        with self._connect() as conn:
+            with conn.cursor() as cur:
+                cur.execute("""UPDATE luxalgo_testnet_protected_journal
+                  SET state='RECOVERING',updated_at=NOW()
+                  WHERE signal_id=%s AND state='PROTECTED_VERIFIED'
+                    AND updated_at < NOW()-INTERVAL '30 seconds'
+                  RETURNING signal_id,client_id,contract,side,payload,details,state""",
                   (signal_id,))
                 return cur.fetchone()
 
