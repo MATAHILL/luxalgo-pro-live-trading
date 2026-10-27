@@ -5,11 +5,15 @@ on:
     paths:
       - 'gate_testnet_execution.py'
       - 'test_gate_testnet_execution.py'
+      - 'testnet_protected_coordinator.py'
+      - 'test_testnet_protected_coordinator.py'
       - '.github/workflows/testnet-safety.yml'
   pull_request:
     paths:
       - 'gate_testnet_execution.py'
       - 'test_gate_testnet_execution.py'
+      - 'testnet_protected_coordinator.py'
+      - 'test_testnet_protected_coordinator.py'
       - '.github/workflows/testnet-safety.yml'
 permissions:
   contents: read
@@ -22,6 +26,6 @@ jobs:
         with:
           python-version: '3.12'
       - name: Compile files
-        run: python -m py_compile gate_testnet_execution.py test_gate_testnet_execution.py
+        run: python -m py_compile gate_testnet_execution.py test_gate_testnet_execution.py testnet_protected_coordinator.py test_testnet_protected_coordinator.py
       - name: Run isolated unit tests
-        run: python -m unittest -v test_gate_testnet_execution.py
+        run: python -m unittest -v test_gate_testnet_execution.py test_testnet_protected_coordinator.py
