@@ -3,7 +3,7 @@ from unittest.mock import patch
 from gate_testnet_execution import (
     TestnetExecutionDisabled, order_payload, prepare_order_for_review,
     send_protected_order, signing_message, protective_trigger_payload, verify_testnet_protection,
-    submit_testnet_entry, ORDER_PATH, atomic_protected_entry_payload, verify_attached_tpsl_readback,
+    submit_testnet_entry, ORDER_PATH, atomic_protected_entry_payload, verify_attached_tpsl_readback, preflight_attached_testnet_entry,
 )
 
 class TestnetExecutionSafetyTests(unittest.TestCase):
@@ -117,6 +117,18 @@ class TestnetExecutionSafetyTests(unittest.TestCase):
         self.assertFalse(verified["fill_verified"])
         self.assertFalse(verified["active_native_trigger_verified"])
         self.assertFalse(verify_attached_tpsl_readback({**order,"tpsl_sl_trigger_price":"91"},payload)["verified"])
+
+    def test_attached_entry_exchange_preflight(self):
+        payload=atomic_protected_entry_payload("BTC_USDT","LONG","100","90","110","t-check01")
+        contract={"name":"BTC_USDT","in_delisting":False,"mark_price":"100",
+                  "quanto_multiplier":"0.001","order_size_min":"1","order_size_max":"100",
+                  "leverage_max":"10"}
+        account={"available":"100"}
+        self.assertTrue(preflight_attached_testnet_entry(payload,contract,[],account)["approved"])
+        self.assertFalse(preflight_attached_testnet_entry(payload,contract,[{"contract":"BTC_USDT","size":"1"}],account)["approved"])
+        self.assertFalse(preflight_attached_testnet_entry(payload,contract,[],{"available":"0"})["approved"])
+        self.assertFalse(preflight_attached_testnet_entry(payload,{**contract,"name":"ETH_USDT"},[],account)["approved"])
+        self.assertFalse(preflight_attached_testnet_entry({**payload,"tpsl_sl_trigger_price":None},contract,[],account)["approved"])
 
     def test_submit_disabled(self):
         with self.assertRaises(TestnetExecutionDisabled):
