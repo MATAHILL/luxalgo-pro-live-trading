@@ -44,6 +44,29 @@ class TestnetBrokerTests(unittest.TestCase):
             broker=GateFuturesTestnetBroker(unsafe_request)
             self.assertFalse(broker.preflight(INTENT,ORDER))
 
+    def test_unsupported_testnet_symbol_exposes_stage_not_credentials(self):
+        from urllib.error import HTTPError
+        def fake(method,path,*,body=None,query=""):
+            if path==ROOT+"/contracts/BTC_USDT":
+                raise HTTPError("https://testnet.invalid",404,"not found",{},None)
+            return fake_testnet_request(method,path,body=body,query=query)
+        broker=GateFuturesTestnetBroker(fake)
+        with patch.dict("os.environ",{"GATE_TESTNET_PROTECTED_EXECUTION_ENABLED":"true"}):
+            self.assertFalse(broker.preflight(INTENT,ORDER))
+        self.assertEqual(broker.last_preflight_reason,"CONTRACT_HTTP_404")
+        self.assertEqual(broker.last_preflight_stage,"CONTRACT")
+        self.assertNotIn("https://",broker.last_preflight_reason)
+
+    def test_stale_signal_reference_reports_exact_rejection(self):
+        old=TestnetIntent(INTENT.signal_id,INTENT.contract,INTENT.side,
+            "98","90","110",INTENT.client_id)
+        payload=atomic_protected_entry_payload("BTC_USDT","LONG","98","90","110",old.client_id)
+        broker=GateFuturesTestnetBroker(fake_testnet_request)
+        with patch.dict("os.environ",{"GATE_TESTNET_PROTECTED_EXECUTION_ENABLED":"true"}):
+            self.assertFalse(broker.preflight(old,payload))
+        self.assertEqual(broker.last_preflight_reason,
+                         "REFERENCE_PRICE_OUTSIDE_0_5_PERCENT_MARK_BAND")
+
     def test_preflight_rejects_mutated_stop(self):
         broker=GateFuturesTestnetBroker(fake_testnet_request)
         with patch.dict("os.environ",{"GATE_TESTNET_PROTECTED_EXECUTION_ENABLED":"true"}):
