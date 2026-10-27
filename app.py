@@ -4707,6 +4707,11 @@ def _testnet_recovery_monitor():
     Never replays an entry order. DB claims protect against duplicate recovery
     across workers/redeploys. Only starts under BOTH independent Testnet flags.
     """
+    try:
+        with _db_connect() as con:
+            _ensure_schema(con)
+    except (psycopg.Error,RuntimeError,OSError):
+        app.logger.error('Testnet recovery startup schema unavailable; will retry')
     while (os.getenv('GATE_TESTNET_PROTECTED_EXECUTION_ENABLED','false').lower()=='true' and
            os.getenv('GATE_TESTNET_WEBHOOK_AUTOMATION_ENABLED','false').lower()=='true'):
         time.sleep(20)
