@@ -114,7 +114,12 @@ def signed_testnet_request(method: str, path: str, body: dict | None = None,
     if method not in ("GET", "POST"):
         raise ValueError("Unsupported HTTP method")
     if method == "POST":
-        raise TestnetExecutionDisabled("Direct Testnet order writes prohibited until protected coordinator is verified")
+        if path != ORDER_PATH:
+            raise TestnetExecutionDisabled("Native protection writer is not independently verified")
+        if os.getenv("GATE_TESTNET_ENTRY_WRITE_ENABLED", "false").lower() != "true":
+            raise TestnetExecutionDisabled("Testnet entry order writing is OFF")
+        if not isinstance(body, dict) or body.get("contract") is None:
+            raise ValueError("Explicit validated Testnet entry payload required")
     if method == "GET" and body is not None:
         raise ValueError("GET body forbidden")
     if method == "POST" and not isinstance(body,dict):
@@ -191,16 +196,31 @@ def verify_testnet_protection(order: dict, positions: list, triggers: list,
 
 
 def submit_testnet_entry(payload: dict, *, allow_unprotected_entry: bool = False) -> dict:
-    """Signed Gate Futures TESTNET order transport, isolated from webhooks.
+    """Implement an isolated signed futures TESTNET entry POST.
 
-    Explicitly fail-closed: submission is impossible without a separately
-    implemented protective-order coordinator. Never connects to production.
+    Not called from webhook. Disabled by default via GATE_TESTNET_ENTRY_WRITE_ENABLED.
+    Restricts entry to 1 contract and IOC only pending native protection proof.
+    An HTTP timeout is UNKNOWN, never evidence of failure; never retry blindly.
     """
     if allow_unprotected_entry:
-        raise TestnetExecutionDisabled("Unprotected entry submission is prohibited")
-    raise TestnetExecutionDisabled(
-        "Testnet entry requires reconciled native stop/target protection; no order sent"
-    )
+        raise TestnetExecutionDisabled("Unprotected entry override prohibited")
+    if os.getenv("GATE_TESTNET_ENTRY_WRITE_ENABLED", "false").lower() != "true":
+        raise TestnetExecutionDisabled("Testnet entry writing disabled by default")
+    if not isinstance(payload, dict):
+        raise ValueError("Order request must be a dict")
+    validated=order_payload(payload["contract"],payload["size"],payload["order_type"],
+                            payload.get("limit_price"),payload["client_id"])
+    if abs(validated["size"]) != 1:
+        raise TestnetExecutionDisabled("Testnet entry capped at exactly one contract")
+    if validated["tif"] != "ioc":
+        raise TestnetExecutionDisabled("Pending Limit orders require cancellation/recovery coordinator")
+    # Explicitly only Testnet. Production URL and production keys are never loaded.
+    response=signed_testnet_request("POST",ORDER_PATH,body=validated,timeout=8)
+    if not isinstance(response,dict) or not response.get("id"):
+        raise RuntimeError("Testnet entry response ambiguous; inspect exchange before any retry")
+    return dict(exchange="GATE_FUTURES_TESTNET",order_id=str(response["id"]),
+                order=response,submitted=True,fill_verified=False,
+                native_protection_verified=False)
 
 
 def send_protected_order(*_args, **_kwargs):
