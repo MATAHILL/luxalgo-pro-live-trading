@@ -37,7 +37,8 @@ class TestAutomation(unittest.TestCase):
              "GATE_TESTNET_RECOVERY_ENABLED":"true","GATE_TESTNET_ONE_SHOT_PROTECTED_TRIAL":"false",
              "LIVE_TRADING_ENABLED":"false","ORDERS_ENABLED":"false",
              "DATABASE_URL":"postgresql://unused"}):
-            with patch("testnet_automation.psycopg.connect",return_value=Connection(row)):
+            with patch("testnet_automation.unknown_exposure_gate",return_value=True):
+             with patch("testnet_automation.psycopg.connect",return_value=Connection(row)):
                 with patch("testnet_automation.execute_protected_testnet",
                     return_value={"state":"PROTECTED_VERIFIED"}) as coordinator:
                     broker=Mock();broker.preflight.return_value=True
@@ -60,7 +61,8 @@ class TestAutomation(unittest.TestCase):
              "GATE_TESTNET_ONE_SHOT_PROTECTED_TRIAL":"false",
              "LIVE_TRADING_ENABLED":"false","ORDERS_ENABLED":"false",
              "DATABASE_URL":"postgresql://unused"}):
-            with patch("testnet_automation.psycopg.connect",return_value=Connection(ROW)):
+            with patch("testnet_automation.unknown_exposure_gate",return_value=True):
+             with patch("testnet_automation.psycopg.connect",return_value=Connection(ROW)):
                 with patch("testnet_automation.execute_protected_testnet") as coord:
                     gateway=Mock()
                     gateway.preflight.side_effect=TimeoutError("Unsupported Testnet market")
@@ -83,6 +85,20 @@ class TestAutomation(unittest.TestCase):
         result,run=self.call({**ROW,"stop_loss":None})
         self.assertEqual(result["state"],"INVALID_LEVELS")
         run.assert_not_called()
+
+    def test_uncertain_account_exposure_blocks_new_orders(self):
+        with patch.dict("os.environ",{
+             "GATE_TESTNET_PROTECTED_EXECUTION_ENABLED":"true",
+             "GATE_TESTNET_WEBHOOK_AUTOMATION_ENABLED":"true",
+             "GATE_TESTNET_RECOVERY_ENABLED":"true",
+             "GATE_TESTNET_ONE_SHOT_PROTECTED_TRIAL":"false",
+             "LIVE_TRADING_ENABLED":"false","ORDERS_ENABLED":"false",
+             "DATABASE_URL":"postgresql://unused"}):
+            with patch("testnet_automation.unknown_exposure_gate",return_value=False):
+                with patch("testnet_automation.psycopg.connect") as db:
+                    result=run_fresh_luxalgo_testnet_signal(EVENT)
+        self.assertEqual(result["state"],"ACCOUNT_UNCERTAIN_EXPOSURE_SAFETY_PAUSE")
+        db.assert_not_called()
 
     def test_disarmed_never_accesses_db(self):
         with patch.dict("os.environ",{"GATE_TESTNET_PROTECTED_EXECUTION_ENABLED":"false",
