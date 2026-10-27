@@ -11,15 +11,17 @@ from psycopg.rows import dict_row
 
 LOCK_ID=667420215
 OPEN_STATES=("RESERVED","SUBMISSION_UNKNOWN","ENTRY_ACK","HALTED_UNKNOWN",
-             "EMERGENCY_CLOSE_REQUIRED","HALTED_UNPROTECTED","PROTECTED_VERIFIED")
+             "EMERGENCY_CLOSE_REQUIRED","HALTED_UNPROTECTED","PROTECTED_VERIFIED","RECOVERING")
 STATES=set(OPEN_STATES) | {"BLOCKED","DUPLICATE_BLOCKED","EMERGENCY_CLOSED","CLOSED_VERIFIED"}
 ALLOWED_TRANSITIONS={
     "RESERVED":{"BLOCKED","SUBMISSION_UNKNOWN","HALTED_UNKNOWN"},
-    "SUBMISSION_UNKNOWN":{"ENTRY_ACK","HALTED_UNKNOWN","EMERGENCY_CLOSE_REQUIRED"},
-    "ENTRY_ACK":{"PROTECTED_VERIFIED","HALTED_UNKNOWN","EMERGENCY_CLOSE_REQUIRED"},
-    "HALTED_UNKNOWN":{"ENTRY_ACK","EMERGENCY_CLOSE_REQUIRED","HALTED_UNPROTECTED"},
-    "EMERGENCY_CLOSE_REQUIRED":{"EMERGENCY_CLOSED","HALTED_UNPROTECTED","HALTED_UNKNOWN"},
-    "HALTED_UNPROTECTED":{"EMERGENCY_CLOSED"},
+    "SUBMISSION_UNKNOWN":{"ENTRY_ACK","HALTED_UNKNOWN","EMERGENCY_CLOSE_REQUIRED","RECOVERING"},
+    "ENTRY_ACK":{"PROTECTED_VERIFIED","HALTED_UNKNOWN","EMERGENCY_CLOSE_REQUIRED","RECOVERING"},
+    "HALTED_UNKNOWN":{"ENTRY_ACK","EMERGENCY_CLOSE_REQUIRED","HALTED_UNPROTECTED","RECOVERING"},
+    "EMERGENCY_CLOSE_REQUIRED":{"EMERGENCY_CLOSED","HALTED_UNPROTECTED","HALTED_UNKNOWN","RECOVERING"},
+    "HALTED_UNPROTECTED":{"EMERGENCY_CLOSED","RECOVERING"},
+    "RECOVERING":{"HALTED_UNKNOWN","EMERGENCY_CLOSE_REQUIRED","PROTECTED_VERIFIED","CLOSED_VERIFIED"},
+
     "PROTECTED_VERIFIED":{"CLOSED_VERIFIED","HALTED_UNPROTECTED"},
     "BLOCKED":set(),"EMERGENCY_CLOSED":set(),"CLOSED_VERIFIED":set(),
 }
@@ -114,6 +116,25 @@ class PostgresTestnetJournal:
                         updated_at=NOW() WHERE signal_id=%s""",
                     (state,json.dumps(details,allow_nan=False),signal_id))
 
+    def claim_recovery(self, signal_id):
+        """Atomically claim an uncertain order for readback, never re-submit entry.
+
+        A 2-minute stale claim may be reclaimed after a dead worker restarts.
+        """
+        if not isinstance(signal_id,str) or not re.fullmatch(r"[0-9A-Za-z_.-]{4,128}",signal_id):
+            raise ValueError("Invalid recovery signal ID")
+        with self._connect() as conn:
+            with conn.cursor() as cur:
+                cur.execute("""UPDATE luxalgo_testnet_protected_journal
+                  SET state='RECOVERING', updated_at=NOW()
+                  WHERE signal_id=%s AND (
+                    state IN ('SUBMISSION_UNKNOWN','ENTRY_ACK','HALTED_UNKNOWN',
+                              'EMERGENCY_CLOSE_REQUIRED','HALTED_UNPROTECTED')
+                    OR (state='RECOVERING' AND updated_at < NOW()-INTERVAL '120 seconds')
+                  ) RETURNING signal_id,client_id,contract,side,payload,state""",
+                  (signal_id,))
+                return cur.fetchone()
+
     def recovery_candidates(self, limit=20):
         """Read-only candidates, never replays orders."""
         if type(limit) is not int or not 1<=limit<=100:
@@ -122,7 +143,9 @@ class PostgresTestnetJournal:
             with conn.cursor() as cur:
                 cur.execute("""SELECT signal_id,client_id,contract,side,state,payload,details,updated_at
                   FROM luxalgo_testnet_protected_journal
-                  WHERE state IN ('SUBMISSION_UNKNOWN','ENTRY_ACK','HALTED_UNKNOWN',
-                                  'EMERGENCY_CLOSE_REQUIRED','HALTED_UNPROTECTED')
+                  WHERE (state IN ('SUBMISSION_UNKNOWN','ENTRY_ACK','HALTED_UNKNOWN',
+                                   'EMERGENCY_CLOSE_REQUIRED','HALTED_UNPROTECTED')
+                        AND updated_at < NOW()-INTERVAL '10 seconds')
+                     OR (state='RECOVERING' AND updated_at < NOW()-INTERVAL '120 seconds')
                   ORDER BY updated_at LIMIT %s""",(limit,))
                 return list(cur.fetchall())
