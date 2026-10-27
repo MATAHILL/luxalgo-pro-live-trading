@@ -31,7 +31,7 @@ def _request_testnet(method, path, *, body=None, query=""):
         if not permitted or body is not None:
             raise ValueError("Disallowed Testnet read")
         trigger_query=(path==ROOT+"/price_orders" and
-            re.fullmatch(r"status=open&contract=[A-Z0-9]{2,28}_USDT",query))
+            (query=="status=open" or re.fullmatch(r"status=open&contract=[A-Z0-9]{2,28}_USDT",query)))
         leverage_query=(path.startswith(ROOT+"/get_leverage/") and
             re.fullmatch(r"pos_margin_mode=cross&dual_side=dual_(long|short)",query))
         orders_query=(path==ORDER_PATH and query=="status=open")
