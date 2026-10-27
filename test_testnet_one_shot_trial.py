@@ -1,6 +1,6 @@
 import unittest
 from unittest.mock import Mock,patch
-from testnet_one_shot_trial import run_one_shot_protected_testnet_trial
+from testnet_one_shot_trial import run_one_shot_protected_testnet_trial,inspect_one_shot_trial_preflight
 from gate_testnet_broker import ROOT
 ENV={"GATE_TESTNET_ONE_SHOT_PROTECTED_TRIAL":"true",
      "GATE_TESTNET_PROTECTED_EXECUTION_ENABLED":"true",
@@ -21,6 +21,27 @@ def request(method,path,*,query="",body=None):
     raise AssertionError(path)
 
 class TestOneShot(unittest.TestCase):
+    def test_read_only_preflight_budget_pass(self):
+        calls=[]
+        def read(method,path,*,query="",body=None):
+            self.assertEqual(method,"GET")
+            calls.append(path)
+            return request(method,path,query=query,body=body)
+        with patch.dict("os.environ",ENV):
+            r=inspect_one_shot_trial_preflight(request=read)
+        self.assertEqual(r["state"],"BUDGET_PASS_NO_ORDER")
+        self.assertEqual(r["order_submitted"],False)
+        self.assertGreaterEqual(len(calls),5)
+
+    def test_read_only_preflight_rejects_budget_violation(self):
+        def expensive(method,path,*,query="",body=None):
+            if path==ROOT+"/contracts/ETH_USDT":
+                return {**SPEC,"quanto_multiplier":"0.01"}
+            return request(method,path,query=query,body=body)
+        r=inspect_one_shot_trial_preflight(request=expensive)
+        self.assertEqual(r["state"],"TRIAL_NOTIONAL_LIMIT")
+        self.assertFalse(r["order_submitted"])
+
     def test_disabled_without_any_network(self):
         with patch.dict("os.environ",{**ENV,"GATE_TESTNET_ONE_SHOT_PROTECTED_TRIAL":"false"}):
             r=run_one_shot_protected_testnet_trial()
