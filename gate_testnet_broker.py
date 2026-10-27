@@ -127,10 +127,34 @@ class GateFuturesTestnetBroker:
             return failed(self.last_preflight_stage+"_"+reason)
         try:
             actual_leverage=Decimal(str(leverage_data["Lever"]))
-            if not actual_leverage.is_finite() or actual_leverage<=0 or actual_leverage>5:
-                return failed("LEVERAGE_EXCEEDS_TESTNET_MAX_5X")
+            if not actual_leverage.is_finite() or actual_leverage<=0:
+                return failed("LEVERAGE_READBACK_INVALID")
+            if actual_leverage>Decimal("5"):
+                # This optional setting action is isolated to Testnet and
+                # requires an independently verified, entirely flat account.
+                # It never submits a position and never retries an unknown POST.
+                from testnet_contract_leverage import prepare_contract_5x
+                setup=prepare_contract_5x(intent.contract,read=self.request)
+                if setup.get("state") not in (
+                        "LEVERAGE_WITHIN_5X_VERIFIED","LEVERAGE_5X_EXCHANGE_VERIFIED"):
+                    return failed(setup.get("state","LEVERAGE_SETUP_UNVERIFIED"))
+                self.last_preflight_stage="LEVERAGE_READBACK_AFTER_SETUP"
+                leverage_data=self.request("GET",ROOT+"/get_leverage/"+intent.contract,
+                    query="pos_margin_mode=cross&dual_side=dual_"+intent.side.lower())
+                actual_leverage=Decimal(str(leverage_data["Lever"]))
+                if not actual_leverage.is_finite() or actual_leverage<=0 or actual_leverage>5:
+                    return failed("LEVERAGE_STILL_EXCEEDS_TESTNET_MAX_5X")
+                self.last_preflight_stage="ACCOUNT_AFTER_LEVERAGE"
+                account=self.request("GET",ROOT+"/accounts")
+                positions=self.positions()
         except (KeyError,ValueError,TypeError,InvalidOperation):
             return failed("LEVERAGE_READBACK_INVALID")
+        except Exception as exc:
+            code=getattr(exc,"code",None)
+            reason=("HTTP_"+str(code) if isinstance(code,int) else type(exc).__name__.upper())
+            if not re.fullmatch(r"[A-Z0-9_]{1,40}",reason):
+                reason="UNVERIFIED"
+            return failed("LEVERAGE_SETUP_"+reason)
         if not isinstance(account,dict) or account.get("currency")!="USDT" or account.get("in_dual_mode") is not True:
             return failed("ACCOUNT_USDT_HEDGE_MODE_UNVERIFIED")
         check=preflight_attached_testnet_entry(payload,spec,positions,account,max_open_positions=5)
