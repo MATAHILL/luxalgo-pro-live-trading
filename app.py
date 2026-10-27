@@ -4825,9 +4825,12 @@ def _testnet_recovery_monitor():
         time.sleep(20)
         try:
             from testnet_recovery import recover_testnet_once
+            from testnet_protection_watchdog import audit_protected_testnet_once
             report=recover_testnet_once(limit=3)
-            if any(x in ('HALTED_UNKNOWN','HALTED_UNPROTECTED') for x in report.get('outcomes',[])):
-                app.logger.error('Testnet recovery requires manual intervention')
+            audit=audit_protected_testnet_once(limit=3)
+            if any(x in ('HALTED_UNKNOWN','HALTED_UNPROTECTED') for x in
+                   report.get('outcomes',[])+audit.get('outcomes',[])):
+                app.logger.error('Testnet protection audit or recovery requires manual intervention')
         except (psycopg.Error,RuntimeError,OSError,ValueError,TypeError,KeyError) as exc:
             app.logger.warning('Testnet recovery polling unavailable: %s',type(exc).__name__)
 
