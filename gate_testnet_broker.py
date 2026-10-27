@@ -14,7 +14,7 @@ from urllib.request import Request, urlopen
 from gate_testnet_execution import (
     TESTNET_HOST, ORDER_PATH, signed_headers,
     preflight_attached_testnet_entry, verify_testnet_protection,
-    verify_attached_tpsl_readback, TestnetExecutionDisabled,
+    verify_attached_tpsl_readback, atomic_protected_entry_payload, TestnetExecutionDisabled,
 )
 
 ROOT="/api/v4/futures/usdt"
@@ -110,8 +110,12 @@ class GateFuturesTestnetBroker:
                 return False  # 0.5% Testnet risk ceiling; no live financial order.
         except (KeyError,ValueError,InvalidOperation,TypeError):
             return False
-        if (payload.get("contract")!=intent.contract or
-            payload.get("text")!=intent.client_id):
+        try:
+            required=atomic_protected_entry_payload(intent.contract,intent.side,
+                intent.reference,intent.stop,intent.target,intent.client_id)
+        except (ValueError,TypeError):
+            return False
+        if payload!=required:
             return False
         self._contract=intent.contract
         self._approved=hashlib.sha256(json.dumps(payload,sort_keys=True).encode()).hexdigest()
@@ -150,7 +154,7 @@ class GateFuturesTestnetBroker:
         try:
             order={"contract":intent.contract,"size":0,"price":"0","tif":"ioc",
                    "auto_size":close_side,"reduce_only":True,
-                   "text":"t-eclose-"+intent.client_id[2:]}
+                   "text":"t-ec-"+hashlib.sha256(intent.client_id.encode()).hexdigest()[:20]}
             ack=self.request("POST",ORDER_PATH,body=order)
             if not isinstance(ack,dict) or not ack.get("id"):
                 return False
