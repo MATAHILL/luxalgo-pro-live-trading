@@ -85,7 +85,17 @@ def audit_protected_testnet_once(*,broker_factory=None,journal=None,limit=3):
                 str(payload["tpsl_sl_trigger_price"]),
                 str(payload["tpsl_tp_trigger_price"]),claimed["client_id"])
             if gateway.verify_protection(order,positions,triggers,intent,payload):
-                ledger.transition(eid,"PROTECTED_VERIFIED",{"reason":"NATIVE_TPSL_RECHECK_PASSED","order_id":oid})
+                facts={"reason":"NATIVE_TPSL_RECHECK_PASSED","order_id":oid}
+                evidence=getattr(gateway,"last_protection_evidence",None)
+                if isinstance(evidence,dict):
+                    ids=evidence.get("native_protection_ids")
+                    if (evidence.get("entry_id")==oid
+                        and evidence.get("entry_finish_as")=="filled"
+                        and isinstance(ids,list) and len(ids)==2
+                        and len(set(str(x) for x in ids))==2):
+                        facts["native_protection_ids"]=list(str(x) for x in ids)
+                        facts["entry_finish_as"]="filled"
+                ledger.transition(eid,"PROTECTED_VERIFIED",facts)
                 outcome.append("PROTECTED_VERIFIED")
             else:
                 ledger.transition(eid,"EMERGENCY_CLOSE_REQUIRED",{
