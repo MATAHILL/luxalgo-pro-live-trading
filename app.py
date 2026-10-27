@@ -4933,6 +4933,56 @@ def terminal_testnet_order_readiness():
     return response
 
 
+def _incoming_visible_since(cursor):
+    """Persist a one-way dashboard reset; preserve receipt/execution audit data.
+
+    The Render reset environment value seeds a fresh view even if no user
+    ever clicks Clear. Interactive clear advances the same durable cursor.
+    """
+    from incoming_testnet_status import parse_reset_time
+    cursor.execute("""CREATE TABLE IF NOT EXISTS luxalgo_incoming_display_reset (
+       id SMALLINT PRIMARY KEY CHECK(id=1),
+       cleared_at TIMESTAMPTZ NOT NULL
+    )""")
+    cursor.execute("SELECT cleared_at FROM luxalgo_incoming_display_reset WHERE id=1")
+    row=cursor.fetchone()
+    boundary=row['cleared_at'] if row else datetime(1970,1,1,tzinfo=timezone.utc)
+    seeded=parse_reset_time(os.getenv('LUXALGO_INCOMING_VISIBLE_AFTER_UTC',''))
+    if seeded is not None and seeded>boundary:
+        cursor.execute("""INSERT INTO luxalgo_incoming_display_reset(id,cleared_at)
+            VALUES(1,%s) ON CONFLICT(id) DO UPDATE
+            SET cleared_at=GREATEST(luxalgo_incoming_display_reset.cleared_at,EXCLUDED.cleared_at)
+            RETURNING cleared_at""",(seeded,))
+        boundary=cursor.fetchone()['cleared_at']
+    return boundary
+
+
+@app.post('/terminal/incoming-signals/reset')
+def terminal_reset_incoming_signals():
+    """Reset only dashboard visibility; never delete exchange safety evidence."""
+    if not _terminal_permitted():
+        return _terminal_guard()
+    if not _csrf_valid():
+        return jsonify(error='Invalid terminal session verification'),403
+    try:
+        with _db_connect() as con:
+            with con.cursor() as cur:
+                # Ensure previous Render reset has also been applied.
+                _incoming_visible_since(cur)
+                cur.execute("""INSERT INTO luxalgo_incoming_display_reset(id,cleared_at)
+                    VALUES(1,clock_timestamp()) ON CONFLICT(id) DO UPDATE
+                    SET cleared_at=GREATEST(luxalgo_incoming_display_reset.cleared_at,clock_timestamp())
+                    RETURNING cleared_at""")
+                since=cur.fetchone()['cleared_at']
+        response=jsonify(status='CLEARED',visible_signals=0,
+                         display_since=since.isoformat(),audit_records_preserved=True,
+                         environment='GATE_FUTURES_TESTNET')
+        response.headers['Cache-Control']='private, no-store'
+        return response
+    except (psycopg.Error,RuntimeError,OSError,ValueError,TypeError):
+        return jsonify(error='Visible history reset could not be saved'),503
+
+
 @app.get('/terminal/incoming-signals')
 def terminal_incoming_signals():
     """Latest 25 webhook receipts and independently verified Testnet states."""
@@ -4944,11 +4994,13 @@ def terminal_incoming_signals():
             with con.cursor() as cur:
                 # Dashboard works before the first successful Testnet event.
                 cur.execute(_execution_attempts_schema)
+                cutoff=_incoming_visible_since(cur)
                 cur.execute('''SELECT i.event_id,i.received_at,i.symbol,i.side,i.timeframe,
                     l.status AS level_status,l.entry_price,l.stop_loss,l.take_profit,
                     q.state AS queue_state,q.note AS queue_note,
                     s.status AS simulated_status,b.enabled AS bot_enabled,ot.order_type,
                     j.state AS testnet_execution_state,j.payload AS testnet_payload,
+                    j.details AS testnet_details,j.client_id AS testnet_client_id,
                     a.state AS attempt_state,a.detail AS attempt_detail
                     FROM luxalgo_dry_run_intents i
                     LEFT JOIN luxalgo_signal_levels l ON l.event_id=i.event_id
@@ -4958,30 +5010,41 @@ def terminal_incoming_signals():
                     LEFT JOIN luxalgo_signal_order_types ot ON ot.event_id=i.event_id
                     LEFT JOIN luxalgo_testnet_protected_journal j ON j.signal_id=i.event_id
                     LEFT JOIN luxalgo_testnet_execution_attempts a ON a.event_id=i.event_id
-                    ORDER BY i.received_at DESC LIMIT 25''')
+                    WHERE i.received_at > %s
+                    ORDER BY i.received_at DESC LIMIT 25''',(cutoff,))
                 rows=cur.fetchall()
+        # Only a freshly rechecked exchange position with native SL/TP
+        # qualifies for a LIVE indicator, never an unverified journal label.
+        verified_live=set()
+        exchange_checked=False
+        if any(r['testnet_execution_state']=='PROTECTED_VERIFIED' for r in rows):
+            try:
+                from gate_testnet_broker import GateFuturesTestnetBroker
+                from testnet_card_feed import build_testnet_position_cards
+                positions=_gate_read_only_positions(testnet=True)
+                eligible=[dict(signal_id=r['event_id'],
+                    contract=r['symbol'][:-4]+'_USDT',side=r['side'],
+                    state=r['testnet_execution_state'],payload=r['testnet_payload'],
+                    details=r['testnet_details'],client_id=r['testnet_client_id'])
+                    for r in rows if r['testnet_execution_state']=='PROTECTED_VERIFIED']
+                cards=build_testnet_position_cards(positions,eligible,GateFuturesTestnetBroker())
+                verified_live={str(c['signal_id']) for c in cards
+                    if c.get('protection_state')=='EXCHANGE_VERIFIED' and c.get('signal_id')}
+                exchange_checked=True
+            except Exception:
+                exchange_checked=False
+        from incoming_testnet_status import classify_signal
         now=datetime.now(timezone.utc)
         signals=[]
         for r in rows:
             age=(now-r['received_at']).total_seconds()
-            if r['testnet_execution_state']:
-                state='TESTNET_'+str(r['testnet_execution_state'])
-            elif r['attempt_state']:
-                state='TESTNET_'+str(r['attempt_state'])
-                if r['attempt_state']=='WORKER_QUEUED' and age>90:
-                    state='TESTNET_WORKER_OUTCOME_NOT_RECORDED'
-            elif r['queue_state']=='REJECTED':
-                state='NOT_EXECUTED'
-            elif r['queue_state']=='PENDING':
-                state='EXPIRED_NOT_EXECUTED' if age>120 else 'PENDING_TESTNET_SIGNAL'
-            elif r['level_status'] in ('MISSING','INVALID'):
-                state='INVALID_LEVELS'
-            elif r['queue_state'] is None:
-                state='RECEIVED_NOT_QUEUED'
-            elif not r['bot_enabled']:
-                state='BOT_OFF'
-            else:
-                state='RECEIVED_NOT_EXECUTED'
+            state=classify_signal(
+                journal_state=r['testnet_execution_state'],
+                attempt_state=r['attempt_state'],
+                queue_state=r['queue_state'],
+                age_seconds=age,
+                exchange_checked=exchange_checked,
+                exchange_open=r['event_id'] in verified_live)
             signals.append(dict(event_id=r['event_id'],time=r['received_at'].isoformat(),
                 symbol=r['symbol'],side=r['side'],timeframe=r['timeframe'],
                 entry=str(r['entry_price']) if r['entry_price'] is not None else None,
@@ -5000,9 +5063,11 @@ def terminal_incoming_signals():
                          'Received before bot activation: no historical replay' if state=='RECEIVED_NOT_QUEUED' else
                          'No verified Gate Testnet order' if state=='RECEIVED_NOT_EXECUTED' else
                          'Missing or invalid entry / SL / TP' if state=='INVALID_LEVELS' else '')))),
-                level_status=r['level_status'] or 'UNKNOWN'))
+                level_status=r['level_status'] or 'UNKNOWN',
+                status_label=state))
         response=jsonify(signals=signals,count=len(signals),display_limit=25,
-                         mode='TESTNET_SIGNAL_MONITOR',live_trading=False)
+                         display_since=cutoff.isoformat(),mode='TESTNET_SIGNAL_MONITOR',
+                         live_trading=False,audit_records_preserved=True)
         response.headers['Cache-Control']='no-store'
         return response
     except (psycopg.Error,RuntimeError,OSError):
