@@ -5814,19 +5814,8 @@ from threading import Thread
 Thread(target=_testnet_startup_readiness_probe,daemon=True,
        name='gate-testnet-readiness').start()
 
-def _run_one_shot_testnet_trial_at_startup():
-    """One-time authenticated Testnet smoke-test only; no production writes."""
-    try:
-        from testnet_one_shot_trial import run_one_shot_protected_testnet_trial
-        result=run_one_shot_protected_testnet_trial()
-        app.logger.warning('GATE TESTNET TRIAL result=%s submitted=%s',
-                           result.get('state'),result.get('submitted'))
-    except Exception as exc:
-        app.logger.error('GATE TESTNET TRIAL uncertain: %s',type(exc).__name__)
-
-if os.getenv('GATE_TESTNET_ONE_SHOT_PROTECTED_TRIAL','false').lower()=='true':
-    Thread(target=_run_one_shot_testnet_trial_at_startup,daemon=True,
-           name='gate-testnet-one-shot-trial').start()
+# The one-shot Testnet trial is started only by the strictly gated worker above.
+# Do not add a second startup path: deployment workers must not race to submit.
 
 
 
