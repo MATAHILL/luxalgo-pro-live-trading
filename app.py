@@ -4313,6 +4313,30 @@ def terminal_testnet_protected_journal():
         return jsonify(error='Testnet journal temporarily unavailable',live_trading=False),503
 
 
+@app.post('/terminal/testnet-manual-close')
+def terminal_testnet_manual_close():
+    """Explicit authenticated click: one Testnet-only reduce-only full close."""
+    if not _terminal_permitted():
+        return _terminal_guard()
+    if not _csrf_valid():
+        return jsonify(error='Invalid terminal session verification'),403
+    data=request.get_json(silent=True) if request.is_json else None
+    if not isinstance(data,dict) or set(data)!={'signal_id','contract','side','entry_order_id'}:
+        return jsonify(error='Exact Testnet position identity required'),400
+    try:
+        from testnet_manual_close import request_testnet_close
+        result=request_testnet_close(data['signal_id'],data['contract'],
+                                     data['side'],data['entry_order_id'])
+        code=200 if result.get('state')=='CLOSED_VERIFIED' else 409
+        response=jsonify(**result,environment='GATE_FUTURES_TESTNET',
+                         live_trading=False)
+        response.headers['Cache-Control']='private, no-store'
+        return response,code
+    except (psycopg.Error,RuntimeError,OSError,ValueError,TypeError,KeyError):
+        return jsonify(state='HALTED_UNKNOWN',error='Testnet closure not verified; inspect Gate.io before retry',
+                       live_trading=False),503
+
+
 @app.get('/terminal/testnet-position-cards')
 def terminal_testnet_position_cards():
     """Private exchange-backed TESTNET cards; strictly GET and read-only."""
