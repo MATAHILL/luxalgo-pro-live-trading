@@ -5,7 +5,7 @@ then halt or reduce-only emergency close for a confirmed exposed position.
 """
 import os
 from decimal import Decimal, InvalidOperation
-from testnet_automation import testnet_automation_armed
+from testnet_automation import testnet_recovery_armed
 from testnet_execution_journal import PostgresTestnetJournal
 from gate_testnet_broker import GateFuturesTestnetBroker
 from testnet_protected_coordinator import TestnetIntent
@@ -13,7 +13,7 @@ from testnet_protection_watchdog import _exposed
 
 
 def recover_testnet_once(*, broker_factory=None, journal=None, limit=3):
-    if not testnet_automation_armed():
+    if not testnet_recovery_armed():
         return {"state":"TESTNET_DISABLED","checked":0}
     ledger=journal or PostgresTestnetJournal()
     factory=broker_factory or GateFuturesTestnetBroker
