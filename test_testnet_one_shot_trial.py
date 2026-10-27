@@ -47,7 +47,7 @@ class TestOneShot(unittest.TestCase):
     def test_read_only_preflight_rejects_budget_violation(self):
         def expensive(method,path,*,query="",body=None):
             if path==ROOT+"/contracts/ETH_USDT":
-                return {**SPEC,"quanto_multiplier":"0.01"}
+                return {**SPEC,"quanto_multiplier":"0.02"}
             return request(method,path,query=query,body=body)
         r=inspect_one_shot_trial_preflight(request=expensive)
         self.assertEqual(r["state"],"TRIAL_NOTIONAL_LIMIT")
