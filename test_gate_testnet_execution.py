@@ -1,7 +1,9 @@
 import unittest
+from unittest.mock import patch
 from gate_testnet_execution import (
     TestnetExecutionDisabled, order_payload, prepare_order_for_review,
     send_protected_order, signing_message, protective_trigger_payload, verify_testnet_protection,
+    submit_testnet_entry, ORDER_PATH,
 )
 
 class TestnetExecutionSafetyTests(unittest.TestCase):
@@ -59,6 +61,34 @@ class TestnetExecutionSafetyTests(unittest.TestCase):
         self.assertFalse(verify_testnet_protection({**order,"finish_as":"cancelled"},positions,triggers,**args)["verified"])
         self.assertFalse(verify_testnet_protection(order,[],triggers,**args)["verified"])
         self.assertFalse(verify_testnet_protection(order,positions,triggers[:1]+[dict(triggers[1],id=123)],**args)["verified"])
+
+    def test_testnet_entry_off_by_default(self):
+        payload=dict(contract="BTC_USDT",size=1,order_type="MARKET",client_id="t-unit001")
+        with patch.dict("os.environ", {"GATE_TESTNET_ENTRY_WRITE_ENABLED":"false"}):
+            with patch("gate_testnet_execution.signed_testnet_request") as sender:
+                with self.assertRaises(TestnetExecutionDisabled):
+                    submit_testnet_entry(payload)
+                sender.assert_not_called()
+
+    def test_testnet_entry_uses_signed_transport_only_when_enabled(self):
+        payload=dict(contract="BTC_USDT",size=1,order_type="MARKET",client_id="t-unit002")
+        with patch.dict("os.environ", {"GATE_TESTNET_ENTRY_WRITE_ENABLED":"true"}):
+            with patch("gate_testnet_execution.signed_testnet_request",return_value={"id":101}) as sender:
+                result=submit_testnet_entry(payload)
+                self.assertTrue(result["submitted"])
+                self.assertFalse(result["fill_verified"])
+                self.assertFalse(result["native_protection_verified"])
+                self.assertEqual(sender.call_args.args[:2],("POST",ORDER_PATH))
+                self.assertEqual(sender.call_args.kwargs["body"]["tif"],"ioc")
+
+    def test_testnet_entry_rejects_oversize_and_pending_limit(self):
+        with patch.dict("os.environ", {"GATE_TESTNET_ENTRY_WRITE_ENABLED":"true"}):
+            with patch("gate_testnet_execution.signed_testnet_request") as sender:
+                for size,kind,price in [(2,"MARKET",None),(1,"LIMIT","100")]:
+                    with self.subTest(kind=kind,size=size),self.assertRaises(TestnetExecutionDisabled):
+                        submit_testnet_entry(dict(contract="BTC_USDT",size=size,
+                            order_type=kind,limit_price=price,client_id="t-unit003"))
+                sender.assert_not_called()
 
     def test_submit_disabled(self):
         with self.assertRaises(TestnetExecutionDisabled):
