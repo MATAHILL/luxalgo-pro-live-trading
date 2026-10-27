@@ -5518,7 +5518,13 @@ def _testnet_startup_readiness_probe():
     """Read-only Testnet account diagnostic. No entry orders, even when armed."""
     try:
         from testnet_readiness import inspect_testnet_readiness
+        mode_result=None
+        if os.getenv('GATE_TESTNET_PREPARE_HEDGE_MODE','false').lower()=='true':
+            from testnet_mode_prepare import prepare_testnet_hedge_mode
+            mode_result=prepare_testnet_hedge_mode()
         report=inspect_testnet_readiness()
+        if mode_result is not None:
+            report['mode_setup_state']=mode_result.get('state','UNKNOWN')
         with _db_connect() as con:
             _ensure_schema(con)
             con.execute("""INSERT INTO luxalgo_testnet_readiness(id,state,details,checked_at)
