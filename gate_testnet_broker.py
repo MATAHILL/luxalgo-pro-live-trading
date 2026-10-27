@@ -174,11 +174,21 @@ class GateFuturesTestnetBroker:
         return result
 
     def verify_protection(self,order,positions,triggers,intent,payload):
+        # Evidence belongs to this exact exchange readback, never a previous order.
+        self.last_protection_evidence=None
         attached=verify_attached_tpsl_readback(order,payload)
         linked=verify_testnet_protection(order,positions,triggers,
                      expected_contract=intent.contract,expected_side=intent.side,
                      stop_price=intent.stop,target_price=intent.target)
-        return attached.get("verified") is True and linked.get("verified") is True
+        verified=(attached.get("verified") is True and linked.get("verified") is True)
+        if verified:
+            self.last_protection_evidence={
+                "entry_id":str(order["id"]),
+                "entry_status":str(order["status"]),
+                "entry_finish_as":str(order["finish_as"]),
+                "native_protection_ids":linked["protective_order_ids"],
+            }
+        return verified
 
     def emergency_close(self,intent):
         """Testnet-only reduce-only close; verify flat, otherwise halt."""
