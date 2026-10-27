@@ -23,6 +23,10 @@ class TestProtectionWatchdog(unittest.TestCase):
         if readback_error:
             broker.positions.side_effect=TimeoutError("testnet is unreachable")
         broker.verify_protection.return_value=protect
+        if protect:
+            broker.last_protection_evidence={
+                "entry_id":"6789","entry_finish_as":"filled",
+                "native_protection_ids":["201","202"]}
         broker.emergency_close.return_value=emergency
         with patch.dict("os.environ",{
               "GATE_TESTNET_PROTECTED_EXECUTION_ENABLED":"true",
@@ -35,6 +39,9 @@ class TestProtectionWatchdog(unittest.TestCase):
         result,journal,broker=self.inspect()
         self.assertEqual(result["outcomes"],["PROTECTED_VERIFIED"])
         broker.verify_protection.assert_called_once()
+        verified=[c for c in journal.transition.call_args_list
+                  if c.args[1]=="PROTECTED_VERIFIED"]
+        self.assertEqual(verified[-1].args[2]["native_protection_ids"],["201","202"])
         broker.emergency_close.assert_not_called()
 
     def test_disappearing_native_stop_triggers_emergency_close(self):
