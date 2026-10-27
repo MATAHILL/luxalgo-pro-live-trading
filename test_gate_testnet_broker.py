@@ -13,6 +13,8 @@ def fake_testnet_request(method,path,*,body=None,query=""):
     if method=="GET" and path==ROOT+"/contracts/BTC_USDT":
         return {"name":"BTC_USDT","in_delisting":False,"mark_price":"100",
             "quanto_multiplier":"0.001","order_size_min":"1","order_size_max":"100","leverage_max":"10"}
+    if method=="GET" and path==ROOT+"/get_leverage/BTC_USDT":
+        return {"Lever":"5"}
     if method=="GET" and path==ROOT+"/positions":
         return []
     if method=="POST" and path==ROOT+"/orders":
@@ -32,6 +34,15 @@ class TestnetBrokerTests(unittest.TestCase):
             self.assertEqual(broker.submit(ORDER)["id"],123)
             with self.assertRaises(TestnetExecutionDisabled):
                 broker.submit(ORDER)
+
+    def test_leverage_above_five_rejected(self):
+        def unsafe_request(method,path,*,body=None,query=""):
+            if "get_leverage" in path:
+                return {"Lever":"20"}
+            return fake_testnet_request(method,path,body=body,query=query)
+        with patch.dict("os.environ",{"GATE_TESTNET_PROTECTED_EXECUTION_ENABLED":"true"}):
+            broker=GateFuturesTestnetBroker(unsafe_request)
+            self.assertFalse(broker.preflight(INTENT,ORDER))
 
     def test_preflight_rejects_mutated_stop(self):
         broker=GateFuturesTestnetBroker(fake_testnet_request)
