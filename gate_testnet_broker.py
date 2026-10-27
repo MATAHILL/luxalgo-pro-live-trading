@@ -40,8 +40,18 @@ def _request_testnet(method, path, *, body=None, query=""):
     elif method=="POST":
         if path!=ORDER_PATH or query or not isinstance(body,dict):
             raise ValueError("Disallowed Testnet write")
-        if os.getenv("GATE_TESTNET_PROTECTED_EXECUTION_ENABLED","false").lower()!="true":
-            raise TestnetExecutionDisabled("Protected Testnet execution is OFF")
+        is_emergency=(body.get("size")==0 and body.get("reduce_only") is True
+                      and body.get("auto_size") in ("close_long","close_short"))
+        is_trial=(os.getenv("GATE_TESTNET_ONE_SHOT_PROTECTED_TRIAL","false").lower()=="true"
+                  and os.getenv("GATE_TESTNET_WEBHOOK_AUTOMATION_ENABLED","false").lower()!="true"
+                  and body.get("contract")=="ETH_USDT" and body.get("size")==1
+                  and body.get("text")=="t-lx-trial-20261027-a")
+        is_webhook=(os.getenv("GATE_TESTNET_WEBHOOK_AUTOMATION_ENABLED","false").lower()=="true")
+        recovery=(os.getenv("GATE_TESTNET_RECOVERY_ENABLED","false").lower()=="true")
+        entry_enabled=(os.getenv("GATE_TESTNET_PROTECTED_EXECUTION_ENABLED","false").lower()=="true")
+        if (is_emergency and not recovery) or (not is_emergency and not
+            (entry_enabled and (is_trial or is_webhook))):
+            raise TestnetExecutionDisabled("Gate Testnet write permission not armed for this operation")
         if (body.get("tif")!="ioc" or str(body.get("price"))!="0"
             or body.get("size") not in (-1,1)
             or not body.get("tpsl_tp_trigger_price") or not body.get("tpsl_sl_trigger_price")):
