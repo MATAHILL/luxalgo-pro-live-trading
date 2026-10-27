@@ -283,52 +283,64 @@ def reconcile_unknown_testnet_entry(client_id: str, contract: str, size: int) ->
 def verify_testnet_protection(order: dict, positions: list, triggers: list,
                               *, expected_contract: str, expected_side: str,
                               stop_price: str, target_price: str) -> dict:
-    """Fail-closed reconciliation of observed exchange data. Read-only/pure.
+    """Fail-closed readback of linked Gate order-attached TP/SL.
 
-    An accepted order is not a fill; a position alone is not protection.
-    Trigger orders must match the same contract and close the relevant side.
+    Gate order-attached TP/SL uses close-*-order and me_order_id to link
+    the protective child to the ENTRY order. Do not accept unrelated position
+    triggers just because the contract and prices happen to match.
     """
     from decimal import Decimal, InvalidOperation
     if not isinstance(order,dict) or not isinstance(positions,list) or not isinstance(triggers,list):
         raise ValueError("Incomplete exchange readback")
     if expected_side not in ("LONG","SHORT"):
         raise ValueError("Unknown side")
-    if order.get("contract") != expected_contract or str(order.get("finish_as","")).lower() != "filled":
+    entry_id=str(order.get("id") or "")
+    if not entry_id or order.get("contract")!=expected_contract or order.get("status")!="finished" or order.get("finish_as")!="filled":
         return dict(verified=False,reason="ENTRY_FILL_NOT_VERIFIED")
-    close_action="close_long" if expected_side=="LONG" else "close_short"
-    relevant=[p for p in positions if isinstance(p,dict)
-              and p.get("contract")==expected_contract and
-              p.get("mode")==("dual_long" if expected_side=="LONG" else "dual_short")
-              and str(p.get("size","0")) not in ("0","0.0","")]
-    if len(relevant)!=1:
+    mode="dual_long" if expected_side=="LONG" else "dual_short"
+    position=[]
+    for p in positions:
+        if not isinstance(p,dict) or p.get("contract")!=expected_contract or p.get("mode")!=mode:
+            continue
+        try:
+            if Decimal(str(p.get("size","0")))>0:
+                position.append(p)
+        except (InvalidOperation,TypeError,ValueError):
+            pass
+    if len(position)!=1:
         return dict(verified=False,reason="OPEN_POSITION_NOT_VERIFIED")
+    close_type="close-long-order" if expected_side=="LONG" else "close-short-order"
     required=[]
     for price,rule in ((stop_price,2 if expected_side=="LONG" else 1),
                        (target_price,1 if expected_side=="LONG" else 2)):
         try:
             target=Decimal(str(price))
+            if not target.is_finite() or target<=0: raise ValueError
         except (InvalidOperation,TypeError,ValueError):
             return dict(verified=False,reason="INVALID_PROTECTION_PRICE")
         matched=[]
         for item in triggers:
-            if not isinstance(item,dict) or item.get("status")!="open":
+            if not isinstance(item,dict) or item.get("status")!="open" or item.get("order_type")!=close_type:
+                continue
+            if str(item.get("me_order_id") or "")!=entry_id:
                 continue
             initial=item.get("initial") or {}
             trigger=item.get("trigger") or {}
-            if initial.get("contract")!=expected_contract or initial.get("auto_size")!=close_action:
+            if initial.get("contract")!=expected_contract:
                 continue
             try:
-                ok=Decimal(str(trigger.get("price")))==target and int(trigger.get("rule"))==rule
+                ok=(Decimal(str(trigger.get("price")))==target and
+                    int(trigger.get("rule"))==rule)
             except (InvalidOperation,TypeError,ValueError):
                 ok=False
-            if ok:
-                matched.append(str(item.get("id") or ""))
-        if len(matched)!=1 or not matched[0]:
-            return dict(verified=False,reason="NATIVE_STOP_OR_TARGET_NOT_VERIFIED")
+            if ok and item.get("id") is not None:
+                matched.append(str(item["id"]))
+        if len(matched)!=1:
+            return dict(verified=False,reason="LINKED_NATIVE_STOP_OR_TARGET_NOT_VERIFIED")
         required.append(matched[0])
     if len(set(required))!=2:
         return dict(verified=False,reason="PROTECTIVE_ORDER_IDS_NOT_DISTINCT")
-    return dict(verified=True,reason="ENTRY_POSITION_AND_TWO_NATIVE_TRIGGERS_VERIFIED",
+    return dict(verified=True,reason="LINKED_ENTRY_POSITION_AND_NATIVE_TPSL_VERIFIED",
                 protective_order_ids=required)
 
 
