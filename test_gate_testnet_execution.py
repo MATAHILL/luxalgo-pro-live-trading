@@ -70,16 +70,21 @@ class TestnetExecutionSafetyTests(unittest.TestCase):
                     submit_testnet_entry(payload)
                 sender.assert_not_called()
 
-    def test_testnet_entry_uses_signed_transport_only_when_enabled(self):
+    def test_entry_flag_cannot_bypass_native_protection(self):
         payload=dict(contract="BTC_USDT",size=1,order_type="MARKET",client_id="t-unit002")
         with patch.dict("os.environ", {"GATE_TESTNET_ENTRY_WRITE_ENABLED":"true"}):
-            with patch("gate_testnet_execution.signed_testnet_request",return_value={"id":101}) as sender:
-                result=submit_testnet_entry(payload)
-                self.assertTrue(result["submitted"])
-                self.assertFalse(result["fill_verified"])
-                self.assertFalse(result["native_protection_verified"])
-                self.assertEqual(sender.call_args.args[:2],("POST",ORDER_PATH))
-                self.assertEqual(sender.call_args.kwargs["body"]["tif"],"ioc")
+            with patch("gate_testnet_execution.signed_testnet_request") as sender:
+                with self.assertRaises(TestnetExecutionDisabled):
+                    submit_testnet_entry(payload)
+                sender.assert_not_called()
+
+    def test_direct_post_guard_even_with_write_flag(self):
+        from gate_testnet_execution import signed_testnet_request
+        with patch.dict("os.environ", {"GATE_TESTNET_ENTRY_WRITE_ENABLED":"true"}):
+            with patch("gate_testnet_execution.urlopen") as network:
+                with self.assertRaises(TestnetExecutionDisabled):
+                    signed_testnet_request("POST",ORDER_PATH,body={"contract":"BTC_USDT"})
+                network.assert_not_called()
 
     def test_testnet_entry_rejects_oversize_and_pending_limit(self):
         with patch.dict("os.environ", {"GATE_TESTNET_ENTRY_WRITE_ENABLED":"true"}):
