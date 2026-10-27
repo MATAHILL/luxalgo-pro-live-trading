@@ -39,6 +39,7 @@ def build_testnet_position_cards(positions,journal_rows,broker):
             cards.append(result)
             continue
         row=candidates[0]
+        result["signal_id"]=str(row["signal_id"])
         result["origin"]="ONE_SHOT_TESTNET_TRIAL" if str(row.get("signal_id","")).startswith("testnet-trial-") else "TESTNET_SIGNAL"
         details=row.get("details")
         payload=row.get("payload")
