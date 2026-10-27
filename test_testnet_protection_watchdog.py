@@ -30,7 +30,9 @@ class TestProtectionWatchdog(unittest.TestCase):
         broker.emergency_close.return_value=emergency
         with patch.dict("os.environ",{
               "GATE_TESTNET_PROTECTED_EXECUTION_ENABLED":"true",
-              "GATE_TESTNET_WEBHOOK_AUTOMATION_ENABLED":"true"}):
+              "GATE_TESTNET_WEBHOOK_AUTOMATION_ENABLED":"true",
+              "GATE_TESTNET_RECOVERY_ENABLED":"true",
+              "LIVE_TRADING_ENABLED":"false","ORDERS_ENABLED":"false"}):
             result=audit_protected_testnet_once(journal=journal,broker_factory=lambda:broker)
         broker.submit.assert_not_called()
         return result,journal,broker
@@ -80,7 +82,8 @@ class TestProtectionWatchdog(unittest.TestCase):
     def test_monitor_off_does_not_read_exchange(self):
         with patch.dict("os.environ",{
               "GATE_TESTNET_PROTECTED_EXECUTION_ENABLED":"false",
-              "GATE_TESTNET_WEBHOOK_AUTOMATION_ENABLED":"false"}):
+              "GATE_TESTNET_WEBHOOK_AUTOMATION_ENABLED":"false",
+              "GATE_TESTNET_RECOVERY_ENABLED":"false"}):
             ledger=Mock()
             result=audit_protected_testnet_once(journal=ledger)
             self.assertEqual(result["state"],"TESTNET_DISABLED")
