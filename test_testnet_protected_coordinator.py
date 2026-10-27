@@ -52,11 +52,27 @@ class TestnetProtectedCoordinatorTests(unittest.TestCase):
         broker.order.return_value={"id":123,"contract":"BTC_USDT","finish_as":"filled"}
         broker.verify_protection.return_value=False
         broker.emergency_close.return_value=True
+        broker.native_triggers.return_value=[]
         with patch("testnet_protected_coordinator.time.sleep"):
             result=execute_protected_testnet(INTENT,broker,journal)
         self.assertEqual(result["state"],"EMERGENCY_CLOSED")
         self.assertEqual(broker.verify_protection.call_count,3)
         broker.emergency_close.assert_called_once()
+
+    def test_orphan_native_stop_blocks_verified_emergency_close(self):
+        journal=Mock();journal.reserve.return_value=True
+        broker=Mock();broker.preflight.return_value=True
+        broker.submit.return_value={"id":123}
+        broker.order.return_value={"id":123,"contract":"BTC_USDT","finish_as":"filled"}
+        broker.verify_protection.return_value=False
+        broker.emergency_close.return_value=True
+        broker.native_triggers.side_effect=[[],[],[],[
+            {"status":"open","me_order_id":"123","id":"4321"}]]
+        with patch("testnet_protected_coordinator.time.sleep"):
+            result=execute_protected_testnet(INTENT,broker,journal)
+        self.assertEqual(result["state"],"HALTED_UNPROTECTED")
+        self.assertNotIn("EMERGENCY_CLOSED",
+             [call.args[1] for call in journal.transition.call_args_list])
 
     def test_timeout_is_unknown_not_retry(self):
         journal=Mock()
