@@ -4978,8 +4978,9 @@ def _testnet_recovery_monitor():
             _ensure_schema(con)
     except (psycopg.Error,RuntimeError,OSError):
         app.logger.error('Testnet recovery startup schema unavailable; will retry')
-    while (os.getenv('GATE_TESTNET_PROTECTED_EXECUTION_ENABLED','false').lower()=='true' and
-           os.getenv('GATE_TESTNET_WEBHOOK_AUTOMATION_ENABLED','false').lower()=='true'):
+    while (os.getenv('GATE_TESTNET_RECOVERY_ENABLED','false').lower()=='true' or
+           (os.getenv('GATE_TESTNET_PROTECTED_EXECUTION_ENABLED','false').lower()=='true' and
+            os.getenv('GATE_TESTNET_WEBHOOK_AUTOMATION_ENABLED','false').lower()=='true')):
         time.sleep(20)
         try:
             from testnet_recovery import recover_testnet_once
@@ -4992,8 +4993,9 @@ def _testnet_recovery_monitor():
         except (psycopg.Error,RuntimeError,OSError,ValueError,TypeError,KeyError) as exc:
             app.logger.warning('Testnet recovery polling unavailable: %s',type(exc).__name__)
 
-if (os.getenv('GATE_TESTNET_PROTECTED_EXECUTION_ENABLED','false').lower()=='true' and
-    os.getenv('GATE_TESTNET_WEBHOOK_AUTOMATION_ENABLED','false').lower()=='true'):
+if (os.getenv('GATE_TESTNET_RECOVERY_ENABLED','false').lower()=='true' or
+    (os.getenv('GATE_TESTNET_PROTECTED_EXECUTION_ENABLED','false').lower()=='true' and
+     os.getenv('GATE_TESTNET_WEBHOOK_AUTOMATION_ENABLED','false').lower()=='true')):
     from threading import Thread
     Thread(target=_testnet_recovery_monitor,daemon=True,
            name='luxalgo-testnet-recovery').start()
