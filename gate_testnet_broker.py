@@ -23,7 +23,7 @@ ROOT="/api/v4/futures/usdt"
 def _request_testnet(method, path, *, body=None, query=""):
     """Testnet-pinned transport; never retries writes or accesses production."""
     if method=="GET":
-        permitted=(path in (ROOT+"/accounts",ROOT+"/positions",ROOT+"/price_orders")
+        permitted=(path in (ROOT+"/accounts",ROOT+"/positions",ROOT+"/price_orders",ORDER_PATH)
                    or bool(re.fullmatch(r"/api/v4/futures/usdt/contracts/[A-Z0-9]{2,28}_USDT",path))
                    or bool(re.fullmatch(r"/api/v4/futures/usdt/orders/[0-9]{1,20}",path))
                    or bool(re.fullmatch(r"/api/v4/futures/usdt/orders/t-[A-Za-z0-9_.-]{1,28}",path))
@@ -34,7 +34,8 @@ def _request_testnet(method, path, *, body=None, query=""):
             re.fullmatch(r"status=open&contract=[A-Z0-9]{2,28}_USDT",query))
         leverage_query=(path.startswith(ROOT+"/get_leverage/") and
             re.fullmatch(r"pos_margin_mode=cross&dual_side=dual_(long|short)",query))
-        if query and not (trigger_query or leverage_query):
+        orders_query=(path==ORDER_PATH and query=="status=open")
+        if query and not (trigger_query or leverage_query or orders_query):
             raise ValueError("Invalid Testnet read query")
     elif method=="POST":
         if path!=ORDER_PATH or query or not isinstance(body,dict):
