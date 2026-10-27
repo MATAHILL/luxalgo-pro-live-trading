@@ -747,6 +747,14 @@ header.terminal-header{border-radius:17px!important}
 <div class="metric"><small>DATABASE SIGNALS</small><strong>{{ count }}</strong><span>Webhook: {{ 'configured' if configured else 'not configured' }}</span></div>
 </div><section class="panel position-panel"><div class="panel-heading"><h2>OPEN POSITIONS <span class="gloss-cyan">· GATE.IO FUTURES</span></h2><button class="btn gloss-action" id="positionRefresh" type="button">↻ Refresh Positions</button></div>
 <div id="gatePositionsBody" class="position-card-list" aria-live="polite"><p class="light">Checking read-only Gate.io open positions…</p></div><p id="gatePositionsUpdated" class="light">Read-only Gate.io account data; manual close disabled. SL/TP order status is not synchronized.</p></section>
+<section class="panel" id="luxalgoStoredPaperPositions" style="width:100%;margin:14px 0;max-width:none">
+<div class="panel-heading"><h2>LUXALGO AUTOMATED PAPER POSITIONS <span class="gloss-cyan">· DATABASE VERIFIED</span></h2>
+<button class="btn gloss-action" type="button" id="paperDirectRefresh">↻ Refresh Paper Positions</button></div>
+<p class="light"><strong>PAPER ONLY — NO GATE.IO EXCHANGE FILLS.</strong> Shows stored open LuxAlgo simulations directly from PostgreSQL. Does not require live candle-price service.</p>
+<p class="light" id="paperDirectStatus" role="status">Checking the latest stored paper positions…</p>
+<div class="tablewrap"><table style="min-width:760px;width:100%"><thead><tr><th>CREATED (IST)</th><th>COIN</th><th>SIGNAL</th><th>TF</th><th>SIMULATED ENTRY</th><th>STOP LOSS</th><th>TAKE PROFIT</th><th>PAPER STATUS</th></tr></thead>
+<tbody id="paperDirectRows"><tr><td colspan="8">Loading open LuxAlgo paper positions…</td></tr></tbody></table></div>
+</section>
 <section class="panel" id="testnetReadinessPanel" style="width:100%;margin:14px 0;max-width:none" aria-label="Gate.io Testnet execution readiness">
 <div class="panel-heading"><h2>TESTNET EXECUTION READINESS <span class="gloss-cyan">· GATE.IO</span></h2>
 <button class="btn gloss-action" id="testnetReadinessRefresh" type="button">↻ Check Testnet Status</button></div>
@@ -1678,6 +1686,42 @@ async function refresh(){
 button.addEventListener('click',refresh);
 refresh();
 setInterval(()=>{if(!document.hidden)refresh();},120000);
+})();
+</script>
+<script>
+(function(){'use strict';
+const rows=document.getElementById('paperDirectRows');
+const status=document.getElementById('paperDirectStatus');
+const button=document.getElementById('paperDirectRefresh');
+if(!rows||!status||!button)return;
+let busy=false;
+function cell(row,text){const td=document.createElement('td');td.textContent=String(text===null||text===undefined||text===''?'—':text);row.appendChild(td);}
+async function refresh(){
+ if(busy)return;busy=true;button.disabled=true;
+ try{
+   const ctl=new AbortController(),timer=setTimeout(()=>ctl.abort(),7000);
+   let response;
+   try{response=await fetch('/terminal/paper-open-direct',{cache:'no-store',credentials:'same-origin',signal:ctl.signal});}
+   finally{clearTimeout(timer);}
+   const data=await response.json();
+   if(!response.ok||!Array.isArray(data.positions))throw Error(data.error||'Position feed unavailable');
+   rows.replaceChildren();
+   for(const p of data.positions){
+     const row=document.createElement('tr'),tm=new Date(p.created_at).toLocaleString('en-IN',{timeZone:'Asia/Kolkata'});
+     [tm+' IST',p.symbol,p.side,p.timeframe,p.entry,p.stop_loss,p.take_profit,'OPEN · PAPER ONLY'].forEach(v=>cell(row,v));
+     rows.appendChild(row);
+   }
+   if(!data.positions.length){const row=document.createElement('tr'),td=document.createElement('td');td.colSpan=8;td.textContent='No OPEN simulated positions in PostgreSQL. This is not a Gate.io order status.';row.appendChild(td);rows.appendChild(row);}
+   const checked=new Date(data.checked_at).toLocaleTimeString('en-IN',{timeZone:'Asia/Kolkata'});
+   status.textContent=data.visible_count+' OPEN paper positions (latest 30) · PostgreSQL verified at '+checked+' IST · No exchange fills implied';
+ }catch(e){
+   status.textContent='Paper position feed unavailable: '+e.message+' · Retaining previously displayed records; no exchange order assumed';
+ }finally{button.disabled=false;busy=false;}
+}
+button.addEventListener('click',refresh);
+refresh();
+setInterval(()=>{if(!document.hidden)refresh()},12000);
+document.addEventListener('visibilitychange',()=>{if(!document.hidden)refresh()});
 })();
 </script>
 </body></html>'''
@@ -4100,6 +4144,45 @@ def terminal_testnet_readiness():
     except (psycopg.Error,RuntimeError,OSError,ValueError,TypeError):
         return jsonify(ready=False,blockers=['READINESS_DATABASE_UNAVAILABLE'],
                        production_trading_enabled=False),503
+
+
+@app.get('/terminal/paper-open-direct')
+def terminal_paper_open_direct():
+    """Fast read-only paper open-position feed. No external market calls or writes.
+
+    This feed must not be interpreted as exchange-side positions or fills.
+    It is isolated from the slower historical candle review service.
+    """
+    if not _terminal_permitted():
+        return _terminal_guard()
+    try:
+        with _db_connect() as con:
+            with con.cursor() as cur:
+                cur.execute("""SELECT o.event_id,o.symbol,o.side,o.timeframe,
+                                     o.created_at,o.details,t.state
+                    FROM luxalgo_simulated_orders o
+                    JOIN luxalgo_paper_tracking t ON t.event_id=o.event_id
+                    WHERE t.state='OPEN' AND o.status='SIMULATED_ONLY'
+                    ORDER BY o.created_at DESC LIMIT 30""")
+                found=cur.fetchall()
+        rows=[]
+        for r in found:
+            d=r['details'] if isinstance(r['details'],dict) else {}
+            rows.append(dict(event_id=r['event_id'],symbol=r['symbol'],
+                side=r['side'],timeframe=r['timeframe'],
+                created_at=r['created_at'].isoformat(),
+                entry=d.get('reference_entry'),stop_loss=d.get('stop_loss'),
+                take_profit=d.get('take_profit'),size_contracts=d.get('size_contracts'),
+                state=r['state'],execution='SIMULATED_ONLY'))
+        response=jsonify(positions=rows,visible_count=len(rows),
+            source='POSTGRES_PAPER_SIMULATION',exchange_fills_verified=False,
+            orders_placed=0,checked_at=datetime.now(timezone.utc).isoformat())
+        response.headers['Cache-Control']='private, no-store'
+        return response
+    except (psycopg.Error,RuntimeError,OSError,ValueError,TypeError):
+        app.logger.warning('Stored paper positions query unavailable',exc_info=False)
+        return jsonify(error='Stored paper positions temporarily unavailable',
+                       exchange_fills_verified=False,orders_placed=0),503
 
 
 @app.get('/terminal/testnet-signal-trace')
