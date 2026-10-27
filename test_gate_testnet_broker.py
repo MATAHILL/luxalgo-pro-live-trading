@@ -74,6 +74,8 @@ class TestnetBrokerTests(unittest.TestCase):
            "initial":{"contract":"BTC_USDT"},"trigger":{"price":"110","rule":1}}
         ]
         self.assertTrue(broker.verify_protection(order,positions,triggers,INTENT,ORDER))
+        self.assertEqual(broker.last_protection_evidence["native_protection_ids"],["987","988"])
+        self.assertEqual(broker.last_protection_evidence["entry_finish_as"],"filled")
         self.assertFalse(broker.verify_protection(order,positions,triggers[:1],INTENT,ORDER))
 
 if __name__=="__main__":
