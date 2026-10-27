@@ -748,7 +748,7 @@ header.terminal-header{border-radius:17px!important}
 </div><section class="panel position-panel"><div class="panel-heading"><h2>OPEN POSITIONS <span class="gloss-cyan">· GATE.IO FUTURES</span></h2><button class="btn gloss-action" id="positionRefresh" type="button">↻ Refresh Positions</button></div>
 <div id="gatePositionsBody" class="position-card-list" aria-live="polite"><p class="light">Checking read-only Gate.io open positions…</p></div><p id="gatePositionsUpdated" class="light">Read-only Gate.io account data; manual close disabled. SL/TP order status is not synchronized.</p></section>
 <section class="panel" id="v4Workspace" aria-label="LuxAlgo open paper position cards">
-<div class="v4-head"><div><strong>LUXALGO PRO · INDIVIDUAL POSITION CARDS</strong><p class="light">Gate.io TESTNET exchange positions appear first, separately labeled from LuxAlgo PAPER positions. Exchange P&amp;L is shown only for Testnet positions.</p></div>
+<div class="v4-head"><div><strong>LUXALGO PRO · TESTNET POSITION CARDS</strong><p class="light">Gate.io Testnet exchange positions only. Unrealized P&amp;L comes from the exchange; real-money trading is OFF.</p></div>
 <button id="v4DemoToggle" type="button">SHOW SAMPLE LAYOUT</button></div>
 <div class="v4-tabs"><strong id="v4TabCount">Checking Testnet and Paper positions…</strong><span>TESTNET = EXCHANGE · PAPER = SIMULATED · REAL MONEY OFF</span></div>
 <div id="v4DemoWarning" hidden class="v4-demo-banner">SAMPLE LAYOUT ONLY — Sample positions, balances and profit figures are fabricated for visual review, never actual trades.</div>
