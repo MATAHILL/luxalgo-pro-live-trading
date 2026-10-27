@@ -298,9 +298,29 @@ def _db_connect():
         raise RuntimeError('DATABASE_URL is missing')
     return psycopg.connect(url, connect_timeout=5, row_factory=dict_row)
 
+_schema_lock=Lock()
+_schema_ready=False
+
 def _ensure_schema(connection):
-    # Repeated CREATE IF NOT EXISTS is safe across Railway restarts.
-    connection.execute(DB_SCHEMA)
+    """Initialize schema once per worker process, committed before reuse.
+
+    Replaying dozens of DDL statements on every dashboard read can starve
+    Render's limited web workers and delay 5m LuxAlgo signal intake.
+    Use a separate transaction so the ready flag is never set before COMMIT.
+    A failed initialization leaves all callers fail-closed and retryable.
+    """
+    global _schema_ready
+    if _schema_ready:
+        return
+    with _schema_lock:
+        if _schema_ready:
+            return
+        url=os.getenv('DATABASE_URL','').strip()
+        if not url:
+            raise RuntimeError('DATABASE_URL missing for schema initialization')
+        with psycopg.connect(url,connect_timeout=5) as schema_conn:
+            schema_conn.execute(DB_SCHEMA)
+        _schema_ready=True
 
 # Every queue writer and toggle obtains the same DB transaction lock.
 # Fail closed if PostgreSQL is unreachable.
