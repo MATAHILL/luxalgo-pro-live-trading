@@ -4266,6 +4266,43 @@ def terminal_testnet_protected_journal():
         return jsonify(error='Testnet journal temporarily unavailable',live_trading=False),503
 
 
+@app.get('/terminal/testnet-position-cards')
+def terminal_testnet_position_cards():
+    """Private exchange-backed TESTNET cards; strictly GET and read-only."""
+    if not _terminal_permitted():
+        return _terminal_guard()
+    try:
+        positions=_gate_read_only_positions(testnet=True)
+        with _db_connect() as con:
+            _ensure_schema(con)
+            with con.cursor() as cur:
+                cur.execute("""SELECT signal_id,client_id,contract,side,state,payload,details
+                               FROM luxalgo_testnet_protected_journal
+                               WHERE state IN ('PROTECTED_VERIFIED','RECOVERING',
+                                   'HALTED_UNKNOWN','HALTED_UNPROTECTED','CLOSED_VERIFIED')
+                               ORDER BY updated_at DESC LIMIT 50""")
+                journal_rows=list(cur.fetchall())
+        from gate_testnet_broker import GateFuturesTestnetBroker
+        from testnet_card_feed import build_testnet_position_cards
+        # For each journal-matched position, native protection is freshly
+        # verified against Gate Testnet. A verification error retains the
+        # position card but clears its protection prices/status.
+        cards=build_testnet_position_cards(positions,journal_rows,
+                                          GateFuturesTestnetBroker())
+        response=jsonify(environment='GATE_FUTURES_TESTNET',
+                         positions=cards,count=len(cards),
+                         source='EXCHANGE_READBACK_AND_PROTECTION_AUDIT',
+                         fetched_at=int(time.time()),
+                         orders_enabled=False,live_trading=False)
+        response.headers['Cache-Control']='private, no-store'
+        return response
+    except (psycopg.Error,RuntimeError,OSError,ValueError,TypeError,KeyError):
+        response=jsonify(error='Testnet position cards currently unavailable',
+                         environment='GATE_FUTURES_TESTNET',orders_enabled=False)
+        response.headers['Cache-Control']='private, no-store'
+        return response,503
+
+
 @app.get('/terminal/testnet-positions')
 def terminal_testnet_positions():
     """Isolated Gate.io Futures TESTNET position readback. No order submission."""
