@@ -3,7 +3,7 @@ from unittest.mock import patch
 from gate_testnet_execution import (
     TestnetExecutionDisabled, order_payload, prepare_order_for_review,
     send_protected_order, signing_message, protective_trigger_payload, verify_testnet_protection,
-    submit_testnet_entry, ORDER_PATH,
+    submit_testnet_entry, ORDER_PATH, atomic_protected_entry_payload, verify_attached_tpsl_readback,
 )
 
 class TestnetExecutionSafetyTests(unittest.TestCase):
@@ -94,6 +94,29 @@ class TestnetExecutionSafetyTests(unittest.TestCase):
                         submit_testnet_entry(dict(contract="BTC_USDT",size=size,
                             order_type=kind,limit_price=price,client_id="t-unit003"))
                 sender.assert_not_called()
+
+    def test_atomic_attached_tpsl_for_long_and_short(self):
+        long=atomic_protected_entry_payload("BTC_USDT","LONG","100","90","110","t-atomiclong")
+        short=atomic_protected_entry_payload("BTC_USDT","SHORT","100","110","90","t-atomicshort")
+        self.assertEqual(long["size"],1)
+        self.assertEqual(short["size"],-1)
+        self.assertEqual(long["tpsl_sl_trigger_price"],"90")
+        self.assertEqual(short["tpsl_tp_trigger_price"],"90")
+        self.assertEqual(long["tif"],"ioc")
+
+    def test_atomic_rejects_wrong_geometry(self):
+        for side,stop,target in (("LONG","105","110"),("SHORT","90","95")):
+            with self.subTest(side=side),self.assertRaises(ValueError):
+                atomic_protected_entry_payload("BTC_USDT",side,"100",stop,target,"t-atomicbad")
+
+    def test_attached_protection_readback_is_not_fill_confirmation(self):
+        payload=atomic_protected_entry_payload("BTC_USDT","LONG","100","90","110","t-atomicread")
+        order={"id":123,"contract":"BTC_USDT",**payload}
+        verified=verify_attached_tpsl_readback(order,payload)
+        self.assertTrue(verified["verified"])
+        self.assertFalse(verified["fill_verified"])
+        self.assertFalse(verified["active_native_trigger_verified"])
+        self.assertFalse(verify_attached_tpsl_readback({**order,"tpsl_sl_trigger_price":"91"},payload)["verified"])
 
     def test_submit_disabled(self):
         with self.assertRaises(TestnetExecutionDisabled):
