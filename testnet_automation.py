@@ -89,9 +89,19 @@ def run_fresh_luxalgo_testnet_signal(event_id, *, broker=None, journal=None, now
         proposal=atomic_protected_entry_payload(intent.contract,intent.side,
                       intent.reference,intent.stop,intent.target,intent.client_id)
         if gateway.preflight(intent,proposal) is not True:
-            return {"state":"TESTNET_PREFLIGHT_BLOCKED","submitted":False}
-    except Exception:
-        return {"state":"TESTNET_MARKET_READBACK_UNAVAILABLE","submitted":False}
+            reason=str(getattr(gateway,"last_preflight_reason","UNVERIFIED") or "UNVERIFIED")
+            import re as _re
+            if not _re.fullmatch(r"[A-Z0-9_,.:-]{1,200}",reason):
+                reason="UNVERIFIED"
+            return {"state":"TESTNET_PREFLIGHT_BLOCKED","submitted":False,"detail":reason}
+    except Exception as exc:
+        # Never leak exchange HTTP response bodies, host credentials or headers.
+        code=getattr(exc,"code",None)
+        kind=("HTTP_"+str(code) if isinstance(code,int) else type(exc).__name__.upper())
+        if not re.fullmatch(r"[A-Z0-9_]{1,32}",kind):
+            kind="UNVERIFIED"
+        return {"state":"TESTNET_MARKET_READBACK_UNAVAILABLE","submitted":False,
+                "detail":kind}
     ledger=journal or PostgresTestnetJournal(database_url)
     # Coordinator independently revalidates the complete preflight after
     # reserving, so no check here authorizes a write by itself.
