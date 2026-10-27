@@ -5,7 +5,7 @@ This watchdog re-checks only journaled, actually verified Testnet positions,
 with PostgreSQL per-position leases to avoid concurrent audits.
 """
 from decimal import Decimal, InvalidOperation
-from testnet_automation import testnet_automation_armed
+from testnet_automation import testnet_recovery_armed
 from testnet_execution_journal import PostgresTestnetJournal
 from testnet_protected_coordinator import TestnetIntent
 from gate_testnet_broker import GateFuturesTestnetBroker
@@ -39,7 +39,7 @@ def audit_protected_testnet_once(*,broker_factory=None,journal=None,limit=3):
     If protection is gone while exposure remains, attempt ONE Testnet-only
     reduce-only emergency close and quarantine failures without blind retries.
     """
-    if not testnet_automation_armed():
+    if not testnet_recovery_armed():
         return {"state":"TESTNET_DISABLED","checked":0}
     ledger=journal or PostgresTestnetJournal()
     factory=broker_factory or GateFuturesTestnetBroker
