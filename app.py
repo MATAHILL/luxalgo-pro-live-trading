@@ -4470,6 +4470,8 @@ def terminal_incoming_signals():
                 state='EXPIRED_PENDING' if age>120 else 'PAPER_PENDING'
             elif r['level_status'] in ('MISSING','INVALID'):
                 state='INVALID_LEVELS'
+            elif r['queue_state'] is None:
+                state='RECEIVED_NOT_QUEUED'
             elif not r['bot_enabled']:
                 state='BOT_OFF'
             else:
@@ -4480,7 +4482,7 @@ def terminal_incoming_signals():
                 stop_loss=str(r['stop_loss']) if r['stop_loss'] is not None else None,
                 take_profit=str(r['take_profit']) if r['take_profit'] is not None else None,
                 order_type=r['order_type'] or 'NO ORDER SENT',state=state,
-                reason=r['queue_note'] or ('Paper bot disabled' if state=='BOT_OFF' else 'No exchange submission implemented' if state=='RECEIVED_NOT_EXECUTED' else 'Missing or invalid entry / SL / TP' if state=='INVALID_LEVELS' else ''),level_status=r['level_status'] or 'UNKNOWN'))
+                reason=r['queue_note'] or ('Paper bot disabled' if state=='BOT_OFF' else 'No paper queue entry at receipt; switching BOT ON later does not enqueue earlier signals' if state=='RECEIVED_NOT_QUEUED' else 'No exchange submission implemented' if state=='RECEIVED_NOT_EXECUTED' else 'Missing or invalid entry / SL / TP' if state=='INVALID_LEVELS' else ''),level_status=r['level_status'] or 'UNKNOWN'))
         response=jsonify(signals=signals,count=len(signals),orders_placed=0,
                          mode='WEBHOOK_MONITOR_ONLY',live_trading=False)
         response.headers['Cache-Control']='no-store'
