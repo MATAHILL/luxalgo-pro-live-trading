@@ -4689,13 +4689,14 @@ def _auto_paper_process(max_items=5):
                     note='Risk configuration invalid'
                 else:
                     preview=_execution_dry_run_preview(item['symbol'],item['side'],item['timeframe'],100,str(risk))
-                    if preview.get('size_contracts') and not any('unverified' in str(x).lower() for x in preview.get('blockers',[])):
+                    if isinstance(preview.get('size_contracts'), int) and preview['size_contracts'] > 0:
                         details=dict(event_id=eid,symbol=item['symbol'],side=item['side'],timeframe=item['timeframe'],
                             status='SIMULATED_ONLY',simulated_fill=False,risk_percent=str(risk),
                             hypothetical_equity_usdt='100',reference_entry=preview['reference_entry'],
                             stop_loss=preview['stop_loss'],take_profit=preview['take_profit'],
                             size_contracts=preview['size_contracts'],
-                            notes='Automatic paper intent from completed candles; not a fill, no actual orders or protection.',
+                            notes='Illustrative paper sizing only; preview live-trading blockers do not block simulation; no fill or exchange orders.',
+                            preview_blockers=preview.get('blockers',[]),
                             orders_placed=0)
                         with _db_connect() as con:
                             with con.cursor() as cur:
