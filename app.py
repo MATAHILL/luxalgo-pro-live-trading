@@ -2399,9 +2399,12 @@ def webhook():
         os.getenv('GATE_TESTNET_PROTECTED_EXECUTION_ENABLED','false').lower()=='true' and
         os.getenv('GATE_TESTNET_WEBHOOK_AUTOMATION_ENABLED','false').lower()=='true'):
         try:
+            from testnet_execution_attempts import record_testnet_attempt
+            record_testnet_attempt(event_id,{"state":"WORKER_QUEUED","submitted":False})
             _testnet_auto_executor.submit(_process_testnet_webhook_soon,event_id)
-        except RuntimeError:
-            app.logger.error('Testnet worker unavailable; signal not executed')
+        except (psycopg.Error,RuntimeError,OSError,ValueError,TypeError) as exc:
+            # No worker is launched if its durable audit cannot be created.
+            app.logger.error('Testnet worker was not queued: %s',type(exc).__name__)
     # Every newly received signal is durably passed into TESTNET pre-execution
     # validation. The handoff is permanently fail-closed: no exchange write.
     try:
@@ -5175,14 +5178,21 @@ if (os.getenv('GATE_TESTNET_RECOVERY_ENABLED','false').lower()=='true' or
            name='luxalgo-testnet-recovery').start()
 
 def _process_testnet_webhook_soon(event_id):
+    from testnet_execution_attempts import record_testnet_attempt
     try:
         from testnet_automation import run_fresh_luxalgo_testnet_signal
         result=run_fresh_luxalgo_testnet_signal(event_id)
-        if result.get('state') not in ('PROTECTED_VERIFIED','TESTNET_DISABLED'):
-            app.logger.warning('Testnet protected execution not verified: %s',
-                               result.get('state','UNKNOWN'))
-    except (psycopg.Error,RuntimeError,OSError,ValueError,TypeError,KeyError) as exc:
-        app.logger.error('Testnet execution halted safely: %s',type(exc).__name__)
+    except Exception as exc:
+        # A transport error after POST cannot prove that an order was never sent.
+        result={"state":"EXECUTION_EXCEPTION","submitted":"unknown",
+                "detail":type(exc).__name__.upper()[:50]}
+    try:
+        record_testnet_attempt(event_id,result)
+    except (psycopg.Error,RuntimeError,OSError,ValueError,TypeError) as exc:
+        app.logger.error('Testnet worker outcome could not be audited: %s',type(exc).__name__)
+    if result.get('state') not in ('PROTECTED_VERIFIED','TESTNET_DISABLED'):
+        app.logger.warning('Testnet protected execution state=%s detail=%s',
+                           result.get('state','UNKNOWN'),result.get('detail',''))
 
 
 def _process_paper_webhook_soon():
