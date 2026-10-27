@@ -40,8 +40,9 @@ def run_fresh_luxalgo_testnet_signal(event_id, *, broker=None, journal=None, now
                            b.enabled AS bot_enabled
                            FROM luxalgo_dry_run_intents i
                            JOIN luxalgo_signal_levels l ON l.event_id=i.event_id
+                           JOIN luxalgo_auto_paper_queue q ON q.event_id=i.event_id
                            JOIN luxalgo_bot_control b ON b.id=1
-                           WHERE i.event_id=%s""",(event_id,))
+                           WHERE i.event_id=%s AND q.state IN ('PENDING','CREATED')""",(event_id,))
             r=cur.fetchone()
     if not r or r["bot_enabled"] is not True or r["level_status"]!="VALID":
         return {"state":"SIGNAL_NOT_ELIGIBLE","submitted":False}
