@@ -1491,8 +1491,13 @@ function card(d){
  const sizeLabel=testnet?'SIZE (GATE CONTRACTS)':'SIZE (CONTRACTS · PAPER)';
  const roiLabel=testnet?'ROI (exchange-derived)':'ROI (estimated)';
  const state=testnet?(d.feedStale?'STALE FEED · P&L NOT CURRENT':('Native SL/TP: '+String(d.protection||'UNVERIFIED')+' · '+String(d.origin||'TESTNET'))):(demo?'DEMO — simulated values':'Paper quote refresh runs automatically');
- const toolTitle=testnet?'Read-only Testnet; order actions disabled':'No exchange position exists; disabled during paper simulation';
- return '<article class="v4-trade" data-v45-card="'+esc(d.event_id||sym)+'"><div class="v4-trade-top"><div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap"><span class="v4-side '+(d.side==='SHORT'?'short':'')+'">'+(d.side==='SHORT'?'S':'L')+'</span><button class="v4-token" type="button" data-v45-toggle="'+esc(sym)+'">'+esc(sym)+'</button><span class="v4-tag">Perp</span><span class="v4-tag">'+esc(d.leverage)+'</span><span class="v4-tag">'+esc(tag)+'</span><div class="v45-tools"><button class="v45-refresh" type="button" data-v45-refresh="'+esc(sym)+'" title="Refresh position" aria-label="Refresh '+esc(sym)+' position">↻</button><button class="v45-indicator-toggle" type="button" data-v45-toggle="'+esc(sym)+'" aria-expanded="'+String(open)+'">'+(open?'▲ CLOSE':'▼ INDICATOR')+'</button></div></div><div style="text-align:right"><div class="v4-number-label">'+esc(roiLabel)+'</div><div class="v4-number-value big '+cl+'" data-v45-field="roi">'+esc(d.roi)+'</div></div></div><div class="v4-numbers">'+numCell(caption,pnl,cl+' big','pnl')+numCell(sizeLabel,d.size)+numCell('MARGIN (USDT)',d.margin)+numCell('ENTRY PRICE',d.entry)+numCell(priceLabel,d.mark,'','mark')+numCell('LIQ. PRICE',d.liq)+numCell('STOP LOSS',d.sl)+numCell('TAKE PROFIT (TP1)',d.tp)+'</div><div class="v4-controls"><button disabled title="'+esc(toolTitle)+'">TP/SL</button><button disabled title="'+esc(toolTitle)+'">Reverse</button><button disabled title="'+esc(toolTitle)+'">Market Close</button><button disabled title="'+esc(toolTitle)+'">Close</button></div><div class="v45-refresh-state" data-v45-state="1">'+esc(state)+(testnet&&d.protection==='EXCHANGE_VERIFIED'?' · SL #'+esc(d.stopOrderId)+' · TP #'+esc(d.takeOrderId):'')+'</div>'+ (open?chartMarkup(d):'')+'</article>';
+ const canClose=testnet&&d.protection==='EXCHANGE_VERIFIED'&&d.signalId&&/^\d+$/.test(String(d.entryOrderId||''));
+ const controls=testnet?('<button type="button" data-v45-inspect="1">VIEW TP/SL</button>'+
+   '<button disabled title="Reversal requires a new opposite protected order with user-approved SL/TP">Reverse · LOCKED</button>'+
+   '<button type="button" data-v45-close="market" '+(canClose?'':'disabled title="Verified exchange-linked position required"')+'>Market Close</button>'+
+   '<button type="button" data-v45-close="close" '+(canClose?'':'disabled title="Verified exchange-linked position required"')+'>Close</button>'):
+   '<button disabled>TP/SL</button><button disabled>Reverse</button><button disabled>Market Close</button><button disabled>Close</button>';
+ return '<article class="v4-trade" data-v45-card="'+esc(d.event_id||sym)+'"><div class="v4-trade-top"><div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap"><span class="v4-side '+(d.side==='SHORT'?'short':'')+'">'+(d.side==='SHORT'?'S':'L')+'</span><button class="v4-token" type="button" data-v45-toggle="'+esc(sym)+'">'+esc(sym)+'</button><span class="v4-tag">Perp</span><span class="v4-tag">'+esc(d.leverage)+'</span><span class="v4-tag">'+esc(tag)+'</span><div class="v45-tools"><button class="v45-refresh" type="button" data-v45-refresh="'+esc(sym)+'" title="Refresh position" aria-label="Refresh '+esc(sym)+' position">↻</button><button class="v45-indicator-toggle" type="button" data-v45-toggle="'+esc(sym)+'" aria-expanded="'+String(open)+'">'+(open?'▲ CLOSE':'▼ INDICATOR')+'</button></div></div><div style="text-align:right"><div class="v4-number-label">'+esc(roiLabel)+'</div><div class="v4-number-value big '+cl+'" data-v45-field="roi">'+esc(d.roi)+'</div></div></div><div class="v4-numbers">'+numCell(caption,pnl,cl+' big','pnl')+numCell(sizeLabel,d.size)+numCell('MARGIN (USDT)',d.margin)+numCell('ENTRY PRICE',d.entry)+numCell(priceLabel,d.mark,'','mark')+numCell('LIQ. PRICE',d.liq)+numCell('STOP LOSS',d.sl)+numCell('TAKE PROFIT (TP1)',d.tp)+'</div><div class="v4-controls">'+controls+'</div><div class="v45-refresh-state" data-v45-state="1">'+esc(state)+(testnet&&d.protection==='EXCHANGE_VERIFIED'?' · SL #'+esc(d.stopOrderId)+' · TP #'+esc(d.takeOrderId):'')+'</div>'+ (open?chartMarkup(d):'')+'</article>';
 }
 function fromTable(){const rows=[...table.querySelectorAll('tr[data-paper-event-id]')].filter(r=>r.dataset.paperState==='OPEN');return rows.map(r=>{const c=[...r.cells].map(x=>x.textContent.trim());return {symbol:c[1],side:c[2],leverage:'Not verified',pnl:c[8],roi:'—',size:'Not verified',margin:'Not verified',entry:c[3],mark:c[7],liq:'Not available',sl:c[4],tp:c[5]}})}
 let directPaperOpen=null;
@@ -1518,6 +1523,7 @@ async function syncTestnetCards(){
    const safe=p.protection_state==='EXCHANGE_VERIFIED';
    return {
     event_id:'TESTNET:'+p.contract+':'+p.side,source:'GATE_FUTURES_TESTNET',
+    contract:p.contract,signalId:p.signal_id??null,entryOrderId:p.entry_order_id??null,
     symbol:p.symbol,side:p.side,leverage:p.leverage_label??'—',
     pnl:p.unrealized_pnl??'—',roi:p.roi_percent===null?'—':p.roi_percent+'%',
     size:p.size_contracts??'—',margin:p.margin_usdt??'—',
@@ -1607,7 +1613,41 @@ function draw(force=false){
  }
 }
 workspace.querySelector('#v4DemoToggle').onclick=()=>{demo=!demo;openIndicators.clear();lastStructure='';document.getElementById('v4DemoWarning').hidden=!demo;document.getElementById('v4DemoToggle').textContent=demo?'RETURN TO REAL PAPER DATA':'SHOW SAMPLE LAYOUT';draw(true)};
-workspace.addEventListener('click',e=>{
+workspace.addEventListener('click',async e=>{
+ const action=e.target.closest('[data-v45-inspect],[data-v45-close]');
+ if(action){
+  const container=action.closest('[data-v45-card]'),id=container?.dataset.v45Card;
+  const position=(testnetOpen||[]).find(p=>p.event_id===id);
+  const state=container?.querySelector('[data-v45-state]');
+  if(!position||position.source!=='GATE_FUTURES_TESTNET')return;
+  if(action.hasAttribute('data-v45-inspect')){
+   if(state)state.textContent='GATE TESTNET SL: '+position.sl+' [#'+(position.stopOrderId||'—')+'] · TP: '+position.tp+' [#'+(position.takeOrderId||'—')+'] · '+position.protection;
+   return;
+  }
+  if(!position.signalId||!position.entryOrderId||position.protection!=='EXCHANGE_VERIFIED')return;
+  if(!window.confirm('TESTNET ONLY: send ONE reduce-only market order to close '+position.contract+' '+position.side+'? This does not affect real-money positions.'))return;
+  const csrf=document.querySelector('input[name="csrf_token"]')?.value;
+  if(!csrf){if(state)state.textContent='No valid terminal CSRF token. Refresh and sign in.';return;}
+  const buttons=container.querySelectorAll('[data-v45-close]');
+  buttons.forEach(b=>b.disabled=true);
+  if(state)state.textContent='Submitting ONE protected Testnet close; do not repeat if network response is uncertain…';
+  try{
+   const res=await fetch('/terminal/testnet-manual-close',{
+    method:'POST',cache:'no-store',
+    headers:{'Content-Type':'application/json','X-Terminal-CSRF':csrf},
+    body:JSON.stringify({signal_id:position.signalId,contract:position.contract,
+      side:position.side,entry_order_id:String(position.entryOrderId)})
+   });
+   const result=await res.json();
+   if(!res.ok||result.state!=='CLOSED_VERIFIED'){
+    if(state)state.textContent='CLOSE NOT VERIFIED: '+String(result.state||result.error||res.status)+' · Inspect Gate Testnet directly; no automatic retry.';
+   }else{
+    if(state)state.textContent='TESTNET CLOSE VERIFIED · Refreshing exchange position feed';
+    syncTestnetCards();
+   }
+  }catch(err){if(state)state.textContent='TESTNET CLOSE OUTCOME UNKNOWN · Check exchange before any retry.';}
+  return;
+ }
  const r=e.target.closest('[data-v45-refresh]');
  if(r){
   const c=r.closest('[data-v45-card]');const state=c?.querySelector('[data-v45-state]');
