@@ -814,9 +814,10 @@ header.terminal-header{border-radius:17px!important}
 <div class="tablewrap"><table style="width:100%;min-width:600px"><thead><tr><th>CONTRACT</th><th>ORDER ID</th><th>SIZE</th><th>PRICE</th><th>REMAINING</th><th>TIME IN FORCE</th><th>STATUS</th></tr></thead><tbody id="testnetOrdersRows"><tr><td colspan="7">Expand to load</td></tr></tbody></table></div></details>
 <details id="incomingLuxPanel" class="panel" open style="width:100%;margin:14px 0;max-width:none">
 <summary style="cursor:pointer;font-size:16px;font-weight:850;padding:2px 0 12px">INCOMING LUXALGO ORDERS · WEBHOOK SIGNALS <span class="light" style="font-size:12px">— Click to minimize / maximize</span></summary>
-<p class="light">Latest 25 incoming LuxAlgo signals. Only a Gate.io TESTNET verified exchange journal state indicates an actual executed trade. Incoming signals alone are not exchange orders. Real-money trading remains OFF.</p>
-<div class="panel-heading"><span id="incomingLuxInfo" class="light" role="status">Loading latest received signals…</span><button class="btn gloss-action" id="incomingLuxRefresh" type="button">↻ Refresh Signals</button></div>
-<div class="tablewrap" style="width:100%;overflow-x:auto"><table style="min-width:1000px;width:100%"><thead><tr><th>S/N</th><th>RECEIVED (IST)</th><th>COIN</th><th>SIGNAL</th><th>TF</th><th>ORDER TYPE</th><th>ENTRY</th><th>STOP LOSS</th><th>TAKE PROFIT</th><th>PROCESS STATUS</th><th>DETAIL</th></tr></thead><tbody id="incomingLuxRows"><tr><td colspan="11">Loading…</td></tr></tbody></table></div>
+<p class="light">Fresh LuxAlgo signals only, after your saved dashboard reset. LIVE requires an open Gate.io Testnet position with reverified exchange-side TP/SL; CLOSED requires a verified closing journal. Unexecuted or uncertain calls are never labeled LIVE. Real-money trading OFF.</p>
+<div class="panel-heading"><span id="incomingLuxInfo" class="light" role="status">Loading fresh signals from zero…</span><div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn" id="incomingLuxClear" type="button" title="Clear displayed signals, not exchange orders or safety logs">Clear Visible History</button><button class="btn gloss-action" id="incomingLuxRefresh" type="button">↻ Refresh</button></div></div>
+<div class="market-tabs" id="incomingLuxFilters" aria-label="Filter incoming LuxAlgo signals by verified status"><button class="btn selected" type="button" data-lux-filter="ALL">ALL</button><button class="btn" type="button" data-lux-filter="LIVE">● LIVE</button><button class="btn" type="button" data-lux-filter="CLOSED">✓ CLOSED</button><button class="btn" type="button" data-lux-filter="WAITING FOR EXECUTION">◷ WAITING</button><button class="btn" type="button" data-lux-filter="NOT EXECUTED">NOT EXECUTED</button><button class="btn" type="button" data-lux-filter="VERIFY EXCHANGE">VERIFY EXCHANGE</button></div>
+<div class="tablewrap" style="width:100%;overflow-x:auto"><table style="min-width:1000px;width:100%"><thead><tr><th>S/N</th><th>RECEIVED (IST)</th><th>COIN</th><th>SIGNAL</th><th>TF</th><th>ORDER TYPE</th><th>ENTRY</th><th>STOP LOSS</th><th>TAKE PROFIT</th><th>CURRENT STATUS · CLICK TO REFRESH</th><th>DETAIL</th></tr></thead><tbody id="incomingLuxRows"><tr><td colspan="11">Loading…</td></tr></tbody></table></div>
 </details><div class="market-grid">
 <section class="panel market-panel"><div class="panel-heading"><h2>GATE.IO FUTURES RADAR <span class="gloss-gold">● MARKET LIVE</span></h2><button class="btn gloss-action" id="radarRefresh" type="button">↻ Refresh</button></div>
 <p class="light">All available Gate.io USDT perpetual tickers · 24h rankings · public market data.</p>
@@ -1748,31 +1749,90 @@ document.addEventListener('visibilitychange',()=>{if(!document.hidden)syncTestne
 </script>
 <script>
 (function(){'use strict';
- const panel=document.getElementById('incomingLuxPanel'), tbody=document.getElementById('incomingLuxRows');
- const info=document.getElementById('incomingLuxInfo'), btn=document.getElementById('incomingLuxRefresh');
- if(!panel||!tbody||!info||!btn)return;
- const cell=(tr,value)=>{const td=document.createElement('td');td.textContent=value===null||value===undefined||value===''?'—':String(value);tr.appendChild(td);};
- async function refresh(){
-   if(btn.disabled)return;btn.disabled=true;
-   try{
-     const res=await fetch('/terminal/incoming-signals',{cache:'no-store'}), data=await res.json();
-     if(!res.ok)throw Error(data.error||'Monitor unavailable');
-     tbody.replaceChildren();
-     for(const [index,s] of data.signals.entries()){
-       const tr=document.createElement('tr');
-       let tm='—';try{tm=new Date(s.time).toLocaleString('en-IN',{timeZone:'Asia/Kolkata'});}catch(e){}
-       [index+1,tm,s.symbol,s.side,s.timeframe,s.order_type,s.entry,s.stop_loss,s.take_profit,s.state,s.reason].forEach(v=>cell(tr,v));
-       tbody.appendChild(tr);
-     }
-     if(!data.signals.length){const tr=document.createElement('tr'),td=document.createElement('td');td.colSpan=11;td.textContent='No stored incoming signals yet';tr.appendChild(td);tbody.appendChild(tr);}
-     info.textContent=data.count+' most recent webhook signals (maximum 25) · verify actual fills in PROCESS STATUS';
-   }catch(err){info.textContent='Signal monitor unavailable: '+err.message;}
-   finally{btn.disabled=false;}
+ const panel=document.getElementById('incomingLuxPanel');
+ const tbody=document.getElementById('incomingLuxRows');
+ const info=document.getElementById('incomingLuxInfo');
+ const refreshButton=document.getElementById('incomingLuxRefresh');
+ const clearButton=document.getElementById('incomingLuxClear');
+ const filters=document.getElementById('incomingLuxFilters');
+ if(!panel||!tbody||!info||!refreshButton||!clearButton||!filters)return;
+ let allSignals=[],chosen='ALL',pending=false;
+ const addCell=(tr,value)=>{
+   const td=document.createElement('td');
+   td.textContent=value===null||value===undefined||value===''?'—':String(value);
+   tr.appendChild(td);return td;
+ };
+ function draw(){
+   tbody.replaceChildren();
+   const matches=chosen==='ALL'?allSignals:allSignals.filter(x=>x.status_label===chosen);
+   for(const [index,s] of matches.entries()){
+     const row=document.createElement('tr');
+     let time='—';try{time=new Date(s.time).toLocaleString('en-IN',{timeZone:'Asia/Kolkata',hour12:true})+' IST'}catch(e){}
+     for(const value of [index+1,time,s.symbol,s.side,s.timeframe,s.order_type,
+       s.entry,s.stop_loss,s.take_profit])addCell(row,value);
+     const slot=addCell(row,'');
+     const statusButton=document.createElement('button');
+     statusButton.type='button';statusButton.className='btn';
+     statusButton.textContent=s.status_label||'VERIFY EXCHANGE';
+     statusButton.title='Click to refresh the latest exchange-backed status';
+     statusButton.style.fontWeight='800';
+     statusButton.style.color=s.status_label==='LIVE'?'#6cf3ba':
+       s.status_label==='CLOSED'?'#8ed7ff':s.status_label==='WAITING FOR EXECUTION'?'#ffd28a':'#ffadad';
+     statusButton.addEventListener('click',()=>refresh());
+     slot.appendChild(statusButton);
+     addCell(row,s.reason);tbody.appendChild(row);
+   }
+   if(!matches.length){
+     const tr=document.createElement('tr'),td=document.createElement('td');
+     td.colSpan=11;td.textContent=allSignals.length?
+       'No '+chosen+' signals after reset.':'0 incoming signals since reset · waiting for a fresh LuxAlgo alert';
+     tr.appendChild(td);tbody.appendChild(tr);
+   }
+   info.textContent=allSignals.length+' fresh LuxAlgo signals since reset · '+
+       matches.length+' in '+chosen+' view · click any status to recheck · safety audit retained';
  }
- btn.addEventListener('click',refresh);
+ async function refresh(){
+   if(pending)return;
+   pending=true;refreshButton.disabled=true;
+   try{
+     const response=await fetch('/terminal/incoming-signals',{cache:'no-store'});
+     const data=await response.json();
+     if(!response.ok||!Array.isArray(data.signals))throw Error(data.error||'Status monitor unavailable');
+     allSignals=data.signals;draw();
+   }catch(e){info.textContent='Live signal status unavailable: '+e.message+' · previous statuses not refreshed';}
+   finally{pending=false;refreshButton.disabled=false;}
+ }
+ filters.addEventListener('click',e=>{
+   const button=e.target.closest('[data-lux-filter]');
+   if(!button)return;
+   chosen=button.dataset.luxFilter;
+   for(const b of filters.querySelectorAll('[data-lux-filter]')){
+      b.classList.toggle('selected',b.dataset.luxFilter===chosen);
+   }
+   draw();
+ });
+ clearButton.addEventListener('click',async()=>{
+   if(pending||clearButton.disabled)return;
+   if(!window.confirm('Reset incoming LuxAlgo signals to 0 on this dashboard? Past exchange orders, audit logs and duplicate protection will NOT be deleted.'))return;
+   clearButton.disabled=true;info.textContent='Saving visible-history reset…';
+   try{
+     const response=await fetch('/terminal/incoming-signals/reset',{
+       method:'POST',cache:'no-store',
+       headers:{'Content-Type':'application/json','X-Terminal-CSRF':{{ csrf_token|tojson }}},
+       body:'{}'});
+     const result=await response.json();
+     if(!response.ok||result.status!=='CLEARED')throw Error(result.error||'Reset not confirmed');
+     allSignals=[];chosen='ALL';
+     for(const b of filters.querySelectorAll('[data-lux-filter]')){
+       b.classList.toggle('selected',b.dataset.luxFilter==='ALL');
+     }
+     draw();await refresh();
+   }catch(e){info.textContent='Visible-history reset failed: '+e.message;}
+   finally{clearButton.disabled=false;}
+ });
+ refreshButton.addEventListener('click',refresh);
  panel.addEventListener('toggle',()=>{if(panel.open)refresh()});
- refresh();
- setInterval(()=>{if(panel.open&&!document.hidden)refresh();},60000);
+ refresh();setInterval(()=>{if(panel.open&&!document.hidden)refresh()},30000);
 })();
 </script>
 <script>
