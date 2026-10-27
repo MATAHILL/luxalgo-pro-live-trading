@@ -2142,6 +2142,14 @@ def webhook():
     except (psycopg.Error,RuntimeError,OSError):
         app.logger.exception('Cannot durably record incoming LuxAlgo signal')
         return jsonify(error='Signal not stored; retry later',orders_placed=0),503
+    # Process the existing paper queue promptly, not only when a dashboard tab
+    # happens to request /terminal/paper-trades minutes later.
+    # This function is SIMULATION ONLY, with no Gate.io order-writing path.
+    if not duplicate and level_status=='VALID':
+        try:
+            _paper_auto_executor.submit(_process_paper_webhook_soon)
+        except RuntimeError:
+            app.logger.warning('Paper background executor unavailable; queue stays durable')
     # Every newly received signal is durably passed into TESTNET pre-execution
     # validation. The handoff is permanently fail-closed: no exchange write.
     try:
@@ -4631,6 +4639,17 @@ def _paper_trade_snapshot(order):
                 entry=str(entry),stop=str(stop),take=str(take),
                 state=state,exit_candle=exit_bar,exit_price=str(exit_price) if exit_price is not None else None,
                 estimated_pnl_usdt=str(round(pnl,8)) if pnl is not None else None)
+
+
+# Single paper worker keeps slow public-market requests off webhook response threads.
+# Durable PostgreSQL queue remains the source of truth; no exchange order writes.
+_paper_auto_executor = ThreadPoolExecutor(max_workers=1,thread_name_prefix='luxalgo-paper')
+
+def _process_paper_webhook_soon():
+    try:
+        _auto_paper_process(max_items=2)
+    except (psycopg.Error,RuntimeError,OSError) as exc:
+        app.logger.warning('Paper queue processing deferred: %s',type(exc).__name__)
 
 
 def _auto_paper_process(max_items=5):
