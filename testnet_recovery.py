@@ -9,6 +9,7 @@ from testnet_automation import testnet_automation_armed
 from testnet_execution_journal import PostgresTestnetJournal
 from gate_testnet_broker import GateFuturesTestnetBroker
 from testnet_protected_coordinator import TestnetIntent
+from testnet_protection_watchdog import _exposed
 
 
 def recover_testnet_once(*, broker_factory=None, journal=None, limit=3):
@@ -59,6 +60,20 @@ def recover_testnet_once(*, broker_factory=None, journal=None, limit=3):
             gateway._contract=contract
             positions=gateway.positions()
             triggers=gateway.native_triggers()
+            if not isinstance(triggers,list) or not all(isinstance(x,dict) for x in triggers):
+                raise ValueError("Unverified native trigger readback")
+            if not _exposed(positions,contract,side):
+                orphan=any(str(t.get("me_order_id") or "")==str(order["id"]) and
+                           t.get("status")=="open" for t in triggers)
+                if orphan:
+                    ledger.transition(event_id,"HALTED_UNKNOWN",{
+                        "reason":"FLAT_POSITION_WITH_ORPHAN_NATIVE_TPSL"})
+                    outcomes.append("HALTED_UNKNOWN")
+                else:
+                    ledger.transition(event_id,"CLOSED_VERIFIED",{
+                        "reason":"POSITION_CONFIRMED_FLAT_DURING_RECOVERY"})
+                    outcomes.append("CLOSED_VERIFIED")
+                continue
             if gateway.verify_protection(order,positions,triggers,intent,payload):
                 ledger.transition(event_id,"PROTECTED_VERIFIED",{"order_id":str(order["id"]),
                                   "reason":"RECOVERED_WITH_LINKED_NATIVE_TPSL"})
