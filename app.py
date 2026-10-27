@@ -713,8 +713,8 @@ header.terminal-header{border-radius:17px!important}
 .v45-entry{color:#ffda7c;font-weight:800}
 .v45-refresh-state{font-size:10px;color:#99bbd4;margin-top:7px}
 @media(max-width:550px){.v45-widget{height:265px;min-height:265px}}
-/* Keep diagnostics and old paper table hidden; the real LuxAlgo paper position CARDS remain visible. */
-#liveReadinessPanel,.legacy-paper-panel,#paperClosedHistoryPanel{display:none!important}
+/* Testnet-only terminal: retain hidden legacy paper and audit nodes for historical compatibility. */
+#liveReadinessPanel,.legacy-paper-panel,#paperClosedHistoryPanel,#v4DemoToggle,#v4DemoWarning,#v4PaperCardsStatus{display:none!important}
 .bot-control-panel{display:flex!important;gap:12px;align-items:center;flex-wrap:wrap;margin:10px 0}
 .bot-control-panel .bot-control-actions .btn{font-size:11px;padding:6px 10px;min-width:75px}
 .live-ops-banner{margin:14px 0;padding:16px 19px;border:1px solid #47779a;border-radius:12px;background:linear-gradient(110deg,#102b45,#081b2f);display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:10px}
@@ -747,14 +747,14 @@ header.terminal-header{border-radius:17px!important}
 <div class="metric"><small>DATABASE SIGNALS</small><strong>{{ count }}</strong><span>Webhook: {{ 'configured' if configured else 'not configured' }}</span></div>
 </div><section class="panel position-panel"><div class="panel-heading"><h2>OPEN POSITIONS <span class="gloss-cyan">· GATE.IO FUTURES</span></h2><button class="btn gloss-action" id="positionRefresh" type="button">↻ Refresh Positions</button></div>
 <div id="gatePositionsBody" class="position-card-list" aria-live="polite"><p class="light">Checking read-only Gate.io open positions…</p></div><p id="gatePositionsUpdated" class="light">Read-only Gate.io account data; manual close disabled. SL/TP order status is not synchronized.</p></section>
-<section class="panel" id="v4Workspace" aria-label="LuxAlgo open paper position cards">
+<section class="panel" id="v4Workspace" aria-label="Gate.io Testnet individual position cards">
 <div class="v4-head"><div><strong>LUXALGO PRO · TESTNET POSITION CARDS</strong><p class="light">Gate.io Testnet exchange positions only. Unrealized P&amp;L comes from the exchange; real-money trading is OFF.</p></div>
 <button id="v4DemoToggle" type="button">SHOW SAMPLE LAYOUT</button></div>
-<div class="v4-tabs"><strong id="v4TabCount">Checking Testnet and Paper positions…</strong><span>TESTNET = EXCHANGE · PAPER = SIMULATED · REAL MONEY OFF</span></div>
+<div class="v4-tabs"><strong id="v4TabCount">Loading Gate.io Testnet positions…</strong><span>TESTNET EXCHANGE ONLY · REAL MONEY OFF</span></div>
 <div id="v4DemoWarning" hidden class="v4-demo-banner">SAMPLE LAYOUT ONLY — Sample positions, balances and profit figures are fabricated for visual review, never actual trades.</div>
 <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;padding:12px 18px 0;flex-wrap:wrap"><strong>GATE.IO TESTNET · EXCHANGE POSITION CARDS</strong><button class="btn gloss-action" type="button" id="v4TestnetRefresh">↻ Refresh Testnet</button></div>
 <p id="v4TestnetCardsStatus" class="light" role="status" aria-live="polite" style="padding:3px 18px">Checking Gate.io Testnet positions and native stop/target protection…</p>
-<div id="v4PaperCards" role="status" aria-live="polite"><div class="v4-prompt">Loading verified open paper records from PostgreSQL…</div></div>
+<div id="v4PaperCards" role="status" aria-live="polite"><div class="v4-prompt">Loading Gate.io Testnet positions from the exchange…</div></div>
 <p id="v4PaperCardsStatus" class="light" role="status" style="padding:0 18px 14px">Paper trade cards will update automatically. Real-money trading stays OFF.</p>
 </section>
 <section class="panel" id="testnetReadinessPanel" style="width:100%;margin:14px 0;max-width:none" aria-label="Gate.io Testnet execution readiness">
@@ -1499,7 +1499,7 @@ let directPaperOpen=null;
 let testnetOpen=null;
 function currentData(){
  const papers=demo?examples.map(x=>({symbol:x[0],side:x[1],leverage:'Cross '+x[2]+'x',pnl:x[3],roi:x[4]+'%',size:x[5],margin:x[6],entry:x[7],mark:x[8],liq:x[9],sl:'Sample only',tp:'Sample only'})):(directPaperOpen===null?fromTable():directPaperOpen);
- return demo?papers:[...(testnetOpen||[]),...papers];
+ return testnetOpen||[];
 }
 async function syncTestnetCards(){
  if(document.hidden||demo)return;
@@ -1593,10 +1593,10 @@ async function syncDirectPaperQuotes(){
 let lastStructure='';
 function draw(force=false){
  const data=currentData();const cards=document.getElementById('v4PaperCards');
- const structure=(demo?'DEMO':'REAL')+'|'+data.map(d=>String(d.event_id||d.symbol)+'/'+d.side+'/'+String(d.protection||'')+'/'+String(d.feedStale||'')+'/'+openIndicators.has(String(d.symbol))).join('|');
- document.getElementById('v4TabCount').textContent=demo?'SAMPLE CARDS ('+data.length+')':'Testnet ('+(testnetOpen||[]).length+') · Paper ('+(data.length-(testnetOpen||[]).length)+')';
+ const structure='TESTNET|' + data.map(d=>String(d.event_id||d.symbol)+'/'+d.side+'/'+String(d.protection||'')+'/'+String(d.feedStale||'')+'/'+openIndicators.has(String(d.symbol))).join('|');
+ document.getElementById('v4TabCount').textContent='Gate.io Testnet Positions ('+data.length+')';
  if(force||structure!==lastStructure){
-  cards.innerHTML=data.length?data.map(card).join(''):'<div class="v4-prompt">No OPEN paper positions currently. Closed paper trades remain in history. Use SHOW SAMPLE LAYOUT to inspect six example cards without placing trades.</div>';
+  cards.innerHTML=data.length?data.map(card).join(''):'<div class="v4-prompt">No open Gate.io Testnet positions. This does not imply paper or real-money orders.</div>';
   lastStructure=structure;
  }else{
   // Update prices/P&L without destroying open TradingView web components.
@@ -1627,11 +1627,8 @@ workspace.addEventListener('click',e=>{
 if(table)new MutationObserver(()=>{if(!demo&&directPaperOpen===null)draw()}).observe(table,{childList:true,subtree:true,characterData:true});
 draw(true);
 syncTestnetCards();
-syncDirectPaperCards();
 setInterval(syncTestnetCards,20000);
-setInterval(syncDirectPaperCards,12000);
-setInterval(syncDirectPaperQuotes,5000);
-document.addEventListener('visibilitychange',()=>{if(!document.hidden){syncDirectPaperCards();syncTestnetCards();}});
+document.addEventListener('visibilitychange',()=>{if(!document.hidden)syncTestnetCards();});
 })();
 </script>
 <script>
