@@ -26,6 +26,8 @@ on:
       - 'app.py'
       - 'testnet_card_feed.py'
       - 'test_testnet_card_feed.py'
+      - 'testnet_manual_close.py'
+      - 'test_testnet_manual_close.py'
       - 'test_dashboard_card_render.cjs'
       - '.github/workflows/testnet-safety.yml'
   pull_request:
@@ -53,6 +55,8 @@ on:
       - 'app.py'
       - 'testnet_card_feed.py'
       - 'test_testnet_card_feed.py'
+      - 'testnet_manual_close.py'
+      - 'test_testnet_manual_close.py'
       - 'test_dashboard_card_render.cjs'
       - '.github/workflows/testnet-safety.yml'
 permissions:
@@ -68,8 +72,8 @@ jobs:
       - name: Install database test dependency
         run: python -m pip install 'psycopg[binary]>=3.2,<4'
       - name: Compile files
-        run: python -m py_compile testnet_card_feed.py test_testnet_card_feed.py gate_testnet_execution.py test_gate_testnet_execution.py testnet_protected_coordinator.py test_testnet_protected_coordinator.py testnet_one_shot_trial.py test_testnet_one_shot_trial.py gate_testnet_broker.py test_gate_testnet_broker.py testnet_execution_journal.py test_testnet_execution_journal.py testnet_automation.py test_testnet_automation.py testnet_recovery.py test_testnet_recovery.py testnet_readiness.py test_testnet_readiness.py testnet_mode_prepare.py test_testnet_mode_prepare.py testnet_leverage_prepare.py test_testnet_leverage_prepare.py app.py
+        run: python -m py_compile testnet_card_feed.py test_testnet_card_feed.py testnet_manual_close.py test_testnet_manual_close.py gate_testnet_execution.py test_gate_testnet_execution.py testnet_protected_coordinator.py test_testnet_protected_coordinator.py testnet_one_shot_trial.py test_testnet_one_shot_trial.py gate_testnet_broker.py test_gate_testnet_broker.py testnet_execution_journal.py test_testnet_execution_journal.py testnet_automation.py test_testnet_automation.py testnet_recovery.py test_testnet_recovery.py testnet_readiness.py test_testnet_readiness.py testnet_mode_prepare.py test_testnet_mode_prepare.py testnet_leverage_prepare.py test_testnet_leverage_prepare.py app.py
       - name: Smoke-test LuxAlgo individual coin cards
         run: node test_dashboard_card_render.cjs
       - name: Run isolated unit tests
-        run: python -m unittest -v test_testnet_card_feed.py test_gate_testnet_execution.py test_testnet_protected_coordinator.py test_testnet_one_shot_trial.py test_gate_testnet_broker.py test_testnet_execution_journal.py test_testnet_automation.py test_testnet_recovery.py test_testnet_readiness.py test_testnet_mode_prepare.py test_testnet_leverage_prepare.py
+        run: python -m unittest -v test_testnet_manual_close.py test_testnet_card_feed.py test_gate_testnet_execution.py test_testnet_protected_coordinator.py test_testnet_one_shot_trial.py test_gate_testnet_broker.py test_testnet_execution_journal.py test_testnet_automation.py test_testnet_recovery.py test_testnet_readiness.py test_testnet_mode_prepare.py test_testnet_leverage_prepare.py
