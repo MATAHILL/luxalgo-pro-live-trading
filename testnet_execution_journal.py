@@ -155,7 +155,7 @@ class PostgresTestnetJournal:
                     state IN ('SUBMISSION_UNKNOWN','ENTRY_ACK','HALTED_UNKNOWN',
                               'EMERGENCY_CLOSE_REQUIRED')
                     OR (state='RECOVERING' AND updated_at < NOW()-INTERVAL '120 seconds')
-                  ) RETURNING signal_id,client_id,contract,side,payload,state""",
+                  ) RETURNING signal_id,client_id,contract,side,payload,state,details""",
                   (signal_id,))
                 return cur.fetchone()
 
