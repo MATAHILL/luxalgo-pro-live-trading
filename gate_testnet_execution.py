@@ -53,6 +53,52 @@ def order_payload(contract: str, signed_contracts: int, order_type: str, limit_p
         return dict(contract=contract, size=signed_contracts, price=str(price), tif="gtc", text=client_id)
     raise ValueError("Order type must be MARKET or LIMIT")
 
+def atomic_protected_entry_payload(contract: str, side: str, entry_reference: str,
+                                   stop_loss: str, take_profit: str, client_id: str) -> dict:
+    """Prepare Gate's documented entry with attached TP/SL (NO submission).
+
+    The broker's actual acceptance and protection must still be read back.
+    The reference price is only a geometry validation, NOT a current quote.
+    """
+    from decimal import Decimal, InvalidOperation
+    if side not in ("LONG", "SHORT"):
+        raise ValueError("Position side must be LONG or SHORT")
+    try:
+        ref,stop,target=(Decimal(str(x)) for x in
+                         (entry_reference,stop_loss,take_profit))
+    except (TypeError,ValueError,InvalidOperation):
+        raise ValueError("Invalid reference/stop/target price") from None
+    if not all(x.is_finite() and x>0 for x in (ref,stop,target)):
+        raise ValueError("Prices must be positive and finite")
+    if side=="LONG" and not stop<ref<target:
+        raise ValueError("LONG requires stop < reference < target")
+    if side=="SHORT" and not target<ref<stop:
+        raise ValueError("SHORT requires target < reference < stop")
+    size=1 if side=="LONG" else -1
+    order=order_payload(contract,size,"MARKET",None,client_id)
+    order["tpsl_tp_trigger_price"]=str(target)
+    order["tpsl_sl_trigger_price"]=str(stop)
+    return order
+
+
+def verify_attached_tpsl_readback(order: dict, submitted: dict) -> dict:
+    """Readback matching the exact native attached prices, not merely HTTP 200."""
+    from decimal import Decimal, InvalidOperation
+    if not isinstance(order,dict) or not isinstance(submitted,dict):
+        return dict(verified=False,reason="MISSING_ORDER_READBACK")
+    if str(order.get("id") or "") in ("","0") or order.get("contract")!=submitted.get("contract"):
+        return dict(verified=False,reason="ORDER_ID_OR_CONTRACT_MISMATCH")
+    for field in ("tpsl_tp_trigger_price","tpsl_sl_trigger_price"):
+        try:
+            matching=(Decimal(str(order.get(field)))==Decimal(str(submitted[field])))
+        except (InvalidOperation,ValueError,TypeError,KeyError):
+            matching=False
+        if not matching:
+            return dict(verified=False,reason="ATTACHED_TPSL_NOT_CONFIRMED")
+    return dict(verified=True,reason="ATTACHED_TPSL_FIELDS_MATCH_ORDER_READBACK",
+                fill_verified=False,active_native_trigger_verified=False)
+
+
 def prepare_order_for_review(payload: dict) -> dict:
     """Only prepare validated data; deliberately never submit an order."""
     checked = order_payload(payload["contract"], payload["size"], payload["order_type"],
