@@ -76,7 +76,22 @@ def execute_protected_testnet(intent, broker, journal):
             # Broker adapter must use reduce-only/close side on Testnet and verify flat.
             flat=broker.emergency_close(intent)
             if flat is True:
-                journal.transition(intent.signal_id,"EMERGENCY_CLOSED",{"order_id":order_id})
+                # A filled reduce-only close does not prove attached native
+                # triggers were canceled. Recheck them before releasing slot.
+                remaining=broker.native_triggers()
+                if (not isinstance(remaining,list) or
+                    not all(isinstance(t,dict) for t in remaining)):
+                    journal.transition(intent.signal_id,"HALTED_UNPROTECTED",
+                        {"order_id":order_id,"reason":"ORPHAN_TPSL_READBACK_UNAVAILABLE"})
+                    return {"state":"HALTED_UNPROTECTED","submitted":True}
+                orphans=[t for t in remaining if t.get("status")=="open" and
+                         str(t.get("me_order_id") or "")==order_id]
+                if orphans:
+                    journal.transition(intent.signal_id,"HALTED_UNPROTECTED",
+                        {"order_id":order_id,"reason":"ORPHAN_NATIVE_TPSL_AFTER_CLOSE"})
+                    return {"state":"HALTED_UNPROTECTED","submitted":True}
+                journal.transition(intent.signal_id,"EMERGENCY_CLOSED",
+                                   {"order_id":order_id,"reason":"FLAT_WITHOUT_LINKED_OPEN_TPSL"})
                 return {"state":"EMERGENCY_CLOSED","submitted":True}
             journal.transition(intent.signal_id,"HALTED_UNPROTECTED",{"order_id":order_id})
             return {"state":"HALTED_UNPROTECTED","submitted":True}
