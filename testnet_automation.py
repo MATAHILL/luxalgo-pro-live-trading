@@ -16,8 +16,13 @@ from gate_testnet_broker import GateFuturesTestnetBroker
 
 
 def testnet_automation_armed():
-    return (os.getenv("GATE_TESTNET_PROTECTED_EXECUTION_ENABLED","false").lower()=="true" and
-            os.getenv("GATE_TESTNET_WEBHOOK_AUTOMATION_ENABLED","false").lower()=="true")
+    """Arm Gate Testnet only with recovery on and all production writes OFF."""
+    return (os.getenv("GATE_TESTNET_PROTECTED_EXECUTION_ENABLED","false").lower()=="true"
+            and os.getenv("GATE_TESTNET_WEBHOOK_AUTOMATION_ENABLED","false").lower()=="true"
+            and os.getenv("GATE_TESTNET_RECOVERY_ENABLED","false").lower()=="true"
+            and os.getenv("GATE_TESTNET_ONE_SHOT_PROTECTED_TRIAL","false").lower()!="true"
+            and os.getenv("LIVE_TRADING_ENABLED","false").lower()=="false"
+            and os.getenv("ORDERS_ENABLED","false").lower()=="false")
 
 
 def testnet_recovery_armed():
