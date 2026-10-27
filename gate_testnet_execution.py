@@ -204,9 +204,16 @@ def signed_testnet_request(method: str, path: str, body: dict | None = None,
     Calling code must validate risk, recovery, native protection and idempotency.
     """
     from urllib.error import HTTPError, URLError
-    if path not in (ORDER_PATH, "/api/v4/futures/usdt/price_orders",
-                    "/api/v4/futures/usdt/positions"):
+    import re
+    read_paths=(ORDER_PATH, "/api/v4/futures/usdt/price_orders",
+                "/api/v4/futures/usdt/positions", "/api/v4/futures/usdt/accounts")
+    order_lookup=(method=="GET" and bool(re.fullmatch(
+        r"/api/v4/futures/usdt/orders/(?:[0-9]{1,20}|t-[A-Za-z0-9_.-]{1,28})",path)))
+    if path not in read_paths and not order_lookup:
         raise ValueError("API path not allowlisted")
+    if query and (path not in ("/api/v4/futures/usdt/price_orders",ORDER_PATH)
+                  or not re.fullmatch(r"(?:status=(?:open|finished)(?:&contract=[A-Z0-9]{2,28}_USDT)?)",query)):
+        raise ValueError("Unsupported Testnet query")
     if method == "POST" and path == "/api/v4/futures/usdt/positions":
         raise ValueError("Position write prohibited")
     if method not in ("GET", "POST"):
@@ -241,6 +248,36 @@ def signed_testnet_request(method: str, path: str, body: dict | None = None,
     if not isinstance(result,(dict,list)):
         raise ValueError("Unexpected Testnet response")
     return result
+
+
+def reconcile_unknown_testnet_entry(client_id: str, contract: str, size: int) -> dict:
+    """Read-only recovery by Gate's user-defined text order ID.
+
+    Gate documents GET /futures/usdt/orders/{order_id} accepting a t-* client ID.
+    ORDER_NOT_FOUND cannot prove no fill, so NEVER retry automatically.
+    """
+    import re
+    if not isinstance(client_id,str) or not re.fullmatch(r"t-[A-Za-z0-9_.-]{1,28}",client_id):
+        raise ValueError("Invalid recovery client ID")
+    if not isinstance(contract,str) or not re.fullmatch(r"[A-Z0-9]{2,28}_USDT",contract):
+        raise ValueError("Invalid recovery contract")
+    if type(size) is not int or not size or abs(size)>1:
+        raise ValueError("Invalid recovery contract size")
+    try:
+        result=signed_testnet_request("GET", ORDER_PATH+"/"+client_id)
+    except Exception:
+        return dict(state="UNKNOWN_HALT", reason="READBACK_UNAVAILABLE_NO_RETRY")
+    if not isinstance(result,dict) or result.get("contract")!=contract or result.get("text")!=client_id:
+        return dict(state="UNKNOWN_HALT", reason="ORDER_ID_OR_CONTRACT_MISMATCH")
+    try:
+        verified_size=int(result["size"])==size
+    except (KeyError,ValueError,TypeError):
+        verified_size=False
+    if not verified_size or not result.get("id"):
+        return dict(state="UNKNOWN_HALT", reason="ORDER_SIZE_OR_ID_MISMATCH")
+    return dict(state="FOUND_RECONCILE_PROTECTION", order_id=str(result["id"]),
+                finish_as=result.get("finish_as"),status=result.get("status"),
+                reason="ENTRY_EXISTS_CHECK_FILL_POSITION_AND_NATIVE_TPSL_NO_RETRY")
 
 
 def verify_testnet_protection(order: dict, positions: list, triggers: list,
