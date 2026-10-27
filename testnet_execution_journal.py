@@ -116,6 +116,30 @@ class PostgresTestnetJournal:
                         updated_at=NOW() WHERE signal_id=%s""",
                     (state,json.dumps(details,allow_nan=False),signal_id))
 
+    def claim_manual_close(self, signal_id, contract, side, order_id):
+        """Atomically claim a verified position for one user-requested Testnet close.
+
+        No order is sent here; the RECOVERING state prevents duplicate clicks
+        and protects against concurrent watchdog or bot actions.
+        """
+        if (not isinstance(signal_id,str)
+            or not re.fullmatch(r"[0-9A-Za-z_.-]{4,128}",signal_id)
+            or not isinstance(contract,str)
+            or not re.fullmatch(r"[A-Z0-9]{2,28}_USDT",contract)
+            or side not in ("LONG","SHORT")
+            or not re.fullmatch(r"[0-9]{1,20}",str(order_id))):
+            raise ValueError("Invalid Testnet position identity")
+        with self._connect() as conn:
+            with conn.cursor() as cur:
+                cur.execute("""UPDATE luxalgo_testnet_protected_journal
+                  SET state='RECOVERING',updated_at=NOW()
+                  WHERE signal_id=%s AND contract=%s AND side=%s
+                    AND state='PROTECTED_VERIFIED'
+                    AND details->>'order_id'=%s
+                  RETURNING signal_id,client_id,contract,side,payload,details,state""",
+                  (signal_id,contract,side,str(order_id)))
+                return cur.fetchone()
+
     def claim_recovery(self, signal_id):
         """Atomically claim an uncertain order for readback, never re-submit entry.
 
