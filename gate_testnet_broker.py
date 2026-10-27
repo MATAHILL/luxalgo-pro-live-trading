@@ -190,9 +190,16 @@ class GateFuturesTestnetBroker:
             ack=self.request("POST",ORDER_PATH,body=order)
             if not isinstance(ack,dict) or not ack.get("id"):
                 return False
+            # A close-order acknowledgment alone is not evidence of a fill.
+            close_order=self.order(str(ack["id"]))
+            if (str(close_order.get("id"))!=str(ack["id"])
+                or close_order.get("contract")!=intent.contract
+                or str(close_order.get("finish_as","")).lower()!="filled"):
+                return False
             positions=self.positions()
             side="dual_long" if intent.side=="LONG" else "dual_short"
             relevant=[p for p in positions if p.get("contract")==intent.contract and p.get("mode")==side]
-            return all(Decimal(str(p["size"]))==0 for p in relevant)
+            # An empty/missing position readback cannot prove the account is flat.
+            return bool(relevant) and all(Decimal(str(p["size"]))==0 for p in relevant)
         except (ValueError,KeyError,TypeError,InvalidOperation,TimeoutError,OSError):
             return False
