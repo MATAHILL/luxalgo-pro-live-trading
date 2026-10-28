@@ -39,6 +39,7 @@ CREATE TABLE IF NOT EXISTS luxalgo_prod_execution_ledger (
  contract TEXT NOT NULL,
  side TEXT NOT NULL CHECK(side IN ('LONG','SHORT')),
  timeframe TEXT NOT NULL CHECK(timeframe IN ('5m','15m')),
+ position_mode TEXT NOT NULL DEFAULT 'UNVERIFIED',
  state TEXT NOT NULL CHECK(state IN
    ('RESERVED','SENDING','ACK_UNKNOWN','ENTRY_CONFIRMED',
     'PROTECTION_PENDING','PROTECTED','HALTED','CLOSED_VERIFIED')),
@@ -54,6 +55,8 @@ CREATE TABLE IF NOT EXISTS luxalgo_prod_execution_ledger (
  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+ALTER TABLE luxalgo_prod_execution_ledger
+ADD COLUMN IF NOT EXISTS position_mode TEXT NOT NULL DEFAULT 'UNVERIFIED';
 CREATE INDEX IF NOT EXISTS idx_prod_ledger_state
 ON luxalgo_prod_execution_ledger(state,updated_at);
 CREATE TABLE IF NOT EXISTS luxalgo_prod_execution_control (
