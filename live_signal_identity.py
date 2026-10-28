@@ -10,6 +10,44 @@ def validated_bar_id(value):
     value=value.strip()
     return value if BAR_RE.fullmatch(value) else None
 
+def luxalgo_bar_identity(timeframe, received_at, bartime):
+    """Verify an exchange-time LuxAlgo `{time}` bar timestamp (Unix milliseconds).
+
+    The result is a deterministic same-candle identifier, not a trade signal.
+    Reject old/future/stale values; never grant order permission on its own.
+    """
+    if timeframe not in ("5m","15m"):
+        return None
+    if not isinstance(received_at,datetime) or received_at.tzinfo is None:
+        return None
+    if isinstance(bartime,bool) or not isinstance(bartime,(int,str)):
+        return None
+    raw=str(bartime).strip()
+    if not re.fullmatch(r"[1-9][0-9]{12}",raw):
+        return None
+    ms=int(raw)
+    now_ms=int(received_at.timestamp()*1000)
+    period_ms=(300000 if timeframe=="5m" else 900000)
+    # A completed bar may report its opening time; allow one extra interval
+    # of delivery latency. A source timestamp in the future must fail closed.
+    if not -120000<=now_ms-ms<=2*period_ms+120000:
+        return None
+    return f"TVBAR_{timeframe}_{ms//period_ms:011d}"
+
+
+def normalize_luxalgo_side(value):
+    """Strict LuxAlgo confirmation labels only; never trade TP/SL/exit alerts."""
+    if not isinstance(value,str):
+        return None
+    key=" ".join(value.strip().upper().replace("_"," ").split())
+    return {
+        "BUY":"LONG","LONG":"LONG","BULLISH CONFIRMATION":"LONG",
+        "BULLISH CONFIRMATION SIGNAL":"LONG",
+        "SELL":"SHORT","SHORT":"SHORT","BEARISH CONFIRMATION":"SHORT",
+        "BEARISH CONFIRMATION SIGNAL":"SHORT",
+    }.get(key)
+
+
 def stable_signal_identity(symbol,side,timeframe,received_at,bar_id=None):
     """Same bar+direction+market => same event ID across retries/deploys.
 
