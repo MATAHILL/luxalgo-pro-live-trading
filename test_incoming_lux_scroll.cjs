@@ -15,7 +15,9 @@ assert(page.includes('first 10 rows; scroll down for the rest'),'Scroll instruct
 assert(page.includes('scrollArea.scrollTop=0'),'Status-filter scroll reset missing');
 assert(page.includes('id="incomingLuxClear"'),'Existing visible-reset button must stay');
 assert(page.includes('id="v4PaperCards"'),'Original protected position cards must stay');
-assert(page.includes('Testnet automatic execution PAUSED; webhook stored'),'Disabled worker must not masquerade as failed order');
+const explanations=fs.readFileSync('incoming_testnet_status.py','utf8');
+assert(page.includes('explain_testnet_attempt'),'Dashboard must use clear preflight reason descriptions');
+assert(explanations.includes('Testnet automatic execution paused at the terminal'),'Disabled worker must be explained honestly');
 assert(app.includes("ORDER BY i.received_at DESC LIMIT 25"),'Backend must retain 25 latest signals');
 assert(app.includes("luxalgo_incoming_display_reset"),'Safety-preserving visible history reset missing');
 assert(!app.includes("DELETE FROM luxalgo_dry_run_intents"),'Webhook audit must never be deleted');
