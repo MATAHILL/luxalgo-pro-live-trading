@@ -2385,7 +2385,7 @@ def terminal_live_execution_plan():
     if not isinstance(event_id,str) or not re.fullmatch(r'[a-f0-9]{20}',event_id):
         return jsonify(error='Valid stored event ID required'),422
     try:
-        from live_futures_engine import GateLiveClient,build_plan,LiveSafetyError
+        from live_futures_engine import GateLiveClient,build_plan,LiveSafetyError,verified_account_equity
         from live_execution_coordinator import install,control,read_rows
         with _db_connect() as con:
             _ensure_schema(con);install(con)
@@ -2411,8 +2411,7 @@ def terminal_live_execution_plan():
         meta=client.request('GET','/api/v4/futures/usdt/contracts/'+contract)
         if not isinstance(meta,dict):
             raise LiveSafetyError('Contract metadata invalid')
-        equity=snap['account'].get('total')
-        available=snap['account'].get('available')
+        equity,available=verified_account_equity(snap['account'])
         reserved=sum(Decimal(str(x['risk_usdt'])) for x in ledger
                      if x['state']!='CLOSED_VERIFIED')
         plan=build_plan(dict(event_id=event_id,side=row['side'],contract=contract,
