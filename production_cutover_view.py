@@ -83,12 +83,63 @@ setInterval(()=>{if(!document.hidden)refresh();},30000);
 
 PRODUCTION_BANNER='''<section class="live-ops-banner" aria-label="Production trading preparation">
 <div><strong>GATE.IO FUTURES · PRODUCTION MONITOR</strong><p>Real-money exchange account is read-only. LuxAlgo signals are recorded; automatic live orders are NOT enabled. Native production SL/TP and emergency close have not been verified.</p></div>
-<span class="live-ops-state">LIVE ORDERS OFF</span></section>'''
+</section>'''
 
-PRODUCTION_CONTROL='''<section class="bot-control-panel" aria-label="Production bot execution state">
-<div><div class="bot-status-line"><strong>PRODUCTION BOT · NOT ARMED</strong><span class="bot-state-indicator off" role="status">● EXECUTION OFF</span></div>
-<p>No Testnet entries and no live-money orders. Existing exchange positions are never treated as safely protected without independent readback.</p></div>
-<div><a href="/terminal/live-preparation" class="btn gloss-action">Production readiness</a></div></section>'''
+PRODUCTION_CONTROL=''  # Replaced by the single Radar-side production BOT switch.
+
+
+PRODUCTION_BOT_WIDGET=r'''<div class="prod-radar-bot" aria-label="Production operator bot control">
+<label for="productionBotSwitch" class="prod-radar-bot-label">BOT CONTROL</label>
+<button type="button" id="productionBotSwitch" role="switch" aria-checked="false"
+        aria-label="Toggle production bot ON or OFF" disabled>BOT OFF</button>
+<span class="prod-radar-bot-detail" id="productionBotDetail" role="status" aria-live="polite">Checking server safety state…</span>
+</div>'''
+
+PRODUCTION_BOT_SCRIPT=r'''<script>(function(){'use strict';
+const sw=document.getElementById('productionBotSwitch'),
+      detail=document.getElementById('productionBotDetail');
+if(!sw||!detail)return;
+let busy=false,actualOn=false;
+const url='/terminal/production-bot-control';
+function display(state){
+ const on=state&&state.bot_on===true;
+ actualOn=on;sw.disabled=false;sw.setAttribute('aria-checked',String(on));
+ sw.textContent=on?'BOT ON':'BOT OFF';
+ sw.classList.toggle('enabled',on);
+ const reason=String(state?.reason||state?.error||'EXECUTION STATUS UNKNOWN');
+ detail.textContent=on?'Automatic entries permitted · Gate.io LIVE':
+     'New entries blocked · '+reason.replaceAll('_',' ');
+}
+async function refresh(){
+ if(busy)return;
+ try{
+  const response=await fetch(url,{cache:'no-store',credentials:'same-origin'});
+  const state=await response.json();
+  if(!response.ok)throw Error(state.error||'Server-side state unavailable');
+  display(state);
+ }catch(e){
+  actualOn=false;sw.disabled=true;sw.setAttribute('aria-checked','false');
+  sw.textContent='BOT OFF';detail.textContent='Execution state unverified · BOT OFF';
+ }
+}
+sw.addEventListener('click',async()=>{
+ if(busy)return;busy=true;sw.disabled=true;
+ const desired=!actualOn;
+ detail.textContent=desired?'Checking all mandatory ON gates…':'Persisting OFF / emergency HALT…';
+ try{
+  const csrf=document.querySelector('input[name="csrf_token"]')?.value;
+  if(!csrf)throw Error('Session CSRF unavailable');
+  const response=await fetch(url,{method:'POST',credentials:'same-origin',
+     cache:'no-store',headers:{'Content-Type':'application/json','X-Terminal-CSRF':csrf},
+     body:JSON.stringify({enabled:desired})});
+  const state=await response.json();
+  display(state);
+  if(!response.ok)detail.textContent='BOT OFF · '+String(state.reason||state.error||'Authorization denied').replaceAll('_',' ');
+ }catch(e){detail.textContent='BOT OFF · update not verified';}
+ finally{busy=false;await refresh();}
+});
+refresh();setInterval(()=>{if(!document.hidden)refresh();},15000);
+})();</script>'''
 
 PRODUCTION_CSS='''
 /* Production mode applies to the existing original dashboard only. */
@@ -101,6 +152,14 @@ body.production-view #paperClosedHistoryPanel,
 body.production-view #v4RecentWrapper,
 body.production-view #v4LegacyGateHost,
 body.production-view #v4LegacyPaperHost{display:none!important}
+body.production-view .prod-radar-bot{display:flex;align-items:center;gap:7px;flex-wrap:wrap;margin-right:12px;min-width:220px}
+body.production-view .prod-radar-bot-label{font-size:10px;font-weight:900;color:#b7d8ef;white-space:nowrap}
+body.production-view #productionBotSwitch{border:1px solid #fa9a9a;background:#6a2440;color:#fff;
+ border-radius:14px;padding:7px 13px;font:900 12px system-ui,Arial;cursor:pointer;min-width:88px}
+body.production-view #productionBotSwitch.enabled{border-color:#73e1a6;background:#126d48}
+body.production-view #productionBotSwitch:disabled{cursor:wait;opacity:.65}
+body.production-view .prod-radar-bot-detail{font-size:10px;color:#ffe0a4;max-width:245px}
+@media(max-width:640px){body.production-view .prod-radar-bot{width:100%;margin:0 0 9px}}
 body.production-view .production-position-cards{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;padding:12px 16px 17px}
 body.production-view .production-position-card{border:1px solid #355a7b;background:linear-gradient(145deg,#142d49,#0a1d32);border-radius:12px;padding:14px;min-width:0}
 body.production-view .production-position-card .v4-trade-top{display:flex;gap:10px;align-items:center}
@@ -131,6 +190,14 @@ def production_monitor_page(page):
     out,n=re.subn(r'<section class="bot-control-panel"[^>]*>.*?</section>',
                   lambda _:PRODUCTION_CONTROL,out,count=1,flags=re.S)
     if n!=1:raise ValueError("Missing bot control banner")
+    # Place the only production BOT control immediately left of Futures Radar.
+    radar='<section class="panel market-panel"><div class="panel-heading"><h2>GATE.IO FUTURES RADAR'
+    if out.count(radar)!=1:raise ValueError("Futures Radar heading missing")
+    out=out.replace(radar,
+        '<section class="panel market-panel"><div class="panel-heading">'+
+        PRODUCTION_BOT_WIDGET+'<h2>GATE.IO FUTURES RADAR',1)
+    if out.count('</body>')!=1:raise ValueError("Dashboard closing body missing")
+    out=out.replace('</body>',PRODUCTION_BOT_SCRIPT+'</body>',1)
     out=out.replace('<section class="panel" id="v4Workspace"',
                     PRODUCTION_CARDS+'\n<section class="panel" id="v4Workspace"',1)
     # Remove legacy TESTNET panels from the rendered production page entirely.
