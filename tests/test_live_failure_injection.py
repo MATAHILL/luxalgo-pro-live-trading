@@ -103,7 +103,7 @@ class NonTradingFaultInjections(unittest.TestCase):
                received_epoch=100000,entry="80000",sl="79000",tp="82000",
                position_mode="single")
         meta=dict(name="BTC_USDT",quanto_multiplier="0.0001",
-                  order_size_min=1,order_size_max=100000)
+                  order_size_min=1,order_size_max=100000,taker_fee_rate="0.00075)
         with self.assertRaisesRegex(LiveSafetyError,"delayed or future"):
             build_plan(s,meta,1000,1000,[],now=100100)
 
