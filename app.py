@@ -375,6 +375,9 @@ def terminal_bot_control_post():
     if not isinstance(data,dict) or type(data.get('enabled')) is not bool:
         return jsonify(error='Boolean enabled is required'),400
     desired=data['enabled']
+    if desired and os.getenv('PRODUCTION_TERMINAL_VIEW','false').strip().lower()=='true':
+        return jsonify(error='Testnet entries permanently retired from production view; recovery only',
+                       orders_enabled=False,live_trading=False),409
     if desired and os.getenv('LIVE_TRADING_ENABLED','false').strip().lower()!='false':
         return jsonify(error='Live-trading environment must remain disabled'),503
     try:
@@ -2159,7 +2162,8 @@ def home():
     """Keep the original complete LuxAlgo PRO dashboard at its familiar URL."""
     if not _terminal_permitted():
         return _terminal_guard()
-    return _render_legacy_home()
+    return _render_legacy_home(production_view=(
+        os.getenv('PRODUCTION_TERMINAL_VIEW','false').strip().lower()=='true'))
 
 
 @app.get('/terminal/legacy-testnet')
@@ -2167,7 +2171,9 @@ def terminal_legacy_testnet():
     """Backward-compatible old-dashboard link; browser login, never raw JSON."""
     if not _terminal_permitted():
         return redirect(url_for('terminal_login', next=request.path),code=303)
-    return redirect('/',code=303)
+    # Keep historical Testnet monitoring available only behind private login
+    # until the exchange is truly flat; never dispatch a new Testnet order.
+    return _render_legacy_home(production_view=False)
 
 
 @app.get('/terminal/live-preparation')
@@ -2185,7 +2191,7 @@ def terminal_live_preparation():
     return response
 
 
-def _render_legacy_home():
+def _render_legacy_home(*,production_view=False):
     try:
         count, records = _db_recent()
         with _db_connect() as con:
@@ -2195,7 +2201,11 @@ def _render_legacy_home():
     except (psycopg.Error, RuntimeError, OSError):
         app.logger.exception('Persistent signal storage unavailable')
         return Response('Persistent signal database temporarily unavailable. No trading is active.', status=503)
-    response = Response(render_template_string(PAGE, configured=len(expected_webhook_token()) >= 24,
+    page=PAGE
+    if production_view:
+        from production_cutover_view import production_monitor_page
+        page=production_monitor_page(PAGE)
+    response = Response(render_template_string(page, configured=len(expected_webhook_token()) >= 24,
                                                count=count, records=records,latest_receipt_id=latest_receipt_id,csrf_token=session.get('csrf_token','')), mimetype='text/html')
     response.headers['Cache-Control'] = 'no-store'
     response.headers['X-Frame-Options'] = 'DENY'
