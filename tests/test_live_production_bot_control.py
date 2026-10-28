@@ -167,4 +167,16 @@ class ProductionBotTests(unittest.TestCase):
             self.assertFalse(res.json["can_execute"])
 
 
+    def test_acceptance_panel_bounds_all_network_checks_and_updates_audit_first(self):
+        html=production_monitor_page(backend.PAGE)
+        self.assertIn("AbortController()",html)
+        self.assertIn("get('/terminal/acceptance-test/status',8000)",html)
+        self.assertIn("get('/terminal/live-execution/snapshot',12000)",html)
+        self.assertIn("get('/terminal/production-bot-control',8000)",html)
+        self.assertLess(html.index('const audit=await auditPromise'),
+                        html.index('const exchange=await exchangePromise'))
+        self.assertLess(html.index('NO BOT TEST ORDER RECORDED'),
+                        html.index('const exchange=await exchangePromise'))
+        self.assertIn("Preserve the last verified result",html)
+
 if __name__=="__main__":unittest.main()
