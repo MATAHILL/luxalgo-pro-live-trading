@@ -318,7 +318,7 @@ def production_monitor_page(page):
     # Never invent a BTC fill or replace the disabled order controls.
     if out.count(PRODUCTION_CONTROL)!=1:
         raise ValueError("Restored production BOT controls not unique")
-    out=out.replace(PRODUCTION_CONTROL,PRODUCTION_CONTROL+'\\n'+PRODUCTION_ACCEPTANCE,1)
+    out=out.replace(PRODUCTION_CONTROL,PRODUCTION_CONTROL+'\n'+PRODUCTION_ACCEPTANCE,1)
     # Keep the Radar heading unchanged; BOT buttons are above in the old panel.
     if out.count('</body>')!=1:raise ValueError("Dashboard closing body missing")
     out=out.replace('</body>',PRODUCTION_BOT_SCRIPT+'</body>',1)
