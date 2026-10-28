@@ -5383,8 +5383,8 @@ def terminal_incoming_signals():
                     cutoff=_incoming_visible_since(cur)
                     cur.execute("""SELECT p.event_id,p.received_at,p.symbol,p.side,p.timeframe,
                            l.status AS level_status,l.entry_price,l.stop_loss,l.take_profit,
-                           o.order_type,h.source_bar_id,
-                           h.order_type AS handoff_order_type
+                           o.order_type,h.event_id AS handoff_event_id,
+                           h.source_bar_id,h.order_type AS handoff_order_type
                         FROM (
                            SELECT DISTINCT ON (event_id)
                                event_id,received_at,symbol,side,timeframe
@@ -5400,7 +5400,7 @@ def terminal_incoming_signals():
             signals=[]
             for r in rows:
                 level=r['level_status'] or 'MISSING'
-                has_handoff=bool(r['handoff_order_type'])
+                has_handoff=bool(r['handoff_event_id'])
                 stable_bar=bool(r['source_bar_id'])
                 declared_market=(r['order_type']=='MARKET' and r['handoff_order_type']=='MARKET')
                 if not has_handoff:
