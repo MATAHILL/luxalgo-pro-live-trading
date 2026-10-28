@@ -18,7 +18,7 @@ def install(con):
 
 def read_rows(con):
     with con.cursor() as cur:
-        cur.execute("""SELECT event_id,client_text,contract,side,timeframe,state,
+        cur.execute("""SELECT event_id,client_text,contract,side,timeframe,position_mode,state,
                         risk_usdt,entry_price,stop_loss,take_profit,contracts,
                         entry_order_id,stop_order_id,take_order_id,created_at,updated_at
                        FROM luxalgo_prod_execution_ledger
@@ -79,12 +79,12 @@ def risk_reserve(con,plan,exchange_positions,account_equity):
         if not equity.is_finite() or equity<=0 or used+incremental>equity*MAX_AGGREGATE_RISK:
             raise LiveSafetyError("Atomic account-wide risk cap")
         cur.execute("""INSERT INTO luxalgo_prod_execution_ledger(
-                        event_id,client_text,contract,side,timeframe,state,risk_usdt,
+                        event_id,client_text,contract,side,timeframe,position_mode,state,risk_usdt,
                         entry_price,stop_loss,take_profit,contracts)
-                        VALUES (%s,%s,%s,%s,%s,'RESERVED',%s,%s,%s,%s,%s)
+                        VALUES (%s,%s,%s,%s,%s,%s,'RESERVED',%s,%s,%s,%s,%s)
                         ON CONFLICT (event_id) DO NOTHING RETURNING event_id""",
                     (plan["event_id"],plan["client_text"],plan["contract"],
-                     plan["side"],plan["timeframe"],incremental,
+                     plan["side"],plan["timeframe"],plan["position_mode"],incremental,
                      plan["entry"],plan["sl"],plan["tp"],plan["contracts"]))
         if not cur.fetchone():
             raise LiveSafetyError("Duplicate TradingView event; no new entry")
@@ -110,7 +110,7 @@ def inspect(con, client=None):
         if item:
             expectation={"contract":item["contract"],"side":item["side"],
                          "entry":item["entry_price"],"sl":item["stop_loss"],
-                         "tp":item["take_profit"]}
+                         "tp":item["take_profit"],"position_mode":item["position_mode"]}
             coverage=evaluate_protection(expectation,snap["triggers"])
             if (coverage["verified"] and
                 (coverage["stop_order_id"]!=str(item.get("stop_order_id") or "") or
