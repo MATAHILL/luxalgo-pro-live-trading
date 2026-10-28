@@ -727,6 +727,14 @@ header.terminal-header{border-radius:17px!important}
 @media(max-width:1020px){ #v4PaperCards{grid-template-columns:1fr}#v4PaperCards .v4-token{font-size:19px}}
 @media(max-width:570px){ #v4PaperCards{padding:10px;gap:9px}#v4PaperCards .v4-numbers{grid-template-columns:repeat(2,minmax(0,1fr))}#v4PaperCards .v4-controls{grid-template-columns:repeat(2,minmax(0,1fr))}}
 /* V4.5 single-select card-width TradingView indicator widget */
+/* LuxAlgo incoming monitor: retain 25 signals but scroll after about ten compact rows. */
+.incoming-lux-scroll{max-height:535px;overflow-y:auto;overflow-x:auto;overscroll-behavior:contain;scrollbar-gutter:stable;border:1px solid #294b67;border-radius:8px}
+.incoming-lux-scroll table{font-size:11px;line-height:1.27;border-collapse:separate;border-spacing:0}
+.incoming-lux-scroll thead th{position:sticky;top:0;z-index:3;background:#12314d;box-shadow:0 1px 0 #53718a;padding:8px 7px}
+.incoming-lux-scroll tbody td{padding:7px 7px;vertical-align:middle}
+.incoming-lux-scroll tbody td .btn{padding:6px 9px;font-size:10px;line-height:1.2}
+#incomingLuxInfo{font-size:11px}
+@media(max-width:700px){.incoming-lux-scroll{max-height:505px}}
 #v4PaperCards>.v4-trade{align-self:start}
 .v45-tools{display:flex;gap:7px;align-items:center;flex-wrap:wrap}
 .v45-refresh{width:30px;height:30px;display:grid;place-items:center;border:1px solid #64eaff;border-radius:50%;color:#f0feff;font-size:18px;font-weight:900;cursor:pointer;background:linear-gradient(145deg,#c8faff 0%,#46bfff 20%,#136da9 48%,#06385f 50%,#269ee3 100%);box-shadow:inset 0 1px 2px #fff9,0 0 11px #1ec8ff67;text-shadow:0 1px 1px #00416b}
@@ -817,7 +825,7 @@ header.terminal-header{border-radius:17px!important}
 <p class="light">Fresh LuxAlgo signals only, after your saved dashboard reset. LIVE requires an open Gate.io Testnet position with reverified exchange-side TP/SL; CLOSED requires a verified closing journal. Unexecuted or uncertain calls are never labeled LIVE. Real-money trading OFF.</p>
 <div class="panel-heading"><span id="incomingLuxInfo" class="light" role="status">Loading fresh signals from zero…</span><div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn" id="incomingLuxClear" type="button" title="Clear displayed signals, not exchange orders or safety logs">Clear Visible History</button><button class="btn gloss-action" id="incomingLuxRefresh" type="button">↻ Refresh</button></div></div>
 <div class="market-tabs" id="incomingLuxFilters" aria-label="Filter incoming LuxAlgo signals by verified status"><button class="btn selected" type="button" data-lux-filter="ALL">ALL</button><button class="btn" type="button" data-lux-filter="LIVE">● LIVE</button><button class="btn" type="button" data-lux-filter="CLOSED">✓ CLOSED</button><button class="btn" type="button" data-lux-filter="WAITING FOR EXECUTION">◷ WAITING</button><button class="btn" type="button" data-lux-filter="NOT EXECUTED">NOT EXECUTED</button><button class="btn" type="button" data-lux-filter="UNSUPPORTED ON TESTNET">UNSUPPORTED MARKET</button><button class="btn" type="button" data-lux-filter="VERIFY EXCHANGE">VERIFY EXCHANGE</button></div>
-<div class="tablewrap" style="width:100%;overflow-x:auto"><table style="min-width:1000px;width:100%"><thead><tr><th>S/N</th><th>RECEIVED (IST)</th><th>COIN</th><th>SIGNAL</th><th>TF</th><th>ORDER TYPE</th><th>ENTRY</th><th>STOP LOSS</th><th>TAKE PROFIT</th><th>CURRENT STATUS · CLICK TO REFRESH</th><th>DETAIL</th></tr></thead><tbody id="incomingLuxRows"><tr><td colspan="11">Loading…</td></tr></tbody></table></div>
+<div class="tablewrap incoming-lux-scroll" id="incomingLuxScroll" tabindex="0" role="region" aria-label="Incoming LuxAlgo signals, latest 25, scroll vertically after row 10"><table style="min-width:1000px;width:100%"><thead><tr><th>S/N</th><th>RECEIVED (IST)</th><th>COIN</th><th>SIGNAL</th><th>TF</th><th>ORDER TYPE</th><th>ENTRY</th><th>STOP LOSS</th><th>TAKE PROFIT</th><th>CURRENT STATUS · CLICK TO REFRESH</th><th>DETAIL</th></tr></thead><tbody id="incomingLuxRows"><tr><td colspan="11">Loading…</td></tr></tbody></table></div>
 </details><div class="market-grid">
 <section class="panel market-panel"><div class="panel-heading"><h2>GATE.IO FUTURES RADAR <span class="gloss-gold">● MARKET LIVE</span></h2><button class="btn gloss-action" id="radarRefresh" type="button">↻ Refresh</button></div>
 <p class="light">All available Gate.io USDT perpetual tickers · 24h rankings · public market data.</p>
@@ -1755,7 +1763,8 @@ document.addEventListener('visibilitychange',()=>{if(!document.hidden)syncTestne
  const refreshButton=document.getElementById('incomingLuxRefresh');
  const clearButton=document.getElementById('incomingLuxClear');
  const filters=document.getElementById('incomingLuxFilters');
- if(!panel||!tbody||!info||!refreshButton||!clearButton||!filters)return;
+ const scrollArea=document.getElementById('incomingLuxScroll');
+ if(!panel||!tbody||!info||!refreshButton||!clearButton||!filters||!scrollArea)return;
  let allSignals=[],chosen='ALL',pending=false;
  const addCell=(tr,value)=>{
    const td=document.createElement('td');
@@ -1788,8 +1797,8 @@ document.addEventListener('visibilitychange',()=>{if(!document.hidden)syncTestne
        'No '+chosen+' signals after reset.':'0 incoming signals since reset · waiting for a fresh LuxAlgo alert';
      tr.appendChild(td);tbody.appendChild(tr);
    }
-   info.textContent=allSignals.length+' fresh LuxAlgo signals since reset · '+
-       matches.length+' in '+chosen+' view · click any status to recheck · safety audit retained';
+   info.textContent='Latest '+allSignals.length+'/25 visible signals · '+matches.length+
+       ' in '+chosen+' view · first 10 rows; scroll down for the rest · safety audit retained';
  }
  async function refresh(){
    if(pending)return;
@@ -1806,6 +1815,7 @@ document.addEventListener('visibilitychange',()=>{if(!document.hidden)syncTestne
    const button=e.target.closest('[data-lux-filter]');
    if(!button)return;
    chosen=button.dataset.luxFilter;
+   scrollArea.scrollTop=0;
    for(const b of filters.querySelectorAll('[data-lux-filter]')){
       b.classList.toggle('selected',b.dataset.luxFilter===chosen);
    }
@@ -5206,9 +5216,12 @@ def terminal_incoming_signals():
                         ('Testnet worker: '+str(r['attempt_state'])+
                          (' · '+str(r['attempt_detail']) if r['attempt_detail'] else '')
                          if r['attempt_state'] else
-                         ('Awaiting a fresh Testnet execution result'
+                         ('Testnet automatic execution PAUSED; webhook stored but worker not started'
+                          if (not (os.getenv('GATE_TESTNET_PROTECTED_EXECUTION_ENABLED','false').lower()=='true' and
+                                   os.getenv('GATE_TESTNET_WEBHOOK_AUTOMATION_ENABLED','false').lower()=='true'))
+                          else 'Awaiting a fresh Testnet execution result'
                           if state=='WAITING FOR EXECUTION'
-                          else 'No exchange-confirmed Testnet entry; signal not executed'))),
+                          else 'No exchange-confirmed Testnet entry; worker result unavailable'))),
                 level_status=r['level_status'] or 'UNKNOWN',
                 status_label=state))
         response=jsonify(signals=signals,count=len(signals),display_limit=25,
