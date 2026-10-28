@@ -24,7 +24,7 @@ class ProductionCutoverTests(unittest.TestCase):
         self.assertIn('id="productionBotIndicator"',p)
         self.assertIn('● BOT OFF',p)
         self.assertIn('This panel cannot place orders',p)
-        self.assertIn("fetch('/terminal/production-bot-control'",p)
+        self.assertIn("const url='/terminal/production-bot-control'",p)
         self.assertIn("get('/terminal/acceptance-test/status',8000)",p)
         self.assertIn('Market Close — LOCKED',p)
         self.assertIn('STOP LOSS',''.join(p))
