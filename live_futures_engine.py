@@ -132,6 +132,9 @@ def build_plan(signal, metadata, equity, available, positions, reserved_risk=0, 
         raise LiveSafetyError("Invalid Futures contract")
     if metadata.get("name")!=contract or metadata.get("in_delisting") is True:
         raise LiveSafetyError("Unverified or delisting contract")
+    position_mode=signal.get("position_mode")
+    if position_mode not in ("single","dual"):
+        raise LiveSafetyError("Live exchange position mode must be verified; split mode unsupported")
     lev=dec(signal.get("leverage",MAX_LEVERAGE),"leverage")
     if lev>MAX_LEVERAGE:
         raise LiveSafetyError("Leverage exceeds ceiling")
@@ -165,7 +168,7 @@ def build_plan(signal, metadata, equity, available, positions, reserved_risk=0, 
     return dict(event_id=event,client_text=text,contract=contract,side=side,timeframe=tf,
                 contracts=int(count),entry=str(e),sl=str(s),tp=str(t),
                 estimated_risk_usdt=str(risk),risk_cap_usdt=str(budget),
-                leverage=str(lev),verified_live_order=False)
+                leverage=str(lev),position_mode=position_mode,verified_live_order=False)
 
 def build_entry_order(plan):
     if not isinstance(plan,dict) or plan.get("side") not in ("LONG","SHORT"):
@@ -177,17 +180,27 @@ def build_entry_order(plan):
                 text=plan["client_text"],reduce_only=False,close=False)
 
 def build_protective_trigger(plan, kind):
-    """One-way mode only. Full-close position-based trigger, exact side and direction."""
+    """Full-close exchange-native stop/target with authenticated position mode.
+
+    Gate USDT Futures hedge mode requires auto_size for full close. No default
+    position mode: an absent/unknown mode is a hard stop before exchange POST.
+    """
     if kind not in ("SL","TP") or plan.get("side") not in ("LONG","SHORT"):
         raise LiveSafetyError("Unsupported protection")
+    mode=plan.get("position_mode")
+    if mode not in ("single","dual"):
+        raise LiveSafetyError("Authenticated account position mode missing or unsupported")
     islong=plan["side"]=="LONG"
-    if kind=="SL":
-        price=plan["sl"]; rule=2 if islong else 1
-    else:
-        price=plan["tp"]; rule=1 if islong else 2
+    price=plan["sl"] if kind=="SL" else plan["tp"]
+    rule=(2 if islong else 1) if kind=="SL" else (1 if islong else 2)
     price_geometry(plan["side"],plan["entry"],plan["sl"],plan["tp"])
-    return {"initial":{"contract":plan["contract"],"size":0,"price":"0",
-                       "close":True,"reduce_only":True,"tif":"ioc"},
+    initial={"contract":plan["contract"],"size":0,"price":"0",
+             "reduce_only":True,"tif":"ioc"}
+    if mode=="single":
+        initial["close"]=True
+    else:
+        initial["auto_size"]="close_long" if islong else "close_short"
+    return {"initial":initial,
             "trigger":{"strategy_type":0,"price_type":1,"price":str(price),
                        "rule":rule,"expiration":86400},
             "order_type":"close-long-position" if islong else "close-short-position"}
@@ -213,8 +226,10 @@ def evaluate_protection(plan, price_orders):
                     int(z.get("price_type",-1))==1 and
                     Decimal(str(z.get("price")))==Decimal(expected["trigger"]["price"]) and
                     (bool(x.get("close")) or bool(x.get("reduce_only")) or
-                     bool(x.get("is_close")) or bool(x.get("is_reduce_only")) or
-                     expected["order_type"].endswith("-position")) and
+                     bool(x.get("is_close")) or bool(x.get("is_reduce_only"))) and
+                    (x.get("auto_size")==expected["initial"].get("auto_size")
+                     if plan["position_mode"]=="dual"
+                     else x.get("auto_size") in (None,"")) and
                     Decimal(str(x.get("size","0")))==0 and
                     str(x.get("price")) in ("0","0.0") and
                     str(x.get("tif","ioc")).lower()=="ioc" and
