@@ -5800,10 +5800,28 @@ _scanner_cache = {'at': 0.0, 'data': None}
 
 
 def _scan_http_json(path):
-    req = Request('https://api.gateio.ws' + path,
-                  headers={'Accept':'application/json','User-Agent':'LuxAlgo-PRO-PublicScanner/1.0'},method='GET')
-    with urlopen(req, timeout=8) as res:
-        return json.loads(res.read(2000000))
+    """Production PUBLIC futures GET, with official live-only host fallback.
+
+    Market data is independent of account authentication and both order switches.
+    Testnet endpoints are never consulted. Any unavailable feed fails explicitly.
+    """
+    if not path.startswith('/api/v4/futures/usdt/') or '\\' in path:
+        raise ValueError('Only live USDT futures public paths are permitted')
+    last_error = None
+    for host in ('https://api.gateio.ws', 'https://fx-api.gateio.ws'):
+        req = Request(host + path, headers={
+            'Accept':'application/json','User-Agent':'LuxAlgo-PRO-PublicScanner/1.1'}, method='GET')
+        try:
+            with urlopen(req, timeout=7) as res:
+                data=json.loads(res.read(2000000))
+            if not isinstance(data,list):
+                raise ValueError('Invalid Gate Futures public feed')
+            return data
+        except (HTTPError,URLError,TimeoutError,OSError,ValueError,TypeError) as exc:
+            last_error=exc
+            app.logger.warning('Live public futures GET failed via %s: %s',
+                               urlsplit(host).hostname,type(exc).__name__)
+    raise RuntimeError('Both official live Futures public feeds unavailable') from last_error
 
 
 def _ema(values, n):
@@ -5887,7 +5905,7 @@ def public_futures_scanner():
                      'orders_enabled':False,'kind':'public_rule_based_scan'}
             _scanner_cache.update(at=time.time(),data=payload)
             return jsonify(payload)
-        except (HTTPError,URLError,TimeoutError,ValueError,KeyError,TypeError,OSError):
+        except (HTTPError,URLError,TimeoutError,ValueError,KeyError,TypeError,OSError,RuntimeError):
             return jsonify(error='Gate.io public market scan temporarily unavailable',orders_enabled=False),502
 
 
@@ -5939,9 +5957,9 @@ def terminal_radar():
         response = jsonify(_radar_data())
         response.headers['Cache-Control'] = 'private, max-age=10'
         return response
-    except (HTTPError,URLError,OSError,TimeoutError,ValueError,TypeError):
+    except (HTTPError,URLError,OSError,TimeoutError,ValueError,TypeError,RuntimeError):
         app.logger.warning('Radar ticker feed unavailable', exc_info=True)
-        return jsonify(error='Gate.io ticker data unavailable'),502
+        return jsonify(error='Live Gate.io public Futures feed unavailable; execution remains separate'),502
 
 
 def _scan_one_pair(symbol,tf,change):
@@ -6002,10 +6020,10 @@ def _run_scan(tf):
                     with _scan_state_lock:
                         _scan_state[tf]['results'][result['contract']] = result
                         _scan_state[tf]['scanned'] += 1
-                except (HTTPError,URLError,TimeoutError,OSError,KeyError,ValueError,TypeError,ZeroDivisionError):
+                except (HTTPError,URLError,TimeoutError,OSError,KeyError,ValueError,TypeError,ZeroDivisionError,RuntimeError):
                     with _scan_state_lock:
                         _scan_state[tf]['failed'] += 1
-    except (HTTPError,URLError,TimeoutError,OSError,KeyError,ValueError,TypeError):
+    except (HTTPError,URLError,TimeoutError,OSError,KeyError,ValueError,TypeError,RuntimeError):
         app.logger.warning('Technical scanner could not access market data', exc_info=True)
     finally:
         with _scan_state_lock:
@@ -6058,7 +6076,7 @@ def terminal_advanced_scanner():
     # Fail closed on market-data unavailability. Public tickers are from the existing radar.
     try:
         tickers={t['contract']:t for t in _radar_data()['results']}
-    except (HTTPError,URLError,TimeoutError,OSError,KeyError,ValueError,TypeError):
+    except (HTTPError,URLError,TimeoutError,OSError,KeyError,ValueError,TypeError,RuntimeError):
         return jsonify(error='Market liquidity feed unavailable; NO TRADE',orders_enabled=False),503
     equity=None;available=None;open_count=None
     try:
