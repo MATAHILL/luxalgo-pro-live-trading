@@ -2686,7 +2686,7 @@ def webhook():
             con.execute("""INSERT INTO luxalgo_live_signal_handoff
                 (event_id,received_at,symbol,side,timeframe,order_type,level_status,source_bar_id,status)
                 VALUES (%s,%s,%s,%s,%s,%s,%s,%s,'SIGNAL_ONLY')
-                ON CONFLICT(event_id) DO NOTHING""",
+                ON CONFLICT DO NOTHING""",
                 (event_id,received_at,symbol,allowed[side],tf,declared_order_type,level_status,
                  source_bar_id))
     except (psycopg.Error,RuntimeError,OSError):
