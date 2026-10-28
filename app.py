@@ -6568,6 +6568,31 @@ if os.getenv('PRODUCTION_TERMINAL_VIEW','false').strip().lower()=='true':
            name="luxalgo-live-safety-fixtures").start()
     Thread(target=_production_readonly_recovery_monitor,daemon=True,
            name="luxalgo-live-readonly-recovery").start()
+    # Execute ALL mocked regression suites on Render startup without credentials.
+    # This complements GitHub Actions, whose push runs are not visible in the
+    # available connector. No POST, no payment, no market-side changes.
+    def _run_nontrading_regression_suite():
+        import subprocess,sys
+        clean_env={k:v for k,v in os.environ.items() if
+                   k in ('PATH','PYTHONPATH','PYTHONHOME','LANG','LC_ALL','HOME',
+                         'VIRTUAL_ENV','PYTHONDONTWRITEBYTECODE')}
+        clean_env.update(PRODUCTION_TERMINAL_VIEW='false',
+                         LIVE_TRADING_ENABLED='false',ORDERS_ENABLED='false')
+        try:
+            finished=subprocess.run(
+                [sys.executable,'-m','unittest','discover','-s','tests',
+                 '-p','test_live_*.py','-v'],
+                stdout=subprocess.PIPE,stderr=subprocess.STDOUT,
+                timeout=45,env=clean_env,text=True)
+            lines=finished.stdout.strip().splitlines()
+            detail=' | '.join(lines[-14:])[-2400:]
+            print('LIVE_REGRESSION_SUITE_'+
+                  ('PASS' if finished.returncode==0 else 'FAIL')+
+                  ' exit='+str(finished.returncode)+' evidence='+detail,flush=True)
+        except (OSError,subprocess.TimeoutExpired,ValueError) as exc:
+            print('LIVE_REGRESSION_SUITE_ERROR '+type(exc).__name__,flush=True)
+    Thread(target=_run_nontrading_regression_suite,daemon=True,
+           name='luxalgo-noorder-regression').start()
 
 
 if __name__ == '__main__':
