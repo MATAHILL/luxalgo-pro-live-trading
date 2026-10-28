@@ -5189,7 +5189,12 @@ def terminal_incoming_signals():
                 exchange_checked=True
             except Exception:
                 exchange_checked=False
-        from incoming_testnet_status import classify_signal
+        from incoming_testnet_status import classify_signal,explain_testnet_attempt
+        worker_armed=(os.getenv('GATE_TESTNET_PROTECTED_EXECUTION_ENABLED','false').lower()=='true'
+                      and os.getenv('GATE_TESTNET_WEBHOOK_AUTOMATION_ENABLED','false').lower()=='true'
+                      and os.getenv('GATE_TESTNET_RECOVERY_ENABLED','false').lower()=='true'
+                      and os.getenv('LIVE_TRADING_ENABLED','false').lower()=='false'
+                      and os.getenv('ORDERS_ENABLED','false').lower()=='false')
         now=datetime.now(timezone.utc)
         signals=[]
         for r in rows:
@@ -5201,7 +5206,8 @@ def terminal_incoming_signals():
                 queue_state=r['queue_state'],
                 age_seconds=age,
                 exchange_checked=exchange_checked,
-                exchange_open=r['event_id'] in verified_live)
+                exchange_open=r['event_id'] in verified_live,
+                worker_armed=worker_armed)
             signals.append(dict(event_id=r['event_id'],time=r['received_at'].isoformat(),
                 symbol=r['symbol'],side=r['side'],timeframe=r['timeframe'],
                 entry=str(r['entry_price']) if r['entry_price'] is not None else None,
@@ -5212,16 +5218,10 @@ def terminal_incoming_signals():
                       and r['testnet_payload'].get('tif')=='ioc'
                       and str(r['testnet_payload'].get('price'))=='0'
                     else 'UNDECLARED')),state=state,
-                reason=(('Gate Testnet journal: '+str(r['testnet_execution_state'])) if r['testnet_execution_state'] else
-                        ('Testnet worker: '+str(r['attempt_state'])+
-                         (' · '+str(r['attempt_detail']) if r['attempt_detail'] else '')
-                         if r['attempt_state'] else
-                         ('Testnet automatic execution PAUSED; webhook stored but worker not started'
-                          if (not (os.getenv('GATE_TESTNET_PROTECTED_EXECUTION_ENABLED','false').lower()=='true' and
-                                   os.getenv('GATE_TESTNET_WEBHOOK_AUTOMATION_ENABLED','false').lower()=='true'))
-                          else 'Awaiting a fresh Testnet execution result'
-                          if state=='WAITING FOR EXECUTION'
-                          else 'No exchange-confirmed Testnet entry; worker result unavailable'))),
+                reason=(('Gate Testnet journal: '+str(r['testnet_execution_state']))
+                        if r['testnet_execution_state'] else
+                        explain_testnet_attempt(r['attempt_state'],r['attempt_detail'],
+                                                worker_armed=worker_armed)),
                 level_status=r['level_status'] or 'UNKNOWN',
                 status_label=state))
         response=jsonify(signals=signals,count=len(signals),display_limit=25,
