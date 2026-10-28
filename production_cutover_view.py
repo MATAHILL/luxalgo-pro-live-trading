@@ -29,14 +29,26 @@ function field(container,label,value){const wrap=node('div','v4-number'),title=n
 async function refresh(){
  if(btn.disabled)return;btn.disabled=true;
  try{
-  const res=await fetch('/terminal/live-preparation/status',{cache:'no-store',credentials:'same-origin'});
-  const data=await res.json();
-  if(!res.ok||data.status!=='PREPARATION_ONLY'||!data.positions_verified||!Array.isArray(data.production_positions))
-     throw Error(data.error||'Authenticated production position readback unavailable');
-  cards.replaceChildren();
-  count.textContent='Gate.io Production Positions ('+data.production_positions.length+')';
-  if(!data.production_positions.length)cards.appendChild(node('div','v4-prompt','No open production USDT futures positions reported by Gate.io.'));
-  for(const p of data.production_positions){
+  let positions=[],reconciled=false,halted=true,mode='READBACK UNVERIFIED';
+  try{
+   const res=await fetch('/terminal/live-execution/snapshot',{cache:'no-store',credentials:'same-origin'});
+   const data=await res.json();
+   if(!res.ok||!Array.isArray(data.positions))throw Error('Execution protection readback unavailable');
+   positions=data.positions;reconciled=true;halted=data.halted===true;mode=String(data.status||'READ_ONLY');
+  }catch(reconcileError){
+   // Keep account positions visible even if trigger-order readback fails.
+   // Never claim protective coverage from this fallback.
+   const res=await fetch('/terminal/live-preparation/status',{cache:'no-store',credentials:'same-origin'});
+   const data=await res.json();
+   if(!res.ok||!data.positions_verified||!Array.isArray(data.production_positions))
+     throw Error('Authenticated production position inventory unavailable');
+   positions=data.production_positions.map(p=>({...p,protection_status:'NOT_VERIFIED',
+    execution_status:'UNKNOWN','protection_reason':'TRIGGER_READBACK_UNAVAILABLE'}));
+   mode='POSITION GET ONLY · PROTECTION UNKNOWN';
+  }
+  cards.replaceChildren();count.textContent='Gate.io Production Positions ('+positions.length+')';
+  if(!positions.length)cards.appendChild(node('div','v4-prompt','No open production positions reported in current exchange readback.'));
+  for(const p of positions){
    const card=node('article','v4-trade production-position-card');
    const top=node('div','v4-trade-top');
    const title=node('strong','v4-token',safe(p.contract).replace('_USDT','USDT'));
@@ -45,18 +57,25 @@ async function refresh(){
    field(grid,'EXCHANGE UNREALIZED P&L (USDT)',p.unrealized_pnl);
    field(grid,'SIZE (GATE CONTRACTS)',p.size_contracts);
    field(grid,'ENTRY PRICE',p.entry_price);field(grid,'GATE MARK PRICE',p.mark_price);
-   field(grid,'STOP LOSS','NOT VERIFIED');field(grid,'TAKE PROFIT','NOT VERIFIED');
+   const protectedByExchange=reconciled && p.protection_status==='EXCHANGE_VERIFIED';
+   field(grid,'STOP LOSS',protectedByExchange?p.stop_loss:'NOT VERIFIED');
+   field(grid,'TAKE PROFIT',protectedByExchange?p.take_profit:'NOT VERIFIED');
    card.appendChild(grid);
-   card.appendChild(node('p','v45-refresh-state','Production exchange position · SL/TP not reconciled · Read-only; controls locked'));
+   card.appendChild(node('p','v45-refresh-state',
+     'Execution: '+safe(p.execution_status)+' · SL/TP: '+safe(p.protection_status)+
+     ' · '+safe(p.protection_reason)+' · Order controls locked'));
    const controls=node('div','v4-controls');
    for(const action of ['Market Close — LOCKED','Close — LOCKED','Reverse — LOCKED']){
       const b=node('button','btn gloss-safe-disabled',action);b.disabled=true;controls.appendChild(b);
    }card.appendChild(controls);cards.appendChild(card);
   }
-  status.textContent='Production positions refreshed · '+new Date().toLocaleTimeString('en-IN',{timeZone:'Asia/Kolkata'})+
-  ' IST · REAL MONEY ORDER SUBMISSION OFF';
- }catch(e){status.textContent='PRODUCTION READBACK UNAVAILABLE — no assumptions about positions or protection; live orders disabled';count.textContent='Exchange positions unverified';}
- finally{btn.disabled=false;}
+  status.textContent=mode+' · '+new Date().toLocaleTimeString('en-IN',{timeZone:'Asia/Kolkata'})+
+   ' IST · '+(halted?'HALT / ORDERS OFF':'ORDERS OFF')+
+   ' · Market scanners run independently';
+ }catch(e){
+  status.textContent='PRODUCTION READBACK UNAVAILABLE — exposure UNKNOWN, protection UNKNOWN, real-money orders OFF';
+  count.textContent='Exchange positions not verified';
+ }finally{btn.disabled=false;}
 }
 btn.addEventListener('click',refresh);refresh();
 setInterval(()=>{if(!document.hidden)refresh();},30000);
