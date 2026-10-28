@@ -4,7 +4,8 @@ from unittest.mock import patch, Mock
 from live_futures_engine import LiveSafetyError, client_text
 from live_execution_orchestrator import (
     execute_confirmed_signal, full_close_oneway_order,
-    require_full_entry_readback, emergency_close_once, restart_reconcile)
+    require_full_entry_readback, emergency_close_once, restart_reconcile,
+    assert_existing_protected_exposure)
 from live_execution_coordinator import status_fallback
 
 PLAN={"event_id":"tv-BTCUSDT-5m-20261028","client_text":client_text("tv-BTCUSDT-5m-20261028"),
@@ -58,6 +59,31 @@ class MockLiveFlow(unittest.TestCase):
         self.assertIsNone(status["open_positions"])
         self.assertTrue(status["halted"])
         self.assertFalse(status["orders_enabled"])
+
+    def test_multiple_existing_protected_positions_are_allowed(self):
+        from live_futures_engine import build_protective_trigger
+        rows=[];positions=[];triggers=[]
+        for symbol,entry,stop,take in [
+                ("BTC_USDT","80000","79000","82000"),
+                ("ETH_USDT","4000","3900","4200"),
+                ("SOL_USDT","200","190","220"),
+                ("XRP_USDT","2","1.9","2.2")]:
+            k=len(rows)*2+501
+            plan={"contract":symbol,"side":"LONG","entry":entry,
+                  "sl":stop,"tp":take}
+            rows.append({"contract":symbol,"side":"LONG","state":"PROTECTED",
+                         "entry_price":entry,"stop_loss":stop,"take_profit":take,
+                         "stop_order_id":str(k),"take_order_id":str(k+1)})
+            positions.append({"contract":symbol,"size":"1"})
+            triggers.append(dict(build_protective_trigger(plan,"SL"),
+                                 id=k,status="open"))
+            triggers.append(dict(build_protective_trigger(plan,"TP"),
+                                 id=k+1,status="open"))
+        snap={"positions":positions,"orders":[],"triggers":triggers}
+        self.assertEqual(assert_existing_protected_exposure(rows,snap)["protected_open_positions"],4)
+        snap["triggers"]=triggers[:-1]
+        with self.assertRaises(LiveSafetyError):
+            assert_existing_protected_exposure(rows,snap)
 
     def test_restart_never_resends_entry(self):
         fake={"reconciliation":{"requires_halt":True},
