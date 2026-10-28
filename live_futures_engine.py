@@ -212,12 +212,14 @@ def evaluate_protection(plan, price_orders):
                     int(z.get("rule",-1))==expected["trigger"]["rule"] and
                     int(z.get("price_type",-1))==1 and
                     Decimal(str(z.get("price")))==Decimal(expected["trigger"]["price"]) and
-                    (bool(x.get("close")) or bool(x.get("reduce_only"))) and
+                    (bool(x.get("close")) or bool(x.get("reduce_only")) or
+                     bool(x.get("is_close")) or bool(x.get("is_reduce_only")) or
+                     expected["order_type"].endswith("-position")) and
                     Decimal(str(x.get("size","0")))==0 and
                     str(x.get("price")) in ("0","0.0") and
                     str(x.get("tif","ioc")).lower()=="ioc" and
-                    ORDER_RE.fullmatch(str(o.get("id","")))):
-                    candidates.append(str(o["id"]))
+                    ORDER_RE.fullmatch(str(o.get("id_string") or o.get("id") or ""))):
+                    candidates.append(str(o.get("id_string") or o.get("id")))
             except (TypeError,ValueError,InvalidOperation):
                 continue
         if len(candidates)!=1:
