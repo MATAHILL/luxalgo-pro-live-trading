@@ -35,6 +35,23 @@ class ProductionBotTests(unittest.TestCase):
         self.assertIn("ACCEPTANCE_AND_FINAL_AUTHORIZATION_MISSING",s["safety_gates"])
         self.assertFalse(s["can_arm"])
 
+    def test_operator_off_is_transactional_and_halts_entries(self):
+        conn=Mock()
+        cursor=Mock()
+        cursor.rowcount=1
+        conn.cursor.return_value.__enter__=Mock(return_value=cursor)
+        conn.cursor.return_value.__exit__=Mock(return_value=False)
+        with (patch.object(prod,"install"),
+              patch.object(prod,"halt",return_value=dict(halted=True)) as emergency,
+              patch.object(prod,"state",return_value=dict(
+                  bot_on=False,orders_enabled=False,halt_active=True))):
+            status=prod.turn_off(conn)
+        self.assertFalse(status["bot_on"])
+        emergency.assert_called_once_with(conn,"OPERATOR_OFF_NO_NEW_ENTRIES")
+        statements=[x.args[0] for x in cursor.execute.call_args_list]
+        self.assertTrue(any("SET operator_on=FALSE" in sql for sql in statements))
+        self.assertTrue(any("pg_advisory_xact_lock" in sql for sql in statements))
+
     def test_dashboard_single_switch_by_radar_and_scanners_preserved(self):
         html=production_monitor_page(backend.PAGE)
         self.assertEqual(html.count('id="productionBotSwitch"'),1)
