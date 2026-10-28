@@ -1939,6 +1939,7 @@ NEWS_FEEDS = (
     ('CoinDesk', 'https://www.coindesk.com/arc/outboundfeeds/rss/', 'www.coindesk.com'),
     ('The Block', 'https://www.theblock.co/rss.xml', 'www.theblock.co'),
     ('Decrypt', 'https://decrypt.co/feed', 'decrypt.co'),
+    ('Cointelegraph', 'https://cointelegraph.com/rss', 'cointelegraph.com'),
 )
 _news_cache = {'expires_at': 0, 'items': [], 'fetched_at': None}
 _news_lock = Lock()
@@ -1946,7 +1947,7 @@ _news_lock = Lock()
 def _news_fetch_source(source):
     label, url, host = source
     req = Request(url, headers={'User-Agent':'LuxAlgoPRO-NewsTicker/1.0 (+RSS reader)', 'Accept':'application/rss+xml,application/atom+xml,application/xml,text/xml'})
-    with urlopen(req, timeout=4) as res:
+    with urlopen(req, timeout=7) as res:
         xml = res.read(450000)
     root = ET.fromstring(xml)
     entries = root.findall('.//item')
@@ -2001,8 +2002,9 @@ def terminal_news():
     with ThreadPoolExecutor(max_workers=3) as pool:
         jobs=[pool.submit(_news_fetch_source, source) for source in NEWS_FEEDS]
         for job in jobs:
-            try: found.extend(job.result(timeout=5))
-            except Exception: pass
+            try: found.extend(job.result(timeout=9))
+            except Exception as exc:
+                app.logger.warning('Crypto news provider unavailable: %s', type(exc).__name__)
     found.sort(key=lambda x:x['_timestamp'],reverse=True)
     seen=set(); articles=[]
     for article in found:
