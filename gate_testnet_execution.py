@@ -303,10 +303,19 @@ def verify_testnet_protection(order: dict, positions: list, triggers: list,
         if not isinstance(p,dict) or p.get("contract")!=expected_contract or p.get("mode")!=mode:
             continue
         try:
-            if Decimal(str(p.get("size","0")))>0:
+            qty=Decimal(str(p["size"]))
+            # Gate hedge positions use signed quantities: LONG > 0,
+            # SHORT < 0. Requiring > 0 for both sides wrongly rejects
+            # every genuine dual_short fill and forces an emergency close.
+            if not qty.is_finite():
+                return dict(verified=False,reason="POSITION_SIZE_UNVERIFIABLE")
+            correct_sign=(qty>0 if expected_side=="LONG" else qty<0)
+            if correct_sign:
                 position.append(p)
-        except (InvalidOperation,TypeError,ValueError):
-            pass
+            elif qty!=0:
+                return dict(verified=False,reason="POSITION_QUANTITY_SIDE_MISMATCH")
+        except (InvalidOperation,TypeError,ValueError,KeyError):
+            return dict(verified=False,reason="POSITION_SIZE_UNVERIFIABLE")
     if len(position)!=1:
         return dict(verified=False,reason="OPEN_POSITION_NOT_VERIFIED")
     close_type="close-long-order" if expected_side=="LONG" else "close-short-order"
