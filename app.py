@@ -6283,16 +6283,7 @@ def _testnet_one_shot_trial_worker():
     except Exception as exc:
         app.logger.error('Testnet one-shot trial halted: %s',type(exc).__name__)
 
-if (os.getenv('GATE_TESTNET_ONE_SHOT_PROTECTED_TRIAL','false').lower()=='true' and
-    os.getenv('GATE_TESTNET_PROTECTED_EXECUTION_ENABLED','false').lower()=='true' and
-    os.getenv('GATE_TESTNET_RECOVERY_ENABLED','false').lower()=='true' and
-    os.getenv('GATE_TESTNET_WEBHOOK_AUTOMATION_ENABLED','false').lower()!='true' and
-    os.getenv('LIVE_TRADING_ENABLED','false').lower()!='true' and
-    os.getenv('ORDERS_ENABLED','false').lower()!='true'):
-    from threading import Thread
-    Thread(target=_testnet_one_shot_trial_worker,daemon=True,
-           name='gate-testnet-one-shot-trial').start()
-
+# Retired Testnet one-shot starter is intentionally absent from production.
 
 def _testnet_startup_readiness_probe():
     """Read-only Testnet account diagnostic. No entry orders, even when armed."""
@@ -6329,14 +6320,26 @@ def _testnet_startup_readiness_probe():
         app.logger.warning('Testnet readiness startup probe failed safely: %s',type(exc).__name__)
 
 
-# Runs exactly one read-only readiness probe per imported app process.
-# Neither setting can be used to enable live funds or place an order here.
-from threading import Thread
-Thread(target=_testnet_startup_readiness_probe,daemon=True,
-       name='gate-testnet-readiness').start()
+# Production startup checks ONLY public live USDT Futures market feeds.
+# This is deliberately independent of trading credentials and order flags.
+# Probe once per deployment; never submit or prepare an exchange order.
+def _probe_live_public_market_once():
+    feeds=(('TICKERS','/api/v4/futures/usdt/tickers'),
+           ('CANDLES','/api/v4/futures/usdt/candlesticks?contract=BTC_USDT&interval=5m&limit=60'))
+    for name,path in feeds:
+        try:
+            data=_scan_http_json(path)
+            if not data:
+                raise ValueError('Live market feed returned no records')
+            app.logger.info('LIVE_FUTURES_MARKET_%s_OK records=%d',name,len(data))
+        except (HTTPError,URLError,TimeoutError,OSError,ValueError,TypeError,RuntimeError) as exc:
+            app.logger.warning('LIVE_FUTURES_MARKET_%s_UNAVAILABLE reason=%s',
+                               name,type(exc).__name__)
 
-# The one-shot Testnet trial is started only by the strictly gated worker above.
-# Do not add a second startup path: deployment workers must not race to submit.
+if os.getenv('PRODUCTION_TERMINAL_VIEW','false').strip().lower()=='true':
+    from threading import Thread
+    Thread(target=_probe_live_public_market_once,daemon=True,
+           name='gate-live-public-market-probe').start()
 
 
 
