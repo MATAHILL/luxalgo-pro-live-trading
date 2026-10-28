@@ -112,6 +112,10 @@ def inspect(con, client=None):
                          "entry":item["entry_price"],"sl":item["stop_loss"],
                          "tp":item["take_profit"]}
             coverage=evaluate_protection(expectation,snap["triggers"])
+            if (coverage["verified"] and
+                (coverage["stop_order_id"]!=str(item.get("stop_order_id") or "") or
+                 coverage["take_order_id"]!=str(item.get("take_order_id") or ""))):
+                coverage={"verified":False,"reason":"PROTECTION_ORDER_IDS_NOT_LINKED_TO_LEDGER"}
         cards.append({
             "contract":position["contract"],
             "side":"LONG" if Decimal(str(position["size"]))>0 else "SHORT",
