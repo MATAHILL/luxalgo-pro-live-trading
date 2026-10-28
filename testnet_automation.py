@@ -15,6 +15,7 @@ from gate_testnet_execution import atomic_protected_entry_payload
 from testnet_execution_journal import PostgresTestnetJournal
 from gate_testnet_broker import GateFuturesTestnetBroker
 from testnet_unknown_exposure import unknown_exposure_gate
+from testnet_coin_scope import selected_webhook_symbol
 
 
 def testnet_automation_armed():
@@ -73,6 +74,9 @@ def run_fresh_luxalgo_testnet_signal(event_id, *, broker=None, journal=None, now
     symbol=r["symbol"]
     if not isinstance(symbol,str) or not re.fullmatch(r"[A-Z0-9]{2,28}USDT",symbol):
         return {"state":"INVALID_CONTRACT","submitted":False}
+    if not selected_webhook_symbol(symbol):
+        return {"state":"SIGNAL_OUTSIDE_SELECTED_SCOPE","submitted":False,
+                "detail":"DISABLED_BY_EIGHT_COIN_SCOPE"}
     try:
         entry,stop,target=(Decimal(str(r[k])) for k in ("entry_price","stop_loss","take_profit"))
         if not all(x.is_finite() and x>0 for x in (entry,stop,target)):
