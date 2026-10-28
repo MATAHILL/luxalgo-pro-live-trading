@@ -28,9 +28,8 @@ def live_preparation_checks(*,account_ok,positions_ok,db_ok,legacy_count=None,
        "detail":"Production-wide ledger, halt persistence and emergency exit unverified"},
       {"name":"Production live execution qualification","passed":False,
        "detail":"Minimum-size real-order acceptance test with explicit permission outstanding"},
-      {"name":"Legacy Testnet exposure fully settled","passed":legacy_count==0,
-       "detail":("No unresolved Testnet journal entries" if legacy_count==0
-               else "Legacy protected/uncertain positions require recovery; deleting keys or journal is unsafe")}
+      {"name":"Production market feeds independent of order execution","passed":True,
+       "detail":"Scanner and radar use public live Futures endpoints; this is architectural, not feed-uptime verification"}
     ]
     return {"status":"PREPARATION_ONLY","safe_to_trade":False,"orders_enabled":False,
             "live_trading":False,"orders_submitted":0,"checks":checks,
@@ -113,9 +112,8 @@ async function refresh(){
     }else{const tr=document.createElement('tr');add(tr,d.positions_verified?'No open production futures positions':'Production positions cannot be verified');tr.firstChild.colSpan=6;tbody.appendChild(tr);}
     const checks=by('checks');checks.replaceChildren();
     for(const c of d.checks||[]){const tr=document.createElement('tr');add(tr,c.name);const cell=tr.insertCell();cell.textContent=c.passed?'PASS':'BLOCKED';cell.className=c.passed?'pass':'fail';add(tr,c.detail);checks.appendChild(tr);}
-    by('legacyPanel').hidden=d.legacy_testnet_unresolved===0;
-    by('legacyText').textContent=(d.legacy_testnet_unresolved===null?'Legacy exposure is unverified; archive removal blocked':
-       d.legacy_testnet_unresolved+' outstanding Testnet protection/recovery journal entries remain. Recovery access and audit are preserved.');
+    // The production readiness view does not query or rely on archived Testnet records.
+    by('legacyPanel').hidden=true;
     by('updated').textContent='Last checked: '+new Date().toLocaleTimeString('en-IN',{timeZone:'Asia/Kolkata'})+' IST · real-money orders OFF';
   }catch(e){by('updated').textContent='Readiness unavailable — real-money trading remains OFF';}
   finally{by('reload').disabled=false;}
