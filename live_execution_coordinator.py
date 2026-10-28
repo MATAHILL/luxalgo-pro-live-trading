@@ -59,16 +59,21 @@ def risk_reserve(con,plan,exchange_positions,account_equity):
         control_row=cur.fetchone()
         if not control_row or control_row["halted"] is not False:
             raise LiveSafetyError("Persistent production HALT active")
-        cur.execute("""SELECT COUNT(*) AS qty,COALESCE(SUM(risk_usdt),0) AS risk,
-                         COALESCE(BOOL_OR(contract=%s),false) AS duplicate
+        cur.execute("""SELECT contract,state,risk_usdt
                        FROM luxalgo_prod_execution_ledger
-                       WHERE state NOT IN ('CLOSED_VERIFIED')""",(plan["contract"],))
-        existing=cur.fetchone()
-        if existing["duplicate"]:
-            raise LiveSafetyError("Concurrent reservation for contract")
-        if len(positions)+int(existing["qty"])>=MAX_POSITIONS:
+                       WHERE state<>'CLOSED_VERIFIED'""")
+        existing=cur.fetchall()
+        exchange_contracts={p["contract"] for p in positions}
+        reserved_contracts={r["contract"] for r in existing}
+        if plan["contract"] in exchange_contracts|reserved_contracts:
+            raise LiveSafetyError("Concurrent or already open contract")
+        # Count the union: a protected position and its ledger record are
+        # ONE slot, not two. Unknown manual exposure fails closed.
+        if exchange_contracts-reserved_contracts:
+            raise LiveSafetyError("Untracked open position: halt risk reservation")
+        if len(exchange_contracts|reserved_contracts)>=MAX_POSITIONS:
             raise LiveSafetyError("Five-position cap including pending reservations")
-        used=Decimal(str(existing["risk"]))
+        used=sum((Decimal(str(r["risk_usdt"])) for r in existing),Decimal("0"))
         incremental=Decimal(plan["estimated_risk_usdt"])
         equity=Decimal(str(account_equity))
         if not equity.is_finite() or equity<=0 or used+incremental>equity*MAX_AGGREGATE_RISK:
