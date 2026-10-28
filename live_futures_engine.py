@@ -313,9 +313,10 @@ def reconcile_ledger(ledger_rows,positions,trigger_orders):
             results.append({"event_id":item.get("event_id"),"state":"RESERVED_NOT_SENT",
                             "reason":"DURABLE_RESERVATION_ONLY"})
             continue
-        if state=="CLOSED_VERIFIED" and not same:
-            results.append({"event_id":item.get("event_id"),"state":"CLOSED_READBACK",
-                            "reason":"NO_CURRENT_EXCHANGE_POSITION"})
+        if state=="CLOSED_VERIFIED":
+            results.append({"event_id":item.get("event_id"),
+                            "state":"HALT_RECONCILIATION" if same else "CLOSED_READBACK",
+                            "reason":"CLOSED_LEDGER_BUT_EXCHANGE_POSITION_OPEN" if same else "NO_CURRENT_EXCHANGE_POSITION"})
             continue
         if len(same)!=1:
             results.append({"event_id":item.get("event_id"),"state":"HALT_RECONCILIATION",
