@@ -2418,7 +2418,8 @@ def terminal_live_execution_plan():
         plan=build_plan(dict(event_id=event_id,side=row['side'],contract=contract,
                     timeframe=row['timeframe'],levels_status=row['levels_status'],
                     entry=row['entry_price'],sl=row['stop_loss'],tp=row['take_profit'],
-                    received_epoch=int(row['received_at'].timestamp()),leverage=5),
+                    received_epoch=int(row['received_at'].timestamp()),
+                    position_mode=snap['account'].get('position_mode'),leverage=5),
                     meta,equity,available,snap['positions'],reserved_risk=reserved)
         return jsonify(status='PREVIEW_ONLY_NOT_EXECUTABLE',plan=plan,
                        orders_enabled=False,live_trading=False),200
@@ -6530,7 +6531,8 @@ def _production_execution_offline_smoke():
         now=int(time.time())
         s=dict(event_id="startup-diagnostic-BTC-5m",contract="BTC_USDT",
                side="LONG",timeframe="5m",levels_status="VALID",
-               received_epoch=now,entry="80000",sl="79200",tp="81600",leverage="5")
+               received_epoch=now,entry="80000",sl="79200",tp="81600",
+               position_mode="single",leverage="5")
         meta=dict(name="BTC_USDT",quanto_multiplier="0.0001",
                   order_size_min="1",order_size_max="100000")
         p=build_plan(s,meta,1000,1000,[],now=now)
