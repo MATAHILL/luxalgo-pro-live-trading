@@ -6593,5 +6593,68 @@ if os.getenv('PRODUCTION_TERMINAL_VIEW','false').strip().lower()=='true':
            name='luxalgo-noorder-regression').start()
 
 
+
+# One-shot read-only acceptance snapshot (requested by account owner).
+# Persists only whitelisted USDT equity/contract metadata, never API keys or
+# raw authenticated responses. No exchange writes or trading permissions.
+def _capture_gate_live_acceptance_snapshot():
+    try:
+        from live_futures_engine import GateLiveClient,PREFIX
+        now=datetime.now(timezone.utc)
+        summary=_gate_futures_account_summary()
+        client=GateLiveClient()
+        snap=client.snapshot()
+        contract=client.request('GET',PREFIX+'/contracts/BTC_USDT')
+        ticks=_scan_http_json('/api/v4/futures/usdt/tickers?contract=BTC_USDT')
+        ticker=next((x for x in ticks if x.get('contract')=='BTC_USDT'),None)
+        if not isinstance(contract,dict) or not ticker or contract.get('name')!='BTC_USDT':
+            raise ValueError('BTC USDT metadata not verified')
+        # Any uncertainty over actual account position mode remains UNKNOWN.
+        # Do not auto-derive single from an empty /positions list.
+        item=dict(
+            status='READ_ONLY_VERIFIED',contract='BTC_USDT',
+            timestamp_utc=now.isoformat(),
+            balance_usdt=summary['balance_usdt'],
+            equity_usdt=summary['equity_usdt'],
+            available_usdt=summary['available_usdt'],
+            unrealized_pnl_usdt=summary['unrealized_pnl_usdt'],
+            account_source=summary['source'],
+            exchange_positions=len(snap['positions']),
+            exchange_open_orders=len(snap['orders']),
+            exchange_trigger_orders=len(snap['triggers']),
+            position_mode='UNKNOWN_WHEN_EMPTY',
+            last_price=ticker.get('last'),
+            mark_price=ticker.get('mark_price'),
+            best_bid=ticker.get('highest_bid'),
+            best_ask=ticker.get('lowest_ask'),
+            quanto_multiplier=contract.get('quanto_multiplier'),
+            order_size_min=contract.get('order_size_min'),
+            order_size_max=contract.get('order_size_max'),
+            market_order_size_max=contract.get('market_order_size_max'),
+            order_price_round=contract.get('order_price_round'),
+            taker_fee_rate=contract.get('taker_fee_rate'),
+            market_order_slip_ratio=contract.get('market_order_slip_ratio'),
+            leverage_max=contract.get('leverage_max'),
+            in_delisting=contract.get('in_delisting'))
+        with _db_connect() as con:
+            con.execute("""CREATE TABLE IF NOT EXISTS luxalgo_live_acceptance_readonly (
+                captured_at TIMESTAMPTZ PRIMARY KEY,
+                contract TEXT NOT NULL CHECK(contract='BTC_USDT'),
+                evidence JSONB NOT NULL)""")
+            con.execute("""INSERT INTO luxalgo_live_acceptance_readonly
+                (captured_at,contract,evidence) VALUES (%s,%s,%s::jsonb)""",
+                (now,'BTC_USDT',json.dumps(item,allow_nan=False)))
+        print('LIVE_ACCEPTANCE_READONLY_SNAPSHOT_OK contract=BTC_USDT '
+              'market=GATE_IO_LIVE position_mode=UNVERIFIED',flush=True)
+    except Exception as exc:
+        app.logger.warning('LIVE_ACCEPTANCE_READONLY_SNAPSHOT_BLOCKED type=%s',
+                           type(exc).__name__)
+
+if os.getenv('PRODUCTION_TERMINAL_VIEW','false').strip().lower()=='true':
+    from threading import Thread
+    Thread(target=_capture_gate_live_acceptance_snapshot,daemon=True,
+           name='gate-live-acceptance-snapshot').start()
+
+
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=int(os.getenv('PORT', '8080')))
