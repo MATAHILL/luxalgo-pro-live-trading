@@ -1,0 +1,31 @@
+name: Live Futures Market Dashboard Regression
+
+on:
+  push:
+    branches: [main, live-execution-dev]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  market-dashboard:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    env:
+      LIVE_TRADING_ENABLED: "false"
+      ORDERS_ENABLED: "false"
+      GATE_TESTNET_PROTECTED_EXECUTION_ENABLED: "false"
+      GATE_TESTNET_WEBHOOK_AUTOMATION_ENABLED: "false"
+      GATE_TESTNET_RECOVERY_ENABLED: "false"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install production dependencies
+        run: python -m pip install -r requirements.txt
+      - name: Validate production Python syntax
+        run: python -m py_compile app.py production_cutover_view.py
+      - name: Test production market data and Testnet isolation (mocked, no orders)
+        run: python -m unittest discover -s tests -p 'test_live_market_cutover.py' -v
