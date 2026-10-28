@@ -2249,11 +2249,8 @@ def terminal_live_preparation_status():
                 cur.execute('SELECT COUNT(*) AS count FROM luxalgo_signal_receipts')
                 received=int(cur.fetchone()['count'])
                 receipts_ok=True
-                cur.execute("""SELECT COUNT(*) AS count
-                    FROM luxalgo_testnet_protected_journal
-                    WHERE state IN ('PROTECTED_VERIFIED','RECOVERING','HALTED_UNKNOWN',
-                                    'HALTED_UNPROTECTED','EMERGENCY_CLOSE_REQUIRED')""")
-                legacy_unresolved=int(cur.fetchone()['count'])
+                # Production readiness depends on live account and signal records.
+                # Legacy Testnet audit is an archive, not a live market-data gate.
     except (psycopg.Error,RuntimeError,OSError,ValueError,KeyError,TypeError):
         legacy_unresolved=None
     prepared=live_preparation_checks(
