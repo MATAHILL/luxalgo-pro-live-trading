@@ -91,6 +91,9 @@ def emergency_close_once(client,plan):
         snap=client.snapshot()
         if any(p["contract"]==plan["contract"] for p in snap["positions"]):
             raise AckUnknown("Close not confirmed flat by exchange")
+        if any((p.get("initial") or {}).get("contract")==plan["contract"]
+               for p in snap["triggers"]):
+            raise AckUnknown("Orphan native protective triggers remain")
         return {"closed_verified":True,"orders_sent":1}
     except (LiveSafetyError,AckUnknown):
         return {"closed_verified":False,"requires_manual_exchange_review":True,
@@ -115,6 +118,7 @@ def execute_confirmed_signal(open_connection,plan,client=None):
             raise LiveSafetyError("Unreconciled exchange working orders: no new entry")
         risk_reserve(con,plan,snap["positions"],snap["account"].get("total"))
     event=plan["event_id"]
+    entry_verified=False
     persist_state(open_connection,event,"SENDING")
     # From this point on, a lost response can still mean an accepted order.
     # Therefore never retry POST after an ambiguous outcome.
@@ -123,6 +127,7 @@ def execute_confirmed_signal(open_connection,plan,client=None):
         if not isinstance(entry_ack,dict):
             raise AckUnknown("Entry acknowledgement invalid")
         order_id,snap=require_full_entry_readback(client,plan,entry_ack)
+        entry_verified=True
         persist_state(open_connection,event,"ENTRY_CONFIRMED",entry_order_id=order_id)
         persist_state(open_connection,event,"PROTECTION_PENDING")
         stop=client.submit_trigger(plan,"SL")
@@ -145,9 +150,15 @@ def execute_confirmed_signal(open_connection,plan,client=None):
         # close only when the exchange definitely confirms a live position.
         # Do NOT auto-retry ambiguous entry acknowledgments.
         emergency_persist_halt(open_connection,"UNKNOWN_OR_UNPROTECTED_POST_ACK",event)
+        close_result={"closed_verified":False,"reason":"UNVERIFIED_ENTRY_NO_AUTOMATIC_CLOSE"}
+        if entry_verified:
+            # A *verified* filled position with failed native protection may
+            # be reduced once. Never close based only on ambiguous POST ACK.
+            close_result=emergency_close_once(client,plan)
         return {"state":"HALTED_UNKNOWN","reason":type(exc).__name__,
-                "exchange_position_may_be_open":True,"automatic_retry":False,
-                "requires_manual_exchange_review":True}
+                "exchange_position_may_be_open":not close_result["closed_verified"],
+                "emergency_close":close_result,"automatic_retry":False,
+                "requires_manual_exchange_review":not close_result["closed_verified"]}
 
 def restart_reconcile(open_connection,client=None):
     """Reconcile durable rows against live exchange and persist HALT on ambiguity."""
