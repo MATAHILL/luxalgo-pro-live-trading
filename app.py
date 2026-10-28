@@ -2548,7 +2548,7 @@ def health():
 
 @app.get('/ready')
 def ready():
-    """Read-only PostgreSQL connectivity check. Never authorizes exchange writes."""
+    """Read-only production + legacy schema connectivity check, not trade readiness."""
     try:
         with _db_connect() as connection:
             with connection.cursor() as cursor:
@@ -2556,7 +2556,13 @@ def ready():
                     to_regclass('public.luxalgo_signal_receipts') IS NOT NULL AS receipts,
                     to_regclass('public.luxalgo_dry_run_intents') IS NOT NULL AS intents,
                     to_regclass('public.luxalgo_bot_control') IS NOT NULL AS control,
-                    to_regclass('public.luxalgo_stage6_execution_halt') IS NOT NULL AS halt''')
+                    to_regclass('public.luxalgo_stage6_execution_halt') IS NOT NULL AS halt,
+                    to_regclass('public.luxalgo_live_signal_handoff') IS NOT NULL AS live_handoff,
+                    to_regclass('public.luxalgo_signal_levels') IS NOT NULL AS signal_levels,
+                    to_regclass('public.luxalgo_prod_execution_control') IS NOT NULL AS prod_halt,
+                    to_regclass('public.luxalgo_prod_execution_ledger') IS NOT NULL AS prod_ledger,
+                    to_regclass('public.luxalgo_prod_bot_operator_control') IS NOT NULL AS prod_operator,
+                    to_regclass('public.luxalgo_prod_activation_certification') IS NOT NULL AS prod_certification''')
                 row = cursor.fetchone()
                 if not row or not all(row.values()):
                     raise RuntimeError('Required safety tables are missing')
