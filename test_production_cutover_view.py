@@ -19,7 +19,13 @@ class ProductionCutoverTests(unittest.TestCase):
                         'id="botTurnOn"','id="botTurnOff"'):
             self.assertNotIn(retired,p,retired)
         self.assertIn("fetch('/terminal/incoming-signals?production=1'",p)
-        self.assertIn('REAL MONEY ORDER SUBMISSION OFF',p)
+        # The live BOT switch reports current state; never assert a retired static banner.
+        # Keep explicit OFF, exchange-proof and read-only status UI verifiable.
+        self.assertIn('id="productionBotIndicator"',p)
+        self.assertIn('● BOT OFF',p)
+        self.assertIn('This panel cannot place orders',p)
+        self.assertIn("fetch('/terminal/production-bot-control'",p)
+        self.assertIn("get('/terminal/acceptance-test/status',8000)",p)
         self.assertIn('Market Close — LOCKED',p)
         self.assertIn('STOP LOSS',''.join(p))
         self.assertNotIn('<h1>LUXALGO PRO · TESTNET FUTURES TERMINAL</h1>',p)
