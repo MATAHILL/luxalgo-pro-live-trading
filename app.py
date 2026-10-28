@@ -6622,7 +6622,9 @@ def _capture_gate_live_acceptance_snapshot():
             exchange_positions=len(snap['positions']),
             exchange_open_orders=len(snap['orders']),
             exchange_trigger_orders=len(snap['triggers']),
-            position_mode='UNKNOWN_WHEN_EMPTY',
+            position_mode=(snap['account'].get('position_mode')
+                if snap['account'].get('position_mode') in ('single','dual','dual_plus')
+                else 'UNKNOWN'),
             last_price=ticker.get('last'),
             mark_price=ticker.get('mark_price'),
             best_bid=ticker.get('highest_bid'),
@@ -6645,7 +6647,8 @@ def _capture_gate_live_acceptance_snapshot():
                 (captured_at,contract,evidence) VALUES (%s,%s,%s::jsonb)""",
                 (now,'BTC_USDT',json.dumps(item,allow_nan=False)))
         print('LIVE_ACCEPTANCE_READONLY_SNAPSHOT_OK contract=BTC_USDT '
-              'market=GATE_IO_LIVE position_mode=UNVERIFIED',flush=True)
+              'market=GATE_IO_LIVE position_mode='+
+              str(item['position_mode']),flush=True)
     except Exception as exc:
         app.logger.warning('LIVE_ACCEPTANCE_READONLY_SNAPSHOT_BLOCKED type=%s',
                            type(exc).__name__)
