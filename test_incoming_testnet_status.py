@@ -24,6 +24,15 @@ class IncomingStatusTests(unittest.TestCase):
                                  queue_state="PENDING",age_seconds=2),"NOT EXECUTED")
         self.assertEqual(classify_signal(journal_state="HALTED_UNKNOWN",
                                  exchange_checked=True,exchange_open=False),"VERIFY EXCHANGE")
+    def test_unlisted_testnet_market_is_distinct_from_execution_failure(self):
+        state=classify_signal(attempt_state="TESTNET_PREFLIGHT_BLOCKED",
+            attempt_detail="CONTRACT_NOT_LISTED_ON_TESTNET",
+            queue_state="PENDING",age_seconds=3)
+        self.assertEqual(state,"UNSUPPORTED ON TESTNET")
+        self.assertEqual(classify_signal(attempt_state="TESTNET_PREFLIGHT_BLOCKED",
+            attempt_detail="LEVERAGE_EXCEEDS_TESTNET_MAX_5X"),"NOT EXECUTED")
+        self.assertNotEqual(state,"LIVE")
+
     def test_reset_time_requires_zone(self):
         x=parse_reset_time("2026-10-27T19:35:00Z")
         self.assertEqual(x.tzinfo,timezone.utc)
