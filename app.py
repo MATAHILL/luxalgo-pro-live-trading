@@ -2709,6 +2709,20 @@ def webhook():
         except (psycopg.Error, RuntimeError, OSError):
             app.logger.warning('One-trade candidate reservation failed; no execution permitted')
             one_trade_candidate = 'UNAVAILABLE_NO_ORDER'
+    # Future production worker cannot run without explicit source code release,
+    # permission, and authenticated, stable TradingView bar-level signal.
+    if (not duplicate and level_status=='VALID' and source_bar_id and
+        declared_order_type=='MARKET' and
+        os.getenv('LIVE_TRADING_ENABLED','false')=='true' and
+        os.getenv('ORDERS_ENABLED','false')=='true' and
+        os.getenv('LIVE_ORDERS_SEPARATELY_AUTHORIZED','false')=='true'):
+        try:
+            from live_futures_engine import EXCHANGE_WRITE_RELEASE
+            from live_execution_orchestrator import AUTOMATIC_WORKER_RELEASE
+            if EXCHANGE_WRITE_RELEASE and AUTOMATIC_WORKER_RELEASE:
+                _live_auto_executor.submit(_process_live_webhook_once,event_id)
+        except (RuntimeError,OSError,ValueError):
+            app.logger.warning('Production execution worker unavailable; signal retained')
     return jsonify(status='signal_received', mode='SIGNAL_ONLY', symbol=symbol,
                    side=allowed[side], timeframe=tf, duplicate_in_candle=duplicate,
                    dry_run_intent_id=event_id, level_status=level_status,
@@ -5534,6 +5548,17 @@ def _paper_trade_snapshot(order):
 # Single paper worker keeps slow public-market requests off webhook response threads.
 # Durable PostgreSQL queue remains the source of truth; no exchange order writes.
 _paper_auto_executor = ThreadPoolExecutor(max_workers=1,thread_name_prefix='luxalgo-paper')
+# Production worker queue is separate from public market data. Source gates OFF.
+_live_auto_executor = ThreadPoolExecutor(max_workers=1,thread_name_prefix='luxalgo-live-locked')
+def _process_live_webhook_once(event_id):
+    from live_execution_orchestrator import process_stored_luxalgo_alert
+    from live_futures_engine import LiveSafetyError
+    try:
+        result=process_stored_luxalgo_alert(_db_connect,event_id)
+        app.logger.info('Production lifecycle state=%s',result.get('state','UNKNOWN'))
+    except (LiveSafetyError,psycopg.Error,RuntimeError,OSError,ValueError,TypeError) as exc:
+        app.logger.warning('Production lifecycle worker blocked: %s',type(exc).__name__)
+
 
 # Separate TESTNET-only serialized executor. Remains OFF without BOTH dedicated
 # Testnet opt-in variables. Never reads production trading credentials.
