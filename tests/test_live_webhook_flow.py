@@ -114,7 +114,7 @@ class WebhookSafeIntegration(unittest.TestCase):
             scenarios=[
                 (None,None,"NO_LIVE_HANDOFF"),
                 (None,"MARKET","MISSING_STABLE_BAR_ID"),
-                ("TVBAR_5m_00597712345",None,"NO_LIVE_HANDOFF"),
+                ("TVBAR_5m_00597712345",None,"MISSING_MARKET_DECLARATION"),
                 ("TVBAR_5m_00597712345","LIMIT","MISSING_MARKET_DECLARATION"),
                 ("TVBAR_5m_00597712345","MARKET","QUALIFIED_SIGNAL_EXECUTION_LOCKED")]
             for bar,declared,expected in scenarios:
@@ -124,7 +124,8 @@ class WebhookSafeIntegration(unittest.TestCase):
                              level_status="VALID",entry_price="80000",
                              stop_loss="79000",take_profit="82000",
                              order_type="MARKET",source_bar_id=bar,
-                             handoff_order_type=declared)
+                             handoff_order_type=declared,
+                             handoff_event_id=None if bar is None and declared is None else "a"*20)
                     # Simulates a stored receipt + optional handoff; no DB changes,
                     # exchange requests or orders.
                     con=Mock();cursor=Mock()
