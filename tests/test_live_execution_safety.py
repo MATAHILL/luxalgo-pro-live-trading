@@ -14,6 +14,7 @@ NOW=1800000000
 BASE={"event_id":"tradingview-BTC-5m-1234","contract":"BTC_USDT",
       "side":"LONG","timeframe":"5m","levels_status":"VALID",
       "entry":"80000","sl":"79200","tp":"81600","leverage":"5",
+      "position_mode":"single",
       "received_epoch":NOW-12}
 CONTRACT={"name":"BTC_USDT","quanto_multiplier":"0.0001",
           "order_size_min":1,"order_size_max":100000}
@@ -107,7 +108,7 @@ class LiveFuturesSafetyTests(unittest.TestCase):
     def test_reconciliation_does_not_invent_protection(self):
         plan=planned()
         row={"event_id":BASE["event_id"],"contract":"BTC_USDT","side":"LONG",
-             "entry_price":plan["entry"],"stop_loss":plan["sl"],"take_profit":plan["tp"]}
+             "entry_price":plan["entry"],"stop_loss":plan["sl"],"take_profit":plan["tp"],"position_mode":"single"}
         bare=reconcile_ledger([row],[{"contract":"BTC_USDT","size":"2"}],[])
         self.assertTrue(bare["requires_halt"])
         self.assertEqual(bare["results"][0]["state"],"HALT_UNPROTECTED")
