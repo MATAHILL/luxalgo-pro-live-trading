@@ -11,7 +11,8 @@ UNKNOWN_STATES={"HALTED_UNKNOWN","HALTED_UNPROTECTED","RECOVERING",
                 "EMERGENCY_CLOSE_REQUIRED","ENTRY_ACK","SUBMISSION_UNKNOWN"}
 
 def classify_signal(*, journal_state=None, attempt_state=None, attempt_detail=None,
-                    queue_state=None, age_seconds=0, exchange_open=None, exchange_checked=False):
+                    queue_state=None, age_seconds=0, exchange_open=None, exchange_checked=False,
+                    worker_armed=True):
     if journal_state=="PROTECTED_VERIFIED":
         if not exchange_checked: return "VERIFY EXCHANGE"
         return "LIVE" if exchange_open is True else "VERIFY EXCHANGE"
@@ -33,6 +34,8 @@ def classify_signal(*, journal_state=None, attempt_state=None, attempt_detail=No
         return "NOT EXECUTED"
     if attempt_state in CLOSED_STATES or attempt_state=="PROTECTED_VERIFIED":
         return "VERIFY EXCHANGE"  # Never trust an unbacked worker label as a fill.
+    if not worker_armed and attempt_state is None:
+        return "NOT EXECUTED"  # Storing a fresh webhook does not start a disabled worker.
     if (attempt_state in ("WORKER_QUEUED",None) and queue_state in ("PENDING","CREATED")
             and 0<=age_seconds<=60):
         return "WAITING FOR EXECUTION"
