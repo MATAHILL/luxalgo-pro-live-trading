@@ -197,6 +197,58 @@ def execute_confirmed_signal(open_connection,plan,client=None):
                 "emergency_close":close_result,"automatic_retry":False,
                 "requires_manual_exchange_review":not close_result["closed_verified"]}
 
+# Separate release gate for continuous automation, independent of a one-order
+# live acceptance test. Changing environment variables cannot bypass this.
+AUTOMATIC_WORKER_RELEASE = False
+
+def process_stored_luxalgo_alert(open_connection,event_id,client=None):
+    """Authenticated, validated TradingView receipt -> protected order workflow.
+
+    Requires a stable TradingView event/bar ID and MARKET order declaration.
+    Never treats scanner candidates or unstamped alerts as executable signals.
+    Both source locks are currently OFF.
+    """
+    if not EXCHANGE_WRITE_RELEASE or not AUTOMATIC_WORKER_RELEASE:
+        raise LiveSafetyError("AUTOMATION_SOURCE_LOCKED")
+    client=client or GateLiveClient()
+    with open_connection() as con:
+        install(con)
+        if control(con)["halted"]:
+            raise LiveSafetyError("Persistent live execution HALT")
+        with con.cursor() as cur:
+            cur.execute("""SELECT h.event_id,h.source_bar_id,h.symbol,h.side,
+                           h.timeframe,h.order_type,h.level_status,h.received_at,
+                           l.entry_price,l.stop_loss,l.take_profit
+                           FROM luxalgo_live_signal_handoff h
+                           JOIN luxalgo_signal_levels l ON h.event_id=l.event_id
+                           WHERE h.event_id=%s LIMIT 1""",(event_id,))
+            row=cur.fetchone()
+        ledger=read_rows(con)
+    if (not row or not row["source_bar_id"] or
+        row["level_status"]!="VALID" or row["order_type"]!="MARKET"):
+        raise LiveSafetyError("Missing validated LuxAlgo identity/levels or MARKET declaration")
+    if row["symbol"].endswith("USDT"):
+        contract=row["symbol"][:-4]+"_USDT"
+    else:
+        raise LiveSafetyError("Non-USDT signal")
+    # Contract metadata and balance are checked against the live exchange,
+    # never inferred from TradingView or a scanner ranking.
+    snap=client.snapshot()
+    meta=client.request("GET",PREFIX+"/contracts/"+contract)
+    if not isinstance(meta,dict):
+        raise LiveSafetyError("Live contract metadata invalid")
+    used=sum((Decimal(str(r["risk_usdt"])) for r in ledger
+              if r["state"]!="CLOSED_VERIFIED"),Decimal("0"))
+    plan=build_plan(dict(event_id=event_id,contract=contract,
+                    side=row["side"],timeframe=row["timeframe"],
+                    levels_status=row["level_status"],entry=row["entry_price"],
+                    sl=row["stop_loss"],tp=row["take_profit"],
+                    received_epoch=int(row["received_at"].timestamp()),leverage=5),
+                    meta,snap["account"].get("total"),snap["account"].get("available"),
+                    snap["positions"],reserved_risk=used)
+    return execute_confirmed_signal(open_connection,plan,client)
+
+
 def restart_reconcile(open_connection,client=None):
     """Reconcile durable rows against live exchange and persist HALT on ambiguity."""
     from live_execution_coordinator import reconcile_and_halt_if_needed
