@@ -6331,10 +6331,22 @@ def _probe_live_public_market_once():
             data=_scan_http_json(path)
             if not data:
                 raise ValueError('Live market feed returned no records')
-            app.logger.info('LIVE_FUTURES_MARKET_%s_OK records=%d',name,len(data))
+            print('LIVE_FUTURES_MARKET_'+name+'_OK records='+str(len(data)),flush=True)
         except (HTTPError,URLError,TimeoutError,OSError,ValueError,TypeError,RuntimeError) as exc:
             app.logger.warning('LIVE_FUTURES_MARKET_%s_UNAVAILABLE reason=%s',
                                name,type(exc).__name__)
+    # Publisher feeds are independent of Testnet and do not authorize trades.
+    # Startup evidence is limited to counts; never log article content or secrets.
+    with ThreadPoolExecutor(max_workers=len(NEWS_FEEDS)) as pool:
+        news_jobs={pool.submit(_news_fetch_source,source):source[0] for source in NEWS_FEEDS}
+        for task in as_completed(news_jobs):
+            label=news_jobs[task]
+            try:
+                headlines=task.result()
+                print('CRYPTO_NEWS_PROVIDER_'+label.replace(' ','_')+'_OK records='+str(len(headlines)),flush=True)
+            except (HTTPError,URLError,TimeoutError,OSError,ValueError,TypeError,ET.ParseError) as exc:
+                app.logger.warning('CRYPTO_NEWS_PROVIDER_%s_UNAVAILABLE reason=%s',
+                                   label.replace(' ','_'),type(exc).__name__)
 
 if os.getenv('PRODUCTION_TERMINAL_VIEW','false').strip().lower()=='true':
     from threading import Thread
