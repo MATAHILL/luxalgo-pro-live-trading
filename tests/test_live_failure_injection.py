@@ -26,7 +26,7 @@ class NonTradingFaultInjections(unittest.TestCase):
     def test_read_only_transport_timeout_fails(self):
         def fail(*a,**kw):raise TimeoutError("induced GET timeout")
         c=GateLiveClient("fakekey","fakesecret",transport=fail)
-        with self.assertRaisesRegex(LiveSafetyError,"authenticated live GET failed"):
+        with self.assertRaisesRegex(LiveSafetyError,"Authenticated live GET failed"):
             c.snapshot()
 
     def test_invalid_account_snapshot_fails(self):
