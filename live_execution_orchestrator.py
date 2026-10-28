@@ -99,6 +99,43 @@ def emergency_close_once(client,plan):
         return {"closed_verified":False,"requires_manual_exchange_review":True,
                 "reason":"EMERGENCY_CLOSE_UNKNOWN_NO_RETRY"}
 
+def assert_existing_protected_exposure(rows,snapshot):
+    """Allows five separate protected positions while refusing unknown exposure."""
+    open_rows=[r for r in rows if r["state"]!="CLOSED_VERIFIED"]
+    tracked={r["contract"]:r for r in open_rows}
+    if len(tracked)!=len(open_rows):
+        raise LiveSafetyError("Multiple active ledger rows for a contract")
+    if snapshot["orders"]:
+        raise LiveSafetyError("Unreconciled working entry orders")
+    known_triggers={str(r[k]) for r in open_rows
+                    for k in ("stop_order_id","take_order_id") if r.get(k)}
+    for trigger in snapshot["triggers"]:
+        if str(trigger.get("id","")) not in known_triggers:
+            raise LiveSafetyError("Orphan or external native trigger")
+    for p in snapshot["positions"]:
+        row=tracked.get(p["contract"])
+        if not row or row["state"]!="PROTECTED":
+            raise LiveSafetyError("Open position without protected ledger")
+        expected_side="LONG" if Decimal(str(p["size"]))>0 else "SHORT"
+        if expected_side!=row["side"]:
+            raise LiveSafetyError("Position direction mismatch")
+        plan={"contract":row["contract"],"side":row["side"],
+              "entry":row["entry_price"],"sl":row["stop_loss"],
+              "tp":row["take_profit"]}
+        check=evaluate_protection(plan,snapshot["triggers"])
+        if (not check["verified"] or
+            check["stop_order_id"]!=str(row["stop_order_id"]) or
+            check["take_order_id"]!=str(row["take_order_id"])):
+            raise LiveSafetyError("Verified position missing linked native protection")
+    # A SENDING or ACK_UNKNOWN row cannot be assumed flat just because the
+    # position API momentarily returns no record.
+    for row in open_rows:
+        if row["state"] not in ("PROTECTED",):
+            raise LiveSafetyError("Pending or uncertain order lifecycle blocks new entry")
+    return {"protected_open_positions":len(snapshot["positions"]),
+            "unknown_orders":0,"unknown_triggers":0}
+
+
 def execute_confirmed_signal(open_connection,plan,client=None):
     """Serialized journal-to-exchange flow. NOT callable under current source lock.
 
@@ -114,8 +151,8 @@ def execute_confirmed_signal(open_connection,plan,client=None):
             raise LiveSafetyError("Production emergency halt active")
         # A fresh account snapshot must have no untracked orders before sending.
         snap=client.snapshot()
-        if snap["orders"] or snap["triggers"]:
-            raise LiveSafetyError("Unreconciled exchange working orders: no new entry")
+        existing=read_rows(con)
+        assert_existing_protected_exposure(existing,snap)
         risk_reserve(con,plan,snap["positions"],snap["account"].get("total"))
     event=plan["event_id"]
     entry_verified=False
