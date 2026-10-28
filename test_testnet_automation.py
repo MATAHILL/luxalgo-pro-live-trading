@@ -53,6 +53,37 @@ class TestAutomation(unittest.TestCase):
                          ("ETH_USDT","SHORT","110","90"))
         self.assertEqual(intent.client_id,"t-lx-"+EVENT)
 
+    def test_disabled_symbol_never_calls_broker_or_exchange(self):
+        excluded={**ROW,"symbol":"AGTUSDT"}
+        with patch.dict("os.environ",{
+             "GATE_TESTNET_PROTECTED_EXECUTION_ENABLED":"true",
+             "GATE_TESTNET_WEBHOOK_AUTOMATION_ENABLED":"true",
+             "GATE_TESTNET_RECOVERY_ENABLED":"true",
+             "GATE_TESTNET_ONE_SHOT_PROTECTED_TRIAL":"false",
+             "LIVE_TRADING_ENABLED":"false","ORDERS_ENABLED":"false",
+             "DATABASE_URL":"postgresql://unused"}):
+            with patch("testnet_automation.unknown_exposure_gate",return_value=True):
+             with patch("testnet_automation.psycopg.connect",
+                        return_value=Connection(excluded)):
+              with patch("testnet_automation.execute_protected_testnet") as sender:
+               adapter=Mock()
+               result=run_fresh_luxalgo_testnet_signal(
+                   EVENT,broker=adapter,journal=Mock(),now=NOW)
+        self.assertEqual(result["state"],"SIGNAL_OUTSIDE_SELECTED_SCOPE")
+        self.assertEqual(result["detail"],"DISABLED_BY_EIGHT_COIN_SCOPE")
+        self.assertIs(result["submitted"],False)
+        adapter.preflight.assert_not_called()
+        sender.assert_not_called()
+
+    def test_all_selected_symbols_can_reach_preflight(self):
+        for selected in ("BTCUSDT","ETHUSDT","SOLUSDT","XRPUSDT",
+                         "DOGEUSDT","BNBUSDT","AVAXUSDT","ADAUSDT"):
+            with self.subTest(selected=selected):
+                result,run=self.call({**ROW,"symbol":selected})
+                self.assertEqual(result["state"],"PROTECTED_VERIFIED")
+                self.assertEqual(run.call_args.args[0].contract,
+                                 selected[:-4]+"_USDT")
+
     def test_unavailable_market_never_reserves_order(self):
         with patch.dict("os.environ",{
              "GATE_TESTNET_PROTECTED_EXECUTION_ENABLED":"true",
