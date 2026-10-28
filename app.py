@@ -2341,6 +2341,47 @@ def terminal_chart():
         return jsonify(error='Public candle data temporarily unavailable'),502
 
 
+@app.get('/terminal/production-bot-control')
+def terminal_production_bot_state():
+    """Read actual database/source-lock/authorization state, never Testnet toggle."""
+    if not _terminal_permitted():return _terminal_guard()
+    try:
+        from production_bot_control import state
+        with _db_connect() as con:
+            result=state(con)
+        response=jsonify(result)
+        response.headers['Cache-Control']='private, no-store'
+        return response
+    except (psycopg.Error,RuntimeError,OSError,ValueError,TypeError,KeyError):
+        return jsonify(bot_on=False,orders_enabled=False,
+                       error='Server-side execution state unavailable',
+                       reason='UNVERIFIED_HALT',safety_gates=['STATE_UNAVAILABLE']),503
+
+
+@app.post('/terminal/production-bot-control')
+def terminal_production_bot_update():
+    """Operator OFF halts future entries; ON requires independently released gates."""
+    if not _terminal_permitted():return _terminal_guard()
+    if not _csrf_valid():return jsonify(error='Invalid CSRF',bot_on=False),403
+    request_data=request.get_json(silent=True) if request.is_json else None
+    if not isinstance(request_data,dict) or type(request_data.get('enabled')) is not bool:
+        return jsonify(error='Boolean enabled required',bot_on=False),400
+    try:
+        from production_bot_control import turn_off,turn_on
+        desired=request_data['enabled']
+        with _db_connect() as con:
+            result=turn_on(con) if desired else turn_off(con)
+        code=200 if (not desired or result['bot_on']) else 409
+        response=jsonify(result)
+        response.status_code=code
+        response.headers['Cache-Control']='private, no-store'
+        return response
+    except (psycopg.Error,RuntimeError,OSError,ValueError,TypeError,KeyError):
+        app.logger.warning('Production operator switch failed closed',exc_info=False)
+        return jsonify(bot_on=False,orders_enabled=False,
+                       error='Operator state could not be persisted; treating as HALT'),503
+
+
 @app.get('/terminal/live-execution/snapshot')
 def terminal_live_execution_snapshot():
     """Authenticated production GET reconciliation; absolutely no order writes."""
