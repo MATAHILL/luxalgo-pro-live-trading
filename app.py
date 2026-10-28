@@ -2666,9 +2666,13 @@ def webhook():
     symbol = str(data.get('symbol', data.get('ticker', ''))).upper().removeprefix('BINANCE:').removesuffix('.P')
     side = str(data.get('side', data.get('alert', ''))).strip().upper()
     tf = str(data.get('tf', '')).strip().lower()
-    allowed = {'BUY': 'LONG', 'LONG': 'LONG', 'BULLISH CONFIRMATION': 'LONG', 'SELL': 'SHORT', 'SHORT': 'SHORT', 'BEARISH CONFIRMATION': 'SHORT'}
-    if not re.fullmatch(r'[A-Z0-9]{3,25}USDT', symbol) or side not in allowed or tf not in ('5', '5m', '5min', '5 minutes', '15', '15m', '15min', '15 minutes'):
-        return jsonify(error='Invalid symbol, side, or timeframe'), 422
+    from live_signal_identity import normalize_luxalgo_side
+    canonical_side=normalize_luxalgo_side(side)
+    allowed = {side: canonical_side} if canonical_side else {}
+    if (not re.fullmatch(r'[A-Z0-9]{3,25}USDT', symbol)
+        or not canonical_side or
+        tf not in ('5', '5m', '5min', '5 minutes', '15', '15m', '15min', '15 minutes')):
+        return jsonify(error='Invalid symbol, LuxAlgo entry direction, or timeframe'), 422
     received_at = datetime.now(timezone.utc)
     tf = '5m' if tf.startswith('5') else '15m'
     # Missing/invalid LuxAlgo prices never authorize an exchange order.
@@ -2699,9 +2703,16 @@ def webhook():
     # A signed, authenticated webhook can optionally supply the stable
     # TradingView candle ID. Retries of the same bar produce the same event ID.
     # Old alerts remain accepted but remain permanently SIGNAL_ONLY.
-    from live_signal_identity import stable_signal_identity
+    from live_signal_identity import (stable_signal_identity, validated_bar_id,
+                                      luxalgo_bar_identity)
+    # LuxAlgo any-alert() messages support the documented {time} placeholder.
+    # A fresh timestamp can produce a deterministic same-candle tv_bar_id
+    # without altering the original BUY/SELL direction or price levels.
+    input_bar=validated_bar_id(data.get('tv_bar_id'))
+    if input_bar is None:
+        input_bar=luxalgo_bar_identity(tf,received_at,data.get('bartime'))
     event_id,source_bar_id=stable_signal_identity(
-        symbol,allowed[side],tf,received_at,data.get('tv_bar_id'))
+        symbol,allowed[side],tf,received_at,input_bar)
     try:
         duplicate = _db_record(record,event_id)
         with _db_connect() as con:
@@ -2765,6 +2776,8 @@ def webhook():
     return jsonify(status='signal_received', mode='SIGNAL_ONLY', symbol=symbol,
                    side=allowed[side], timeframe=tf, duplicate_in_candle=duplicate,
                    dry_run_intent_id=event_id, level_status=level_status,
+                   stable_bar_identity=bool(source_bar_id),
+                   order_type_qualified=(declared_order_type=='MARKET'),
                    one_trade_candidate=one_trade_candidate, orders_placed=0), 200
 
 
