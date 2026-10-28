@@ -1,6 +1,6 @@
 import unittest
 from datetime import timezone
-from incoming_testnet_status import classify_signal,parse_reset_time
+from incoming_testnet_status import classify_signal,parse_reset_time,explain_testnet_attempt
 
 class IncomingStatusTests(unittest.TestCase):
     def test_live_requires_both_protected_journal_and_exchange(self):
@@ -32,6 +32,24 @@ class IncomingStatusTests(unittest.TestCase):
         self.assertEqual(classify_signal(attempt_state="TESTNET_PREFLIGHT_BLOCKED",
             attempt_detail="LEVERAGE_EXCEEDS_TESTNET_MAX_5X"),"NOT EXECUTED")
         self.assertNotEqual(state,"LIVE")
+
+    def test_disabled_worker_does_not_show_new_alert_as_waiting(self):
+        self.assertEqual(classify_signal(queue_state="PENDING",age_seconds=3,
+                         worker_armed=False),"NOT EXECUTED")
+        self.assertEqual(classify_signal(queue_state="PENDING",age_seconds=3,
+                         worker_armed=True),"WAITING FOR EXECUTION")
+
+    def test_human_diagnostics_identify_actual_blocker(self):
+        msg=explain_testnet_attempt("TESTNET_PREFLIGHT_BLOCKED","ACCOUNT_NOT_FLAT")
+        self.assertIn("leverage",msg)
+        self.assertIn("empty",msg)
+        msg=explain_testnet_attempt("TESTNET_PREFLIGHT_BLOCKED",
+                                  "CONTRACT_PREFLIGHT_CONTRACT_ALREADY_HAS_OPEN_POSITION")
+        self.assertIn("already has an open",msg)
+        self.assertIn("Testnet automatic execution paused",
+                      explain_testnet_attempt(None,None,worker_armed=False))
+        self.assertIn("current exposure is uncertain",
+                      explain_testnet_attempt("ACCOUNT_UNCERTAIN_EXPOSURE_SAFETY_PAUSE",""))
 
     def test_reset_time_requires_zone(self):
         x=parse_reset_time("2026-10-27T19:35:00Z")
