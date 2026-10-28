@@ -86,9 +86,14 @@ CREATE TABLE IF NOT EXISTS luxalgo_live_signal_handoff (
  timeframe TEXT NOT NULL,
  order_type TEXT,
  level_status TEXT NOT NULL,
+ source_bar_id TEXT,
  status TEXT NOT NULL DEFAULT 'SIGNAL_ONLY' CHECK(status='SIGNAL_ONLY'),
  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+ALTER TABLE luxalgo_live_signal_handoff ADD COLUMN IF NOT EXISTS source_bar_id TEXT;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_live_handoff_source_bar
+ON luxalgo_live_signal_handoff(symbol,side,timeframe,source_bar_id)
+WHERE source_bar_id IS NOT NULL;
 -- Historical Testnet journal retained for audit only, not market data.
 CREATE TABLE IF NOT EXISTS luxalgo_one_trade_candidate (
  singleton_id SMALLINT PRIMARY KEY CHECK(singleton_id=1),
@@ -2669,16 +2674,21 @@ def webhook():
     except (psycopg.Error,RuntimeError,OSError):
         app.logger.exception('Cannot durably record incoming LuxAlgo signal')
         return jsonify(error='Signal not stored; retry later',orders_placed=0),503
-    # LIVE production signal-only audit, independent of Testnet credentials,
-    # worker, endpoints or journal. No exchange order is submitted here.
+    # LIVE production signal-only audit, independent of Testnet credentials.
+    # A stable, unique TradingView bar ID is mandatory for any future live order.
+    # Existing LuxAlgo alerts without this field remain logged, not executable.
+    source_bar_id=str(data.get('tv_bar_id') or '').strip()
+    if not re.fullmatch(r'[A-Za-z0-9_.:-]{8,120}',source_bar_id):
+        source_bar_id=None
     try:
         with _db_connect() as con:
             _ensure_schema(con)
             con.execute("""INSERT INTO luxalgo_live_signal_handoff
-                (event_id,received_at,symbol,side,timeframe,order_type,level_status,status)
-                VALUES (%s,%s,%s,%s,%s,%s,%s,'SIGNAL_ONLY')
+                (event_id,received_at,symbol,side,timeframe,order_type,level_status,source_bar_id,status)
+                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,'SIGNAL_ONLY')
                 ON CONFLICT(event_id) DO NOTHING""",
-                (event_id,received_at,symbol,allowed[side],tf,declared_order_type,level_status))
+                (event_id,received_at,symbol,allowed[side],tf,declared_order_type,level_status,
+                 source_bar_id))
     except (psycopg.Error,RuntimeError,OSError):
         app.logger.exception('Production signal handoff audit unavailable')
         return jsonify(error='Signal stored but production handoff audit unavailable',orders_placed=0),503
