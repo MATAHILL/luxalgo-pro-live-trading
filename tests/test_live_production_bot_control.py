@@ -57,9 +57,11 @@ class ProductionBotTests(unittest.TestCase):
         self.assertEqual(html.count('id="productionBotOn"'),1)
         self.assertEqual(html.count('id="productionBotOff"'),1)
         self.assertEqual(html.count('id="productionBotIndicator"'),1)
-        self.assertIn('● EXECUTION OFF',html)
-        self.assertIn('LIVE ORDERS OFF',html)
+        self.assertIn('● BOT OFF',html)
+        self.assertIn('LIVE MARKET FEED',html)
         self.assertNotIn('id="productionBotSwitch"',html)
+        self.assertNotIn('EXECUTION OFF',html)
+        self.assertNotIn('LIVE ORDERS OFF',html)
         self.assertLess(html.index('id="productionBotOn"'),
                         html.index('GATE.IO FUTURES RADAR <span'))
         self.assertLess(html.index('id="productionBotOff"'),
