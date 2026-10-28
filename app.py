@@ -5154,6 +5154,8 @@ def terminal_incoming_signals():
     """Latest 25 webhook receipts and independently verified Testnet states."""
     if not _terminal_permitted():
         return _terminal_guard()
+    production_monitor=(request.args.get('production')=='1' and
+                        os.getenv('PRODUCTION_TERMINAL_VIEW','false').strip().lower()=='true')
     try:
         from testnet_execution_attempts import DDL as _execution_attempts_schema
         with _db_connect() as con:
@@ -5183,7 +5185,7 @@ def terminal_incoming_signals():
         # qualifies for a LIVE indicator, never an unverified journal label.
         verified_live=set()
         exchange_checked=False
-        if any(r['testnet_execution_state']=='PROTECTED_VERIFIED' for r in rows):
+        if not production_monitor and any(r['testnet_execution_state']=='PROTECTED_VERIFIED' for r in rows):
             try:
                 from gate_testnet_broker import GateFuturesTestnetBroker
                 from testnet_card_feed import build_testnet_position_cards
@@ -5234,8 +5236,15 @@ def terminal_incoming_signals():
                                                 worker_armed=worker_armed)),
                 level_status=r['level_status'] or 'UNKNOWN',
                 status_label=state))
+            if production_monitor:
+                # Never portray archived Testnet execution as a REAL-MONEY fill.
+                # Main production terminal is signal intake only until sender verified.
+                signals[-1].update(state='NOT EXECUTED',status_label='NOT EXECUTED',
+                    order_type=r['order_type'] or 'UNDECLARED',
+                    reason='Production signal saved; real-money order engine OFF. No live exchange entry.')
         response=jsonify(signals=signals,count=len(signals),display_limit=25,
-                         display_since=cutoff.isoformat(),mode='TESTNET_SIGNAL_MONITOR',
+                         display_since=cutoff.isoformat(),
+                         mode='PRODUCTION_SIGNAL_ONLY' if production_monitor else 'TESTNET_SIGNAL_MONITOR',
                          live_trading=False,audit_records_preserved=True)
         response.headers['Cache-Control']='no-store'
         return response
