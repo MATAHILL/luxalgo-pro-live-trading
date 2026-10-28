@@ -14,7 +14,8 @@ from live_execution_orchestrator import (
 
 PLAN={"event_id":"tv-long-BTCUSDT-5m-1200","client_text":"t-lxp-example123456",
       "contract":"BTC_USDT","side":"LONG","timeframe":"5m",
-      "contracts":2,"entry":"80000","sl":"79000","tp":"82000"}
+      "contracts":2,"entry":"80000","sl":"79000","tp":"82000",
+      "position_mode":"single"}
 
 class FakeHttp:
     def __init__(self,payload): self.payload=payload
@@ -91,14 +92,16 @@ class NonTradingFaultInjections(unittest.TestCase):
 
     def test_reconciler_reports_closed_ledger_position_reappearing(self):
         row={"event_id":"X","contract":"BTC_USDT","side":"LONG","state":"CLOSED_VERIFIED",
-             "entry_price":"80000","stop_loss":"79000","take_profit":"82000"}
+             "entry_price":"80000","stop_loss":"79000","take_profit":"82000",
+             "position_mode":"single"}
         outcome=reconcile_ledger([row],[{"contract":"BTC_USDT","size":"2"}],[])
         self.assertTrue(outcome["requires_halt"])
 
     def test_stale_market_signal_rejected_for_dispatch(self):
         s=dict(event_id="tv-BTC-5m-10000001",side="LONG",contract="BTC_USDT",
                timeframe="5m",levels_status="VALID",
-               received_epoch=100000,entry="80000",sl="79000",tp="82000")
+               received_epoch=100000,entry="80000",sl="79000",tp="82000",
+               position_mode="single")
         meta=dict(name="BTC_USDT",quanto_multiplier="0.0001",
                   order_size_min=1,order_size_max=100000)
         with self.assertRaisesRegex(LiveSafetyError,"delayed or future"):
