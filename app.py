@@ -6538,6 +6538,26 @@ if os.getenv('PRODUCTION_TERMINAL_VIEW','false').strip().lower()=='true':
 
 
 
+# Initialize and report the authoritative operator switch on production boot.
+# Safe even with zero TradingView alerts; does not affect public market data.
+def _production_operator_bootstrap():
+    try:
+        from production_bot_control import state
+        with _db_connect() as con:
+            status=state(con)
+        print('LIVE_BOT_SERVER_STATE_' + ('ON' if status['bot_on'] else 'OFF') +
+              ' source_locked=' + str('SOURCE_LOCKED' in status['safety_gates']) +
+              ' halt=' + str(status['halt_active']),flush=True)
+    except (psycopg.Error,RuntimeError,OSError,ValueError,TypeError,KeyError) as exc:
+        app.logger.warning('LIVE_BOT_SERVER_STATE_UNAVAILABLE error=%s',
+                           type(exc).__name__)
+
+if os.getenv('PRODUCTION_TERMINAL_VIEW','false').strip().lower()=='true':
+    from threading import Thread
+    Thread(target=_production_operator_bootstrap,daemon=True,
+           name='luxalgo-production-operator-bootstrap').start()
+
+
 # Independently reconcile the production exchange after process restart and
 # periodically thereafter. This worker NEVER submits or cancels Gate orders.
 def _production_readonly_recovery_monitor():
