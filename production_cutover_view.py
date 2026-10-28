@@ -8,8 +8,8 @@ import re
 
 PRODUCTION_CARDS=r'''<section class="panel" id="productionCardsPanel" aria-label="Gate.io production futures position cards read-only">
 <div class="v4-head"><div><strong>LUXALGO PRO · LIVE FUTURES POSITION CARDS</strong>
-<p class="light">Production Gate.io positions only · Verified exchange GET requests · SL/TP coverage NOT YET VERIFIED · Trading OFF</p></div></div>
-<div class="v4-tabs"><strong id="productionTabCount">Checking production exchange positions…</strong><span>REAL MONEY EXECUTION DISABLED</span></div>
+<p class="light">Production Gate.io positions only · Exchange readback · Native SL/TP proof shown individually</p></div></div>
+<div class="v4-tabs"><strong id="productionTabCount">Checking production exchange positions…</strong></div>
 <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;padding:12px 18px 0;flex-wrap:wrap">
 <strong>GATE.IO PRODUCTION · READ-ONLY POSITION CARDS</strong>
 <button class="btn gloss-action" type="button" id="productionCardsRefresh">↻ Refresh Live Positions</button></div>
@@ -70,10 +70,9 @@ async function refresh(){
    }card.appendChild(controls);cards.appendChild(card);
   }
   status.textContent=mode+' · '+new Date().toLocaleTimeString('en-IN',{timeZone:'Asia/Kolkata'})+
-   ' IST · '+(halted?'HALT / ORDERS OFF':'ORDERS OFF')+
-   ' · Market scanners run independently';
+   ' IST · Market scanners run independently';
  }catch(e){
-  status.textContent='PRODUCTION READBACK UNAVAILABLE — exposure UNKNOWN, protection UNKNOWN, real-money orders OFF';
+  status.textContent='PRODUCTION READBACK UNAVAILABLE — exposure UNKNOWN, protection UNKNOWN; check BOT control';
   count.textContent='Exchange positions not verified';
  }finally{btn.disabled=false;}
 }
@@ -82,7 +81,7 @@ setInterval(()=>{if(!document.hidden)refresh();},30000);
 })();</script>'''
 
 PRODUCTION_BANNER='''<section class="live-ops-banner" aria-label="Production trading preparation">
-<div><strong>GATE.IO FUTURES · PRODUCTION MONITOR</strong><p>Real-money exchange account is read-only. LuxAlgo signals are recorded; automatic live orders are NOT enabled. Native production SL/TP and emergency close have not been verified.</p></div>
+<div><strong>GATE.IO FUTURES · PRODUCTION MONITOR</strong><p>Live market feeds and read-only exchange reconciliation run independently of the BOT switch. Position protection must be exchange verified.</p></div>
 </section>'''
 
 PRODUCTION_CONTROL=''  # Replaced by the single Radar-side production BOT switch.
