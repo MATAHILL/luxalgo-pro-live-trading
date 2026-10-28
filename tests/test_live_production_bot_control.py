@@ -99,4 +99,72 @@ class ProductionBotTests(unittest.TestCase):
                 self.assertFalse(result.json["bot_on"])
                 off.assert_called_once()
 
+    def test_btc_acceptance_status_panel_is_visible_below_original_control(self):
+        html=production_monitor_page(backend.PAGE)
+        self.assertEqual(html.count('id="btcAcceptancePanel"'),1)
+        self.assertEqual(html.count('id="btcAcceptanceRefresh"'),1)
+        self.assertLess(html.index('id="productionBotOff"'),
+                        html.index('id="btcAcceptancePanel"'))
+        self.assertLess(html.index('id="btcAcceptancePanel"'),
+                        html.index('GATE.IO FUTURES RADAR <span'))
+        self.assertIn("NO BOT TEST ORDER RECORDED",html)
+        self.assertIn("EXCHANGE POSITION FOUND",html)
+        self.assertIn("NOT VERIFIED",html)
+        self.assertIn("This panel cannot place orders",html)
+        self.assertIn("'/terminal/acceptance-test/status'",html)
+        self.assertIn("'/terminal/live-execution/snapshot'",html)
+        self.assertEqual(html.count('id="productionBotOn"'),1)
+
+    def test_acceptance_status_endpoint_auth_and_zero_order_evidence(self):
+        with patch.dict(os.environ,{"TERMINAL_PASSWORD":"x"*28,"TERMINAL_USER":"admin"}):
+            client=backend.app.test_client()
+            self.assertEqual(client.get("/terminal/acceptance-test/status").status_code,401)
+            with client.session_transaction() as sess:
+                sess["authenticated"]=True;sess["user"]="admin";sess["csrf_token"]="test-csrf"
+            con=Mock()
+            cursor=Mock()
+            cursor.fetchone.side_effect=[None,None,dict(halted=True)]
+            con.cursor.return_value.__enter__=Mock(return_value=cursor)
+            con.cursor.return_value.__exit__=Mock(return_value=False)
+            with patch.object(backend,"_db_connect",return_value=nullcontext(con)):
+                res=client.get("/terminal/acceptance-test/status")
+            self.assertEqual(res.status_code,200)
+            self.assertEqual(res.json["status"],"NO_BOT_TEST_ORDER_RECORDED")
+            self.assertFalse(res.json["bot_order_recorded"])
+            self.assertFalse(res.json["eligible_btc_long_signal_seen"])
+            self.assertFalse(res.json["exchange_fill_verified"])
+            self.assertFalse(res.json["native_sl_tp_verified"])
+            self.assertTrue(res.json["persistent_emergency_halt"])
+            self.assertFalse(res.json["can_execute"])
+            self.assertEqual(cursor.execute.call_count,3)
+
+    def test_acceptance_ledger_does_not_falsely_certify_a_fill(self):
+        with patch.dict(os.environ,{"TERMINAL_PASSWORD":"x"*28,"TERMINAL_USER":"admin"}):
+            client=backend.app.test_client()
+            with client.session_transaction() as sess:
+                sess["authenticated"]=True;sess["user"]="admin";sess["csrf_token"]="test-csrf"
+            con=Mock();cursor=Mock()
+            row=dict(event_id="f"*20,state="ENTRY_SUBMITTED",contracts=1,
+                     entry_order_id="exchange-order-123",
+                     stop_order_id=None,take_order_id=None,
+                     created_at=datetime.now(timezone.utc),
+                     updated_at=datetime.now(timezone.utc))
+            alert=dict(event_id="f"*20,
+                       received_at=datetime.now(timezone.utc),
+                       source_bar_id="TVBAR_5m_00005977339",
+                       order_type="MARKET",level_status="VALID")
+            cursor.fetchone.side_effect=[row,alert,dict(halted=True)]
+            con.cursor.return_value.__enter__=Mock(return_value=cursor)
+            con.cursor.return_value.__exit__=Mock(return_value=False)
+            with patch.object(backend,"_db_connect",return_value=nullcontext(con)):
+                res=client.get("/terminal/acceptance-test/status")
+            self.assertEqual(res.status_code,200)
+            self.assertTrue(res.json["bot_order_recorded"])
+            self.assertTrue(res.json["eligible_btc_long_signal_seen"])
+            self.assertEqual(res.json["status"],"BOT_LEDGER_PRESENT_EXCHANGE_READBACK_REQUIRED")
+            self.assertFalse(res.json["exchange_fill_verified"])
+            self.assertFalse(res.json["native_sl_tp_verified"])
+            self.assertFalse(res.json["can_execute"])
+
+
 if __name__=="__main__":unittest.main()
