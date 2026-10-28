@@ -5383,7 +5383,8 @@ def terminal_incoming_signals():
                     cutoff=_incoming_visible_since(cur)
                     cur.execute("""SELECT p.event_id,p.received_at,p.symbol,p.side,p.timeframe,
                            l.status AS level_status,l.entry_price,l.stop_loss,l.take_profit,
-                           o.order_type
+                           o.order_type,h.source_bar_id,
+                           h.order_type AS handoff_order_type
                         FROM (
                            SELECT DISTINCT ON (event_id)
                                event_id,received_at,symbol,side,timeframe
@@ -5393,21 +5394,38 @@ def terminal_incoming_signals():
                         ) p
                         LEFT JOIN luxalgo_signal_levels l ON l.event_id=p.event_id
                         LEFT JOIN luxalgo_signal_order_types o ON o.event_id=p.event_id
+                        LEFT JOIN luxalgo_live_signal_handoff h ON h.event_id=p.event_id
                         ORDER BY p.received_at DESC LIMIT 25""",(cutoff,))
                     rows=cur.fetchall()
             signals=[]
             for r in rows:
                 level=r['level_status'] or 'MISSING'
-                reason=('Recorded LuxAlgo alert; real-money execution disabled until native SL/TP and recovery are verified'
-                        if level=='VALID' else
-                        'Alert stored but entry, stop or target levels are missing/invalid; no exchange order')
+                has_handoff=bool(r['handoff_order_type'])
+                stable_bar=bool(r['source_bar_id'])
+                declared_market=(r['order_type']=='MARKET' and r['handoff_order_type']=='MARKET')
+                if not has_handoff:
+                    qualification='NO_LIVE_HANDOFF'
+                    reason='Webhook receipt saved, but no verified live handoff record; signal only'
+                elif level!='VALID':
+                    qualification='INVALID_OR_MISSING_LEVELS'
+                    reason='Entry, stop or target levels are missing/invalid; no exchange order'
+                elif not stable_bar:
+                    qualification='MISSING_STABLE_BAR_ID'
+                    reason='Missing TradingView completed-bar identity (tv_bar_id or bar time); signal only'
+                elif not declared_market:
+                    qualification='MISSING_MARKET_DECLARATION'
+                    reason='Valid bar but MARKET order type missing or inconsistent; signal only'
+                else:
+                    qualification='QUALIFIED_SIGNAL_EXECUTION_LOCKED'
+                    reason='Qualified LuxAlgo signal received; live order execution source-locked pending acceptance'
                 signals.append(dict(event_id=r['event_id'],time=r['received_at'].isoformat(),
                      symbol=r['symbol'],side=r['side'],timeframe=r['timeframe'],
                      entry=str(r['entry_price']) if r['entry_price'] is not None else None,
                      stop_loss=str(r['stop_loss']) if r['stop_loss'] is not None else None,
                      take_profit=str(r['take_profit']) if r['take_profit'] is not None else None,
                      order_type=r['order_type'] or 'UNDECLARED',state='NOT EXECUTED',
-                     status_label='NOT EXECUTED',reason=reason,level_status=level))
+                     status_label='NOT EXECUTED',reason=reason,level_status=level,
+                     source_bar_verified=stable_bar,execution_qualification=qualification))
             response=jsonify(signals=signals,count=len(signals),display_limit=25,
                              display_since=cutoff.isoformat(),mode='PRODUCTION_SIGNAL_ONLY',
                              live_trading=False,orders_enabled=False,
