@@ -81,62 +81,78 @@ setInterval(()=>{if(!document.hidden)refresh();},30000);
 })();</script>'''
 
 PRODUCTION_BANNER='''<section class="live-ops-banner" aria-label="Production trading preparation">
-<div><strong>GATE.IO FUTURES · PRODUCTION MONITOR</strong><p>Live market feeds and read-only exchange reconciliation run independently of the BOT switch. Position protection must be exchange verified.</p></div>
-</section>'''
+<div><strong>GATE.IO FUTURES · PRODUCTION MONITOR</strong><p>Live market feeds and read-only exchange reconciliation run independently of BOT ON/OFF. Position protection must be exchange verified.</p></div>
+<span class="live-ops-state">LIVE ORDERS OFF</span></section>'''
 
-PRODUCTION_CONTROL=''  # Replaced by the single Radar-side production BOT switch.
+PRODUCTION_CONTROL='''<section class="bot-control-panel" aria-label="Production bot control">
+<div><div class="bot-status-line"><strong id="productionBotLabel">PRODUCTION BOT · OFF</strong>
+<span id="productionBotIndicator" class="bot-state-indicator off" role="status" aria-live="polite">● EXECUTION OFF</span></div>
+<p id="productionBotDetail" role="status" aria-live="polite">Checking production execution safety state…</p></div>
+<div class="bot-control-actions">
+<button class="btn" id="productionBotOn" type="button" aria-pressed="false">▶ BOT ON</button>
+<button class="btn" id="productionBotOff" type="button" aria-pressed="true">■ BOT OFF</button>
+</div></section>'''
 
-
-PRODUCTION_BOT_WIDGET=r'''<div class="prod-radar-bot" aria-label="Production operator bot control">
-<label for="productionBotSwitch" class="prod-radar-bot-label">BOT CONTROL</label>
-<button type="button" id="productionBotSwitch" role="switch" aria-checked="false"
-        aria-label="Toggle production bot ON or OFF" disabled>BOT OFF</button>
-<span class="prod-radar-bot-detail" id="productionBotDetail" role="status" aria-live="polite">Checking server safety state…</span>
-</div>'''
-
+# Keep the original separate control panel above Radar, with original two-button
+# appearance and both banner/state indicators. Never route it to retired Testnet.
 PRODUCTION_BOT_SCRIPT=r'''<script>(function(){'use strict';
-const sw=document.getElementById('productionBotSwitch'),
+const on=document.getElementById('productionBotOn'),
+      off=document.getElementById('productionBotOff'),
+      label=document.getElementById('productionBotLabel'),
+      indicator=document.getElementById('productionBotIndicator'),
       detail=document.getElementById('productionBotDetail');
-if(!sw||!detail)return;
+if(!on||!off||!label||!indicator||!detail)return;
 let busy=false,actualOn=false;
 const url='/terminal/production-bot-control';
 function display(state){
- const on=state&&state.bot_on===true;
- actualOn=on;sw.disabled=false;sw.setAttribute('aria-checked',String(on));
- sw.textContent=on?'BOT ON':'BOT OFF';
- sw.classList.toggle('enabled',on);
- const reason=String(state?.reason||state?.error||'EXECUTION STATUS UNKNOWN');
- detail.textContent=on?'Automatic entries permitted · Gate.io LIVE':
-     'New entries blocked · '+reason.replaceAll('_',' ');
+ const enabled=state&&state.bot_on===true;
+ actualOn=enabled;
+ label.textContent=enabled?'PRODUCTION BOT · ON':'PRODUCTION BOT · OFF';
+ indicator.textContent=enabled?'● EXECUTION ON':'● EXECUTION OFF';
+ indicator.className='bot-state-indicator '+(enabled?'on':'off');
+ on.setAttribute('aria-pressed',String(enabled));
+ off.setAttribute('aria-pressed',String(!enabled));
+ on.disabled=enabled;off.disabled=!enabled;
+ detail.textContent=enabled?'Automatic entries permitted · Gate.io live Futures':
+  'New entries paused · '+String(state?.reason||state?.error||'Unverified safety state').replaceAll('_',' ');
 }
 async function refresh(){
  if(busy)return;
  try{
-  const response=await fetch(url,{cache:'no-store',credentials:'same-origin'});
-  const state=await response.json();
-  if(!response.ok)throw Error(state.error||'Server-side state unavailable');
+  const resp=await fetch(url,{cache:'no-store',credentials:'same-origin'});
+  const state=await resp.json();
+  if(!resp.ok)throw Error(state.error||'Server-side state unavailable');
   display(state);
  }catch(e){
-  actualOn=false;sw.disabled=true;sw.setAttribute('aria-checked','false');
-  sw.textContent='BOT OFF';detail.textContent='Execution state unverified · BOT OFF';
+  actualOn=false;on.disabled=true;off.disabled=false;
+  label.textContent='PRODUCTION BOT · OFF';
+  indicator.textContent='● EXECUTION OFF';
+  indicator.className='bot-state-indicator off';
+  detail.textContent='Execution state unverified · no new orders';
  }
 }
-sw.addEventListener('click',async()=>{
- if(busy)return;busy=true;sw.disabled=true;
- const desired=!actualOn;
- detail.textContent=desired?'Checking all mandatory ON gates…':'Persisting OFF / emergency HALT…';
+async function update(enabled){
+ if(busy)return;
+ busy=true;on.disabled=true;off.disabled=true;
+ detail.textContent=enabled?'Verifying production safety gates…':'Persisting BOT OFF / emergency HALT…';
  try{
   const csrf=document.querySelector('input[name="csrf_token"]')?.value;
   if(!csrf)throw Error('Session CSRF unavailable');
-  const response=await fetch(url,{method:'POST',credentials:'same-origin',
-     cache:'no-store',headers:{'Content-Type':'application/json','X-Terminal-CSRF':csrf},
-     body:JSON.stringify({enabled:desired})});
-  const state=await response.json();
+  const resp=await fetch(url,{method:'POST',credentials:'same-origin',cache:'no-store',
+    headers:{'Content-Type':'application/json','X-Terminal-CSRF':csrf},
+    body:JSON.stringify({enabled})});
+  const state=await resp.json();
   display(state);
-  if(!response.ok)detail.textContent='BOT OFF · '+String(state.reason||state.error||'Authorization denied').replaceAll('_',' ');
- }catch(e){detail.textContent='BOT OFF · update not verified';}
- finally{busy=false;await refresh();}
-});
+  if(!resp.ok)detail.textContent='BOT ON denied · '+String(state.reason||state.error||'Safety gates not passed').replaceAll('_',' ');
+ }catch(e){
+  label.textContent='PRODUCTION BOT · OFF';
+  indicator.textContent='● EXECUTION OFF';
+  indicator.className='bot-state-indicator off';
+  detail.textContent='Execution request not confirmed · BOT OFF';
+ }finally{busy=false;await refresh();}
+}
+on.addEventListener('click',()=>update(true));
+off.addEventListener('click',()=>update(false));
 refresh();setInterval(()=>{if(!document.hidden)refresh();},15000);
 })();</script>'''
 
@@ -151,14 +167,11 @@ body.production-view #paperClosedHistoryPanel,
 body.production-view #v4RecentWrapper,
 body.production-view #v4LegacyGateHost,
 body.production-view #v4LegacyPaperHost{display:none!important}
-body.production-view .prod-radar-bot{display:flex;align-items:center;gap:7px;flex-wrap:wrap;margin-right:12px;min-width:220px}
-body.production-view .prod-radar-bot-label{font-size:10px;font-weight:900;color:#b7d8ef;white-space:nowrap}
-body.production-view #productionBotSwitch{border:1px solid #fa9a9a;background:#6a2440;color:#fff;
- border-radius:14px;padding:7px 13px;font:900 12px system-ui,Arial;cursor:pointer;min-width:88px}
-body.production-view #productionBotSwitch.enabled{border-color:#73e1a6;background:#126d48}
-body.production-view #productionBotSwitch:disabled{cursor:wait;opacity:.65}
-body.production-view .prod-radar-bot-detail{font-size:10px;color:#ffe0a4;max-width:245px}
-@media(max-width:640px){body.production-view .prod-radar-bot{width:100%;margin:0 0 9px}}
+/* Restore original stand-alone ON and OFF button panel, above Radar. */
+body.production-view .bot-control-panel{display:flex!important;justify-content:space-between;gap:12px;align-items:center;flex-wrap:wrap}
+body.production-view #productionBotOn{color:#eefff5;border:1px solid #6effb6;background:linear-gradient(160deg,#5ff3ae,#16aa68 48%,#086c44 50%,#20c87f 100%)}
+body.production-view #productionBotOff{color:#fff0f0;border:1px solid #ff8da3;background:linear-gradient(160deg,#ff8ba4,#de335e 48%,#921f3e 50%,#e84b72 100%)}
+body.production-view .bot-control-actions .btn:disabled{opacity:.38;cursor:not-allowed}
 body.production-view .production-position-cards{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;padding:12px 16px 17px}
 body.production-view .production-position-card{border:1px solid #355a7b;background:linear-gradient(145deg,#142d49,#0a1d32);border-radius:12px;padding:14px;min-width:0}
 body.production-view .production-position-card .v4-trade-top{display:flex;gap:10px;align-items:center}
@@ -189,12 +202,7 @@ def production_monitor_page(page):
     out,n=re.subn(r'<section class="bot-control-panel"[^>]*>.*?</section>',
                   lambda _:PRODUCTION_CONTROL,out,count=1,flags=re.S)
     if n!=1:raise ValueError("Missing bot control banner")
-    # Place the only production BOT control immediately left of Futures Radar.
-    radar='<section class="panel market-panel"><div class="panel-heading"><h2>GATE.IO FUTURES RADAR'
-    if out.count(radar)!=1:raise ValueError("Futures Radar heading missing")
-    out=out.replace(radar,
-        '<section class="panel market-panel"><div class="panel-heading">'+
-        PRODUCTION_BOT_WIDGET+'<h2>GATE.IO FUTURES RADAR',1)
+    # Keep the Radar heading unchanged; BOT buttons are above in the old panel.
     if out.count('</body>')!=1:raise ValueError("Dashboard closing body missing")
     out=out.replace('</body>',PRODUCTION_BOT_SCRIPT+'</body>',1)
     out=out.replace('<section class="panel" id="v4Workspace"',
