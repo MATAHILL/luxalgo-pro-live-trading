@@ -74,12 +74,23 @@ def require_full_entry_readback(client,plan,entry_ack):
     return order_id,snap
 
 def full_close_oneway_order(plan):
-    """Reduce/close only, never a reversing market order in single mode."""
+    """Single/hedge-mode one-shot reduce-only emergency close.
+
+    Exact Gate account mode must be independently verified before constructing.
+    """
     if plan.get("side") not in ("LONG","SHORT"):
         raise LiveSafetyError("Unknown emergency close direction")
-    return {"contract":plan["contract"],"size":0,"close":True,
-            "reduce_only":True,"price":"0","tif":"ioc",
-            "text":"t-em-" + plan["client_text"][2:26]}
+    mode=plan.get("position_mode")
+    if mode not in ("single","dual"):
+        raise LiveSafetyError("Emergency close requires verified account position mode")
+    order={"contract":plan["contract"],"size":0,"reduce_only":True,
+           "price":"0","tif":"ioc",
+           "text":"t-em-" + plan["client_text"][2:25]}
+    if mode=="single":
+        order["close"]=True
+    else:
+        order["auto_size"]="close_long" if plan["side"]=="LONG" else "close_short"
+    return order
 
 def emergency_close_once(client,plan):
     """At most one close attempt; ambiguous response requires manual exchange review."""
@@ -234,6 +245,9 @@ def process_stored_luxalgo_alert(open_connection,event_id,client=None):
     # Contract metadata and balance are checked against the live exchange,
     # never inferred from TradingView or a scanner ranking.
     snap=client.snapshot()
+    verified_mode=snap["account"].get("position_mode")
+    if verified_mode not in ("single","dual"):
+        raise LiveSafetyError("Authenticated live position mode unknown or unsupported")
     meta=client.request("GET",PREFIX+"/contracts/"+contract)
     if not isinstance(meta,dict):
         raise LiveSafetyError("Live contract metadata invalid")
@@ -243,7 +257,8 @@ def process_stored_luxalgo_alert(open_connection,event_id,client=None):
                     side=row["side"],timeframe=row["timeframe"],
                     levels_status=row["level_status"],entry=row["entry_price"],
                     sl=row["stop_loss"],tp=row["take_profit"],
-                    received_epoch=int(row["received_at"].timestamp()),leverage=5),
+                    received_epoch=int(row["received_at"].timestamp()),
+                    position_mode=verified_mode,leverage=5),
                     meta,snap["account"].get("total"),snap["account"].get("available"),
                     snap["positions"],reserved_risk=used)
     return execute_confirmed_signal(open_connection,plan,client)
