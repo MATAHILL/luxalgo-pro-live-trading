@@ -5805,8 +5805,11 @@ def _scan_http_json(path):
     Market data is independent of account authentication and both order switches.
     Testnet endpoints are never consulted. Any unavailable feed fails explicitly.
     """
-    if not path.startswith('/api/v4/futures/usdt/') or '\\' in path:
-        raise ValueError('Only live USDT futures public paths are permitted')
+    parsed=urlsplit(path)
+    if (parsed.scheme or parsed.netloc or parsed.fragment or
+        parsed.path not in ('/api/v4/futures/usdt/tickers',
+                            '/api/v4/futures/usdt/candlesticks')):
+        raise ValueError('Only approved live USDT futures public feeds are permitted')
     last_error = None
     for host in ('https://api.gateio.ws', 'https://fx-api.gateio.ws'):
         req = Request(host + path, headers={
