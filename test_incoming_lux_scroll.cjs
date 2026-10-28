@@ -1,0 +1,22 @@
+// Incoming LuxAlgo UI regression: scroll after about ten while retaining 25 backend receipts.
+'use strict';
+const fs=require('node:fs'),assert=require('node:assert/strict');
+const app=fs.readFileSync('app.py','utf8');
+const start=app.indexOf("PAGE = '''");
+const end=app.indexOf("'''",start+10);
+assert(start>=0&&end>start,'Original terminal page missing');
+const page=app.slice(start,end);
+assert(page.includes('id="incomingLuxPanel"'),'Incoming LuxAlgo panel missing');
+assert(page.includes('id="incomingLuxScroll"'),'Vertical scroll viewport missing');
+assert(page.includes('class="tablewrap incoming-lux-scroll"'),'Compact scroll region not applied');
+assert(page.includes('max-height:535px;overflow-y:auto;overflow-x:auto'),'Vertical scrolling and horizontal compatibility missing');
+assert(page.includes('position:sticky;top:0'),'Sticky table header missing');
+assert(page.includes('first 10 rows; scroll down for the rest'),'Scroll instructions missing');
+assert(page.includes('scrollArea.scrollTop=0'),'Status-filter scroll reset missing');
+assert(page.includes('id="incomingLuxClear"'),'Existing visible-reset button must stay');
+assert(page.includes('id="v4PaperCards"'),'Original protected position cards must stay');
+assert(page.includes('Testnet automatic execution PAUSED; webhook stored'),'Disabled worker must not masquerade as failed order');
+assert(app.includes("ORDER BY i.received_at DESC LIMIT 25"),'Backend must retain 25 latest signals');
+assert(app.includes("luxalgo_incoming_display_reset"),'Safety-preserving visible history reset missing');
+assert(!app.includes("DELETE FROM luxalgo_dry_run_intents"),'Webhook audit must never be deleted');
+console.log('PASS: incoming LuxAlgo 25 records, ten-row scroll, sticky header, clearing without journal deletion');
