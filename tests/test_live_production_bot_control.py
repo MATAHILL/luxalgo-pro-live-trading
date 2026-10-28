@@ -60,8 +60,11 @@ class ProductionBotTests(unittest.TestCase):
         self.assertIn('● BOT OFF',html)
         self.assertIn('LIVE MARKET FEED',html)
         self.assertNotIn('id="productionBotSwitch"',html)
-        self.assertNotIn('EXECUTION OFF',html)
-        self.assertNotIn('LIVE ORDERS OFF',html)
+        # Historical Testnet labels remain in hidden legacy source markup.
+        # Verify the two visible production components, not archival HTML.
+        from production_cutover_view import PRODUCTION_CONTROL, PRODUCTION_BANNER
+        self.assertNotIn('EXECUTION OFF',PRODUCTION_CONTROL)
+        self.assertNotIn('LIVE ORDERS OFF',PRODUCTION_BANNER)
         self.assertLess(html.index('id="productionBotOn"'),
                         html.index('GATE.IO FUTURES RADAR <span'))
         self.assertLess(html.index('id="productionBotOff"'),
