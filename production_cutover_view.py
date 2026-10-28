@@ -114,6 +114,15 @@ def production_monitor_page(page):
     if n!=1:raise ValueError("Missing bot control banner")
     out=out.replace('<section class="panel" id="v4Workspace"',
                     PRODUCTION_CARDS+'\n<section class="panel" id="v4Workspace"',1)
+    # Remove legacy TESTNET panels from the rendered production page entirely.
+    # Original PAGE and authenticated /terminal/legacy-testnet remain intact
+    # for active exchange-side protection/recovery until positions are flat.
+    for tag,anchor in (("section","v4Workspace"),("section","testnetReadinessPanel"),
+                       ("details","gateTestnetPositionPanel"),("details","testnetOrdersPanel")):
+        pattern=r'<'+tag+r'\\b[^>]*\\bid="'+anchor+r'"[^>]*>.*?</'+tag+r'>'
+        out,removed=re.subn(pattern,"",out,count=1,flags=re.S)
+        if removed!=1:
+            raise ValueError("Legacy panel missing: "+anchor)
     # Signals are STILL received and recorded, but no production order
     # execution or Testnet card status may be inferred from their receipt.
     out=out.replace('Fresh LuxAlgo signals only, after your saved dashboard reset. LIVE requires an open Gate.io Testnet position with reverified exchange-side TP/SL; CLOSED requires a verified closing journal. Unexecuted or uncertain calls are never labeled LIVE. Real-money trading OFF.',
