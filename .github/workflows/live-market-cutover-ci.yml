@@ -3,6 +3,8 @@ name: Live Futures Market Dashboard Regression
 on:
   push:
     branches: [main, live-execution-dev]
+  pull_request:
+    branches: [main]
   workflow_dispatch:
 
 permissions:
