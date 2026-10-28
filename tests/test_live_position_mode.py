@@ -1,7 +1,8 @@
 """Gate.io verified hedge-mode protective orders: no exchange writes."""
 import unittest
 from live_futures_engine import (
-    build_plan,build_protective_trigger,evaluate_protection,LiveSafetyError)
+    build_plan,build_protective_trigger,evaluate_protection,LiveSafetyError,
+    verified_account_equity,build_entry_order)
 from live_execution_orchestrator import full_close_oneway_order
 NOW=1800000000
 CONTRACT={"name":"BTC_USDT","quanto_multiplier":"0.0001","order_size_min":1,"order_size_max":100000}
@@ -52,5 +53,27 @@ class ModeProtection(unittest.TestCase):
         self.assertEqual(p["position_mode"],"dual")
         self.assertGreaterEqual(p["contracts"],1)
         self.assertFalse(p["verified_live_order"])
+
+    def test_real_contract_minimum_cannot_bypass_risk_cap(self):
+        s=dict(event_id="tv-too-wide-stop-0001",contract="BTC_USDT",
+               side="LONG",timeframe="5m",levels_status="VALID",
+               position_mode="dual",received_epoch=NOW,leverage=5,
+               entry="81502.24",sl="76000",tp="90000")
+        with self.assertRaisesRegex(LiveSafetyError,"Insufficient margin/risk"):
+            build_plan(s,CONTRACT,"70.00000001","70.00000001",[],now=NOW)
+
+    def test_negative_unrealized_pnl_reduces_risk_equity(self):
+        equity,available=verified_account_equity(dict(
+            currency="USDT",total="70",unrealised_pnl="-10",available="55",
+            position_mode="dual"))
+        self.assertEqual(str(equity),"60")
+        self.assertEqual(str(available),"55")
+
+    def test_source_locked_order_has_bounded_slippage(self):
+        p=plan()
+        self.assertEqual(build_entry_order(p)["market_order_slip_ratio"],"0.001")
+        p["max_entry_slippage_ratio"]="0.02"
+        with self.assertRaisesRegex(LiveSafetyError,"slippage"):
+            build_entry_order(p)
 
 if __name__=="__main__":unittest.main()
