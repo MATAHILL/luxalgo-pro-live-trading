@@ -119,7 +119,7 @@ def production_monitor_page(page):
     # for active exchange-side protection/recovery until positions are flat.
     for tag,anchor in (("section","v4Workspace"),("section","testnetReadinessPanel"),
                        ("details","gateTestnetPositionPanel"),("details","testnetOrdersPanel")):
-        pattern=r'<'+tag+r'\\b[^>]*\\bid="'+anchor+r'"[^>]*>.*?</'+tag+r'>'
+        pattern=r'<'+tag+r'\b[^>]*\bid="'+anchor+r'"[^>]*>.*?</'+tag+r'>'
         out,removed=re.subn(pattern,"",out,count=1,flags=re.S)
         if removed!=1:
             raise ValueError("Legacy panel missing: "+anchor)
