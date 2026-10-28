@@ -2146,29 +2146,33 @@ def terminal_receipt_cursor():
 
 @app.get('/')
 def home():
+    """Keep the original complete LuxAlgo PRO dashboard at its familiar URL."""
     if not _terminal_permitted():
         return _terminal_guard()
-    from live_preparation_terminal import live_preparation_mode, LIVE_PREPARATION_PAGE
-    if live_preparation_mode():
-        response=Response(render_template_string(
-            LIVE_PREPARATION_PAGE,csrf_token=session.get('csrf_token','')),
-            mimetype='text/html')
-        response.headers['Cache-Control']='private, no-store'
-        response.headers['X-Frame-Options']='DENY'
-        response.headers['X-Content-Type-Options']='nosniff'
-        return response
     return _render_legacy_home()
 
 
 @app.get('/terminal/legacy-testnet')
 def terminal_legacy_testnet():
-    """Private historical terminal; needed until open Testnet exposure is flat."""
+    """Backward-compatible old-dashboard link; browser login, never raw JSON."""
     if not _terminal_permitted():
-        return _terminal_guard()
-    from live_preparation_terminal import live_preparation_mode
-    if not live_preparation_mode():
-        return redirect('/',code=303)
-    return _render_legacy_home()
+        return redirect(url_for('terminal_login', next=request.path),code=303)
+    return redirect('/',code=303)
+
+
+@app.get('/terminal/live-preparation')
+def terminal_live_preparation():
+    """Optional read-only production preparation view, separate from main UI."""
+    if not _terminal_permitted():
+        return redirect(url_for('terminal_login', next=request.path),code=303)
+    from live_preparation_terminal import LIVE_PREPARATION_PAGE
+    response=Response(render_template_string(
+        LIVE_PREPARATION_PAGE,csrf_token=session.get('csrf_token','')),
+        mimetype='text/html')
+    response.headers['Cache-Control']='private, no-store'
+    response.headers['X-Frame-Options']='DENY'
+    response.headers['X-Content-Type-Options']='nosniff'
+    return response
 
 
 def _render_legacy_home():
