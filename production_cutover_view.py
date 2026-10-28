@@ -116,27 +116,29 @@ const status=document.getElementById('btcAcceptanceExecution'),
  checked=document.getElementById('btcAcceptanceChecked'),
  refresh=document.getElementById('btcAcceptanceRefresh');
 if(!status||!signal||!fill||!protection||!reason||!checked||!refresh)return;
-async function get(url){
- const r=await fetch(url,{credentials:'same-origin',cache:'no-store'});
- if(!r.ok)throw Error('Read-only server verification unavailable');
- return await r.json();
+async function get(url,timeoutMs){
+ const controller=new AbortController(), timer=setTimeout(()=>controller.abort(),timeoutMs);
+ try{
+  const r=await fetch(url,{credentials:'same-origin',cache:'no-store',signal:controller.signal});
+  if(!r.ok)throw Error('Read-only server verification unavailable');
+  return await r.json();
+ }finally{clearTimeout(timer);}
 }
 let busy=false;
 async function update(){
  if(busy)return;busy=true;refresh.disabled=true;
- status.textContent='CHECKING BOT LEDGER…';
- signal.textContent='CHECKING SOURCE…';
- fill.textContent='NOT VERIFIED';protection.textContent='NOT VERIFIED';
- reason.textContent='Requesting authenticated production evidence (read only).';
- checked.textContent='Exchange reconciliation timestamp: not verified';
+ // Preserve the last verified result during periodic refresh; never replace it
+ // with permanent-looking spinner labels while exchange reconciliation is slow.
+ if(status.textContent==='CHECKING BOT LEDGER…')status.textContent='VERIFYING BOT LEDGER…';
+ if(signal.textContent==='CHECKING SOURCE…')signal.textContent='VERIFYING SIGNAL…';
+ reason.textContent='Checking latest audit; exchange reconciliation may take longer.';
  try{
-  const [auditResult,exchangeResult,botResult]=await Promise.allSettled([
-   get('/terminal/acceptance-test/status'),
-   get('/terminal/live-execution/snapshot'),
-   get('/terminal/production-bot-control')]);
-  const audit=auditResult.status==='fulfilled'?auditResult.value:null;
-  const exchange=exchangeResult.status==='fulfilled'?exchangeResult.value:null;
-  const bot=botResult.status==='fulfilled'?botResult.value:null;
+  // Each request is independently bounded. Audit/signal statuses update as soon
+  // as the DB audit returns, without blocking on Gate.io order readback.
+  const auditPromise=get('/terminal/acceptance-test/status',8000).catch(()=>null);
+  const exchangePromise=get('/terminal/live-execution/snapshot',12000).catch(()=>null);
+  const botPromise=get('/terminal/production-bot-control',8000).catch(()=>null);
+  const audit=await auditPromise;
   if(!audit){
    status.textContent='UNVERIFIED — AUDIT UNAVAILABLE';
    signal.textContent='UNVERIFIED';
@@ -147,6 +149,9 @@ async function update(){
    'NO BOT TEST ORDER RECORDED':'LEDGER PRESENT · VERIFY EXCHANGE';
   signal.textContent=audit.eligible_btc_long_signal_seen===true?
    'HISTORICAL QUALIFIED SIGNAL RECORDED':'NO QUALIFIED BTC LONG SIGNAL';
+  reason.textContent='Bot ledger and source audit updated · verifying Gate.io independently…';
+  const exchange=await exchangePromise;
+  const bot=await botPromise;
   if(!exchange||!Array.isArray(exchange.positions)){
    fill.textContent='UNKNOWN — EXCHANGE READBACK FAILED';
    protection.textContent='UNKNOWN — EXCHANGE READBACK FAILED';
