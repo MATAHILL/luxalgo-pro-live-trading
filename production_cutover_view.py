@@ -82,11 +82,11 @@ setInterval(()=>{if(!document.hidden)refresh();},30000);
 
 PRODUCTION_BANNER='''<section class="live-ops-banner" aria-label="Production trading preparation">
 <div><strong>GATE.IO FUTURES · PRODUCTION MONITOR</strong><p>Live market feeds and read-only exchange reconciliation run independently of BOT ON/OFF. Position protection must be exchange verified.</p></div>
-<span class="live-ops-state">LIVE ORDERS OFF</span></section>'''
+<span class="live-ops-state">LIVE MARKET FEED</span></section>'''
 
 PRODUCTION_CONTROL='''<section class="bot-control-panel" aria-label="Production bot control">
 <div><div class="bot-status-line"><strong id="productionBotLabel">PRODUCTION BOT · OFF</strong>
-<span id="productionBotIndicator" class="bot-state-indicator off" role="status" aria-live="polite">● EXECUTION OFF</span></div>
+<span id="productionBotIndicator" class="bot-state-indicator off" role="status" aria-live="polite">● BOT OFF</span></div>
 <p id="productionBotDetail" role="status" aria-live="polite">Checking production execution safety state…</p></div>
 <div class="bot-control-actions">
 <button class="btn" id="productionBotOn" type="button" aria-pressed="false">▶ BOT ON</button>
@@ -108,7 +108,7 @@ function display(state){
  const enabled=state&&state.bot_on===true;
  actualOn=enabled;
  label.textContent=enabled?'PRODUCTION BOT · ON':'PRODUCTION BOT · OFF';
- indicator.textContent=enabled?'● EXECUTION ON':'● EXECUTION OFF';
+ indicator.textContent=enabled?'● BOT ON':'● BOT OFF';
  indicator.className='bot-state-indicator '+(enabled?'on':'off');
  on.setAttribute('aria-pressed',String(enabled));
  off.setAttribute('aria-pressed',String(!enabled));
@@ -126,7 +126,7 @@ async function refresh(){
  }catch(e){
   actualOn=false;on.disabled=true;off.disabled=false;
   label.textContent='PRODUCTION BOT · OFF';
-  indicator.textContent='● EXECUTION OFF';
+  indicator.textContent='● BOT OFF';
   indicator.className='bot-state-indicator off';
   detail.textContent='Execution state unverified · no new orders';
  }
@@ -146,7 +146,7 @@ async function update(enabled){
   if(!resp.ok)detail.textContent='BOT ON denied · '+String(state.reason||state.error||'Safety gates not passed').replaceAll('_',' ');
  }catch(e){
   label.textContent='PRODUCTION BOT · OFF';
-  indicator.textContent='● EXECUTION OFF';
+  indicator.textContent='● BOT OFF';
   indicator.className='bot-state-indicator off';
   detail.textContent='Execution request not confirmed · BOT OFF';
  }finally{busy=false;await refresh();}
