@@ -179,4 +179,29 @@ class ProductionBotTests(unittest.TestCase):
                         html.index('const exchange=await exchangePromise'))
         self.assertIn("Preserve the last verified result",html)
 
+
+    def test_ready_requires_production_safety_schema_not_only_old_testnet_tables(self):
+        client=backend.app.test_client()
+        con=Mock();cur=Mock()
+        con.cursor.return_value.__enter__=Mock(return_value=cur)
+        con.cursor.return_value.__exit__=Mock(return_value=False)
+        good=dict(receipts=True,intents=True,control=True,halt=True,
+                  live_handoff=True,signal_levels=True,prod_halt=True,
+                  prod_ledger=True,prod_operator=True,prod_certification=True)
+        with patch.object(backend,"_db_connect",return_value=nullcontext(con)):
+            cur.fetchone.return_value=dict(good,prod_halt=False)
+            failed=client.get("/ready")
+            self.assertEqual(failed.status_code,503)
+            self.assertFalse(failed.json["orders_enabled"])
+            self.assertFalse(failed.json["live_trading"])
+            cur.fetchone.return_value=good
+            passed=client.get("/ready")
+            self.assertEqual(passed.status_code,200)
+            self.assertFalse(passed.json["orders_enabled"])
+            self.assertFalse(passed.json["live_trading"])
+        sql=cur.execute.call_args.args[0]
+        for marker in ("luxalgo_prod_execution_control","luxalgo_prod_execution_ledger",
+                       "luxalgo_prod_bot_operator_control","luxalgo_prod_activation_certification"):
+            self.assertIn(marker,sql)
+
 if __name__=="__main__":unittest.main()
