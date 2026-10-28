@@ -5957,6 +5957,7 @@ def terminal_radar():
         response.headers['Cache-Control'] = 'private, max-age=10'
         return response
     except (HTTPError,URLError,OSError,TimeoutError,ValueError,TypeError):
+        app.logger.warning('Radar ticker feed unavailable', exc_info=True)
         return jsonify(error='Gate.io ticker data unavailable'),502
 
 
@@ -6003,7 +6004,10 @@ def _scan_one_pair(symbol,tf,change):
 
 def _run_scan(tf):
     try:
-        tickers = _radar_data()['results']
+        # Scan a bounded, liquidity-ranked universe; unbounded all-contract scans
+        # caused long stalls and exchange rate-limit failures on the dashboard.
+        all_tickers = _radar_data()['results']
+        tickers = sorted(all_tickers, key=lambda item: item['volume'], reverse=True)[:36]
         with _scan_state_lock:
             _scan_state[tf]['total'] = len(tickers)
         # Bounded concurrency avoids excessive simultaneous exchange requests.
@@ -6019,7 +6023,7 @@ def _run_scan(tf):
                     with _scan_state_lock:
                         _scan_state[tf]['failed'] += 1
     except (HTTPError,URLError,TimeoutError,OSError,KeyError,ValueError,TypeError):
-        app.logger.warning('Technical scanner could not access market data')
+        app.logger.warning('Technical scanner could not access market data', exc_info=True)
     finally:
         with _scan_state_lock:
             _scan_state[tf]['running'] = False
