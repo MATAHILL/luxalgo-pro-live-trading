@@ -186,8 +186,18 @@ def build_plan(signal, metadata, equity, available, positions, reserved_risk=0, 
     budget=min(eq*PER_ENTRY_RISK,eq*MAX_AGGREGATE_RISK-reserve)
     if budget<=0:
         raise LiveSafetyError("Aggregate risk exhausted")
-    # Per-contract loss in USDT: abs(entry - stop) * quote-unit multiplier.
-    unit_loss=abs(e-s)*multiplier
+    # Model stop-distance loss PLUS two taker fees and two 0.1% slippage
+    # allowances per contract. This remains a modeled bound: a gap or
+    # liquidation can exceed it. Never treat this as guaranteed max loss.
+    fee=dec(metadata.get("taker_fee_rate"),"exchange taker fee rate")
+    if fee>Decimal("0.01"):
+        raise LiveSafetyError("Exchange taker fee exceeds modeled ceiling")
+    slip=dec(signal.get("max_entry_slippage_ratio","0.001"),"allowed slippage")
+    if slip>Decimal("0.001"):
+        raise LiveSafetyError("Slippage exceeds 0.10% acceptance ceiling")
+    unit_stop_loss=abs(e-s)*multiplier
+    unit_fee_slip=(e*multiplier)*(2*fee+2*slip)
+    unit_loss=unit_stop_loss+unit_fee_slip
     units_by_risk=(budget/unit_loss).to_integral_value(rounding=ROUND_FLOOR)
     units_by_margin=(av*lev/(e*multiplier)).to_integral_value(rounding=ROUND_FLOOR)
     count=min(units_by_risk,units_by_margin,order_size_max)
@@ -199,6 +209,10 @@ def build_plan(signal, metadata, equity, available, positions, reserved_risk=0, 
     return dict(event_id=event,client_text=text,contract=contract,side=side,timeframe=tf,
                 contracts=int(count),entry=str(e),sl=str(s),tp=str(t),
                 estimated_risk_usdt=str(risk),risk_cap_usdt=str(budget),
+                risk_includes_modeled_taker_fees_and_slippage=True,
+                modeled_stop_risk_usdt=str(count*unit_stop_loss),
+                modeled_fee_slippage_usdt=str(count*unit_fee_slip),
+                max_entry_slippage_ratio=str(slip),
                 leverage=str(lev),position_mode=position_mode,verified_live_order=False)
 
 def build_entry_order(plan):
