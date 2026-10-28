@@ -2655,11 +2655,12 @@ def webhook():
     if declared_order_type not in ('MARKET','LIMIT'):
         declared_order_type = None
     record = {'dt':received_at,'symbol':symbol,'side':allowed[side],'tf':tf}
-    # This event key is based on RECEIVE time, not a verified candle ID.
-    # For live orders, require a TradingView event/bar identifier and
-    # exchange reconciliation before accepting any automated trades.
-    bucket = int(received_at.timestamp()) // (300 if tf == '5m' else 900)
-    event_id = sha256(f'{symbol}|{allowed[side]}|{tf}|{bucket}'.encode()).hexdigest()[:20]
+    # A signed, authenticated webhook can optionally supply the stable
+    # TradingView candle ID. Retries of the same bar produce the same event ID.
+    # Old alerts remain accepted but remain permanently SIGNAL_ONLY.
+    from live_signal_identity import stable_signal_identity
+    event_id,source_bar_id=stable_signal_identity(
+        symbol,allowed[side],tf,received_at,data.get('tv_bar_id'))
     try:
         duplicate = _db_record(record,event_id)
         with _db_connect() as con:
@@ -2677,9 +2678,6 @@ def webhook():
     # LIVE production signal-only audit, independent of Testnet credentials.
     # A stable, unique TradingView bar ID is mandatory for any future live order.
     # Existing LuxAlgo alerts without this field remain logged, not executable.
-    source_bar_id=str(data.get('tv_bar_id') or '').strip()
-    if not re.fullmatch(r'[A-Za-z0-9_.:-]{8,120}',source_bar_id):
-        source_bar_id=None
     try:
         with _db_connect() as con:
             _ensure_schema(con)
