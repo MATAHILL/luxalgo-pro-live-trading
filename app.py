@@ -6594,10 +6594,10 @@ def _production_execution_offline_smoke():
                received_epoch=now,entry="80000",sl="79200",tp="81600",
                position_mode="single",leverage="5")
         meta=dict(name="BTC_USDT",quanto_multiplier="0.0001",
-                  order_size_min="1",order_size_max="100000")
+                  order_size_min="1",order_size_max="100000",taker_fee_rate="0.00075")
         p=build_plan(s,meta,1000,1000,[],now=now)
-        assert p["contracts"]==62
-        assert build_entry_order(p)["size"]==62
+        assert p["contracts"]==46
+        assert build_entry_order(p)["size"]==46
         stop=build_protective_trigger(p,"SL")
         take=build_protective_trigger(p,"TP")
         book=[dict(stop,status="open",id=10001),dict(take,status="open",id=10002)]
