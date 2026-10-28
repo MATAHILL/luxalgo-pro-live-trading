@@ -6463,5 +6463,77 @@ if os.getenv('PRODUCTION_TERMINAL_VIEW','false').strip().lower()=='true':
 
 
 
+
+# Independently reconcile the production exchange after process restart and
+# periodically thereafter. This worker NEVER submits or cancels Gate orders.
+def _production_readonly_recovery_monitor():
+    from live_execution_coordinator import reconcile_and_halt_if_needed
+    while True:
+        try:
+            with _db_connect() as con:
+                result=reconcile_and_halt_if_needed(con)
+            print("LIVE_RECONCILIATION_"+result["status"]+
+                  " positions="+str(result["open_positions"])+
+                  " orders="+str(result["exchange_open_orders"])+
+                  " triggers="+str(result["exchange_open_triggers"]),flush=True)
+        except Exception as exc:
+            # Unknown is not flat. The coordinator attempts to persist HALT.
+            app.logger.warning('LIVE_RECONCILIATION_BLOCKED error_type=%s',
+                               type(exc).__name__)
+        time.sleep(60)
+
+
+def _production_execution_offline_smoke():
+    """Pure fixture checks in deployed Python; never read private keys or POST."""
+    try:
+        from live_futures_engine import (
+            GateLiveClient,LiveSafetyError,EXCHANGE_WRITE_RELEASE,
+            build_plan,build_entry_order,build_protective_trigger,
+            evaluate_protection,reconcile_ledger,client_text)
+        from live_execution_orchestrator import (
+            execute_confirmed_signal,full_close_oneway_order)
+        from live_execution_coordinator import status_fallback
+        assert EXCHANGE_WRITE_RELEASE is False
+        now=int(time.time())
+        s=dict(event_id="startup-diagnostic-BTC-5m",contract="BTC_USDT",
+               side="LONG",timeframe="5m",levels_status="VALID",
+               received_epoch=now,entry="80000",sl="79200",tp="81600",leverage="5")
+        meta=dict(name="BTC_USDT",quanto_multiplier="0.0001",
+                  order_size_min="1",order_size_max="100000")
+        p=build_plan(s,meta,1000,1000,[],now=now)
+        assert p["contracts"]==62
+        assert build_entry_order(p)["size"]==62
+        stop=build_protective_trigger(p,"SL")
+        take=build_protective_trigger(p,"TP")
+        book=[dict(stop,status="open",id=10001),dict(take,status="open",id=10002)]
+        assert evaluate_protection(p,book)["verified"] is True
+        assert evaluate_protection(p,book[:1])["verified"] is False
+        assert full_close_oneway_order(p)["reduce_only"] is True
+        assert reconcile_ledger([],[dict(contract="BTC_USDT",size="1")],[])["requires_halt"]
+        assert status_fallback("API_FAILURE")["open_positions"] is None
+        try:
+            GateLiveClient(key="fixture",secret="fixture").submit_entry(p)
+            raise AssertionError("Order-write source lock bypass")
+        except LiveSafetyError:
+            pass
+        try:
+            execute_confirmed_signal(lambda:None,p)
+            raise AssertionError("Auto-execution source lock bypass")
+        except LiveSafetyError:
+            pass
+        print("LIVE_EXECUTION_OFFLINE_SAFETY_FIXTURES_PASS source_locked=TRUE",
+              flush=True)
+    except Exception as exc:
+        app.logger.error('LIVE_EXECUTION_OFFLINE_SAFETY_FIXTURES_FAILED error_type=%s',
+                         type(exc).__name__)
+
+if os.getenv('PRODUCTION_TERMINAL_VIEW','false').strip().lower()=='true':
+    from threading import Thread
+    Thread(target=_production_execution_offline_smoke,daemon=True,
+           name="luxalgo-live-safety-fixtures").start()
+    Thread(target=_production_readonly_recovery_monitor,daemon=True,
+           name="luxalgo-live-readonly-recovery").start()
+
+
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=int(os.getenv('PORT', '8080')))
