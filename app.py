@@ -6348,6 +6348,27 @@ def _probe_live_public_market_once():
                 app.logger.warning('CRYPTO_NEWS_PROVIDER_%s_UNAVAILABLE reason=%s',
                                    label.replace(' ','_'),type(exc).__name__)
 
+    # Verify real 5m/15m technical calculations with public completed BTC candles.
+    # These diagnostics cannot produce LuxAlgo trade signals or exchange orders.
+    for tf in ('5m','15m'):
+        try:
+            scan=_scan_one_pair('BTC_USDT',tf,0.0)
+            print('LIVE_FUTURES_TECHNICAL_'+tf+'_OK score='+str(scan['score'])+
+                  ' candle_at='+str(scan['candle_at']),flush=True)
+        except (HTTPError,URLError,TimeoutError,OSError,ValueError,TypeError,RuntimeError,KeyError,ZeroDivisionError) as exc:
+            app.logger.warning('LIVE_FUTURES_TECHNICAL_%s_UNAVAILABLE reason=%s',
+                               tf,type(exc).__name__)
+    # Authenticated GET only. Never logs private balances, keys, or positions.
+    try:
+        account=_gate_futures_account_summary()
+        positions=_gate_read_only_positions()
+        if account.get('currency')!='USDT':
+            raise ValueError('Unexpected live Futures settlement currency')
+        print('LIVE_FUTURES_ACCOUNT_READONLY_OK positions='+str(len(positions)),flush=True)
+    except (HTTPError,URLError,TimeoutError,OSError,ValueError,TypeError,RuntimeError,KeyError) as exc:
+        app.logger.warning('LIVE_FUTURES_ACCOUNT_READONLY_UNAVAILABLE reason=%s',
+                           type(exc).__name__)
+
 if os.getenv('PRODUCTION_TERMINAL_VIEW','false').strip().lower()=='true':
     from threading import Thread
     Thread(target=_probe_live_public_market_once,daemon=True,
