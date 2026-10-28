@@ -1,6 +1,23 @@
 # LUXALGO PRO — ONE-ORDER LIVE ACCEPTANCE REQUEST
 
-**PROPOSED / NOT AUTHORIZED / SOURCE-LOCKED.**
+**OWNER APPROVED THE EXACT LIMITED TEST IN CHAT ON 2026-10-29 IST.
+NOT EXECUTABLE YET / SOURCE-LOCKED / EXCHANGE ACCEPTANCE NOT CERTIFIED.**
+
+Owner approval explicitly covers one BTC_USDT LONG contract, 29 October
+2026 10:00–10:15 IST, up to 1.70 USDT margin, up to 8.30 USDT notional,
+up to 0.10 USDT modeled loss (not a guaranteed maximum), at most 5x
+leverage and 0.10% entry slippage, two native SL/TP triggers,
+and at most one authorized reduce-only emergency close if a filled LONG
+is positively verified and native protection fails. There is **NO**
+authorization for continuous automated trading, other instruments,
+additional entries, or execution outside the named window.
+
+Approval alone is not acceptance evidence, an active exchange order, an
+unrestricted BOT ON permission or a source lock release. A valid fresh
+LuxAlgo BTC_USDT LONG with its original entry/SL/TP is absent from the
+production webhook DB as of 2026-10-29 01:05 IST; never invent this.
+Existing emergency HALT remains active. This GitHub document is an
+audit of user authorization only; the live send path is still closed.
 
 ## Verified source and evidence
 - Exchange: Gate.io LIVE USDT-M Futures, verified in authenticated GET account and public contract/ticker endpoints.
@@ -57,7 +74,18 @@ restart reconciliation, permitted emergency close result and no orphan orders,
 realized/unrealized P&L and final equity. Redact keys and sensitive data.
 Any missing evidence => FAIL / HALT / NOT CERTIFIED.
 
-**CURRENT AUTHORIZATION: NONE.** Source-level writing locks = OFF; DB emergency
-HALT = ON; operator BOT = OFF. Any approval text must be a new separate explicit
-statement from the user of the whole bounded test. Never infer it from a general
-instruction to finish development, earlier preparations, or approval of code.
+**CURRENT AUTHORIZATION: LIMITED TEST ONLY — owner confirmed.** Source-level
+exchange writing and automatic worker switches remain FALSE; DB emergency HALT
+remains ON, operator BOT remains OFF, and production certification is absent.
+The isolated pure validator `limited_acceptance_preflight.py` rejects an
+out-of-window test, non-BTC LONG or >1 contract, stale/unknown exchange state,
+missing authenticated readback, no fresh BTC LuxAlgo candle identity,
+missing native trigger support, insufficient margin, >5x leverage, >0.10%
+slippage, >1.70 USDT margin, >8.30 USDT notional and >0.10 USDT
+modeled loss. Its dry pass is NOT exchange execution permission.
+
+The currently available Render connector supports read-only account/DB
+inspection but has no direct safe one-order execution action. Do not
+enable source flags or start automatic workers to bypass that constraint.
+**If the agreed UTC window 04:30–04:45 is unavailable, let authorization
+expire without any order.** Never roll the date forward automatically.
