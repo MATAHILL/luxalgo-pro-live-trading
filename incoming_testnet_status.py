@@ -39,6 +39,31 @@ def classify_signal(*, journal_state=None, attempt_state=None, attempt_detail=No
     return "NOT EXECUTED"
 
 
+
+def explain_testnet_attempt(state, detail, *, worker_armed=True):
+    """Read-only human diagnostic: never changes exchange, attempts, or journal."""
+    if not state:
+        return ("Testnet automatic execution paused at the terminal; webhook received and saved"
+                if not worker_armed else
+                "No recorded Testnet worker result; webhook receipt is not an exchange order")
+    if state=="TESTNET_PREFLIGHT_BLOCKED":
+        if detail=="CONTRACT_PREFLIGHT_CONTRACT_ALREADY_HAS_OPEN_POSITION":
+            return "Rejected: this coin already has an open Testnet position (one position per coin)"
+        if detail=="ACCOUNT_NOT_FLAT":
+            return ("Rejected: leverage setup requires an empty Testnet account; "
+                    "existing positions cannot be interrupted to change leverage")
+        if detail=="CONTRACT_NOT_LISTED_ON_TESTNET":
+            return "Rejected: contract is absent from the Gate.io Testnet futures catalog"
+        if detail and detail.startswith("CONTRACT_PREFLIGHT_"):
+            return "Rejected by exchange-side contract/risk preflight: "+detail[19:160]
+        return "Rejected by Testnet preflight: "+str(detail or "UNVERIFIED")[:150]
+    if state=="ACCOUNT_UNCERTAIN_EXPOSURE_SAFETY_PAUSE":
+        return "Testnet safety pause: an earlier order's current exposure is uncertain"
+    if state=="TESTNET_DISABLED":
+        return "Testnet automatic execution is disabled; no exchange entry was sent"
+    return "Testnet worker: "+str(state)[:70]+(" · "+str(detail)[:130] if detail else "")
+
+
 def parse_reset_time(value):
     if not value: return None
     try:
