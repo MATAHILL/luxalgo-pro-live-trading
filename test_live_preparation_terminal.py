@@ -26,12 +26,23 @@ class ProductionPreparationTests(unittest.TestCase):
         self.assertTrue(r["real_money_write_requested"])
         self.assertFalse(r["orders_enabled"])
         self.assertFalse(r["safe_to_trade"])
-        self.assertFalse(r["checks"][-1]["passed"])
-    def test_missing_legacy_readback_blocks_archive_deletion(self):
+        blockers={check["name"]:check["passed"] for check in r["checks"]}
+        self.assertFalse(blockers["Dedicated production sender and order readbacks"])
+        self.assertFalse(blockers["Real-money native SL/TP plus filled-order recovery"])
+        self.assertFalse(blockers["Production live execution qualification"])
+    def test_missing_legacy_readback_never_certifies_live_execution(self):
+        # Retained Testnet recovery is now a separate archival concern.
+        # The live market-feed check may PASS even when execution remains OFF.
         r=live_preparation_checks(
             account_ok=True,positions_ok=True,db_ok=True,webhook_ok=True,
             legacy_count=None)
-        self.assertFalse(r["checks"][-1]["passed"])
+        self.assertEqual(r["status"],"PREPARATION_ONLY")
+        self.assertFalse(r["safe_to_trade"])
+        self.assertFalse(r["orders_enabled"])
+        blockers={check["name"]:check["passed"] for check in r["checks"]}
+        self.assertFalse(blockers["Production live execution qualification"])
+        self.assertFalse(blockers["Atomic live risk budget / emergency close / kill switch"])
+        self.assertTrue(blockers["Production market feeds independent of order execution"])
     def test_page_has_no_execution_endpoints_or_enabled_buy_button(self):
         self.assertIn("REAL MONEY OFF",LIVE_PREPARATION_PAGE)
         self.assertIn("Live Buy — Locked",LIVE_PREPARATION_PAGE)
