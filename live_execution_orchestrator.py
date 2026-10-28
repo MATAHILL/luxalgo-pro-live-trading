@@ -11,7 +11,8 @@ from decimal import Decimal, InvalidOperation
 import time
 from live_futures_engine import (
     EXCHANGE_WRITE_RELEASE, LiveSafetyError, AckUnknown, GateLiveClient,
-    PREFIX, ORDER_RE, build_plan, client_text, evaluate_protection)
+    PREFIX, ORDER_RE, build_plan, client_text, evaluate_protection,
+    verified_account_equity)
 from live_execution_coordinator import install,control,halt,read_rows,risk_reserve
 
 def persist_state(open_connection, event_id, state, *, entry_order_id=None,
@@ -164,7 +165,8 @@ def execute_confirmed_signal(open_connection,plan,client=None):
         snap=client.snapshot()
         existing=read_rows(con)
         assert_existing_protected_exposure(existing,snap)
-        risk_reserve(con,plan,snap["positions"],snap["account"].get("total"))
+        verified_equity,_=verified_account_equity(snap["account"])
+        risk_reserve(con,plan,snap["positions"],verified_equity)
     event=plan["event_id"]
     entry_verified=False
     persist_state(open_connection,event,"SENDING")
@@ -253,13 +255,14 @@ def process_stored_luxalgo_alert(open_connection,event_id,client=None):
         raise LiveSafetyError("Live contract metadata invalid")
     used=sum((Decimal(str(r["risk_usdt"])) for r in ledger
               if r["state"]!="CLOSED_VERIFIED"),Decimal("0"))
+    equity,available=verified_account_equity(snap["account"])
     plan=build_plan(dict(event_id=event_id,contract=contract,
                     side=row["side"],timeframe=row["timeframe"],
                     levels_status=row["level_status"],entry=row["entry_price"],
                     sl=row["stop_loss"],tp=row["take_profit"],
                     received_epoch=int(row["received_at"].timestamp()),
                     position_mode=verified_mode,leverage=5),
-                    meta,snap["account"].get("total"),snap["account"].get("available"),
+                    meta,equity,available,
                     snap["positions"],reserved_risk=used)
     return execute_confirmed_signal(open_connection,plan,client)
 
