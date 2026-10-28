@@ -127,4 +127,10 @@ def production_monitor_page(page):
     # execution or Testnet card status may be inferred from their receipt.
     out=out.replace('Fresh LuxAlgo signals only, after your saved dashboard reset. LIVE requires an open Gate.io Testnet position with reverified exchange-side TP/SL; CLOSED requires a verified closing journal. Unexecuted or uncertain calls are never labeled LIVE. Real-money trading OFF.',
                     'Fresh LuxAlgo webhook signals only. This production monitor does not place orders; received signals are NOT production exchange fills. Real-money trading remains OFF.',1)
+    # The same signal table remains, but production must never use stale
+    # Testnet fill/SL/TP states as evidence of real-money execution.
+    old="fetch('/terminal/incoming-signals',{cache:'no-store'})"
+    if out.count(old)!=1:
+        raise ValueError("Signal monitor script changed unexpectedly")
+    out=out.replace(old,"fetch('/terminal/incoming-signals?production=1',{cache:'no-store'})",1)
     return out
