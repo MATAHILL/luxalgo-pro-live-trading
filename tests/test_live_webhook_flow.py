@@ -101,5 +101,46 @@ class WebhookSafeIntegration(unittest.TestCase):
         self.assertEqual(res.json["level_status"],"VALID")
         self.assertEqual(res.json["orders_placed"],0)
 
+    def test_production_monitor_explains_missing_bar_and_order_type_without_claiming_fill(self):
+        from datetime import datetime,timezone
+        from contextlib import nullcontext
+        with patch.dict(os.environ,{
+            "PRODUCTION_TERMINAL_VIEW":"true",
+            "TERMINAL_PASSWORD":"test-passphrase-allowing-strong-auth",
+            "TERMINAL_USER":"admin"}):
+            client=backend.app.test_client()
+            with client.session_transaction() as sess:
+                sess["authenticated"]=True;sess["user"]="admin";sess["csrf_token"]="safe"
+            scenarios=[
+                (None,None,"NO_LIVE_HANDOFF"),
+                (None,"MARKET","MISSING_STABLE_BAR_ID"),
+                ("TVBAR_5m_00597712345",None,"NO_LIVE_HANDOFF"),
+                ("TVBAR_5m_00597712345","LIMIT","MISSING_MARKET_DECLARATION"),
+                ("TVBAR_5m_00597712345","MARKET","QUALIFIED_SIGNAL_EXECUTION_LOCKED")]
+            for bar,declared,expected in scenarios:
+                with self.subTest(qualification=expected,bar=bar,declared=declared):
+                    row=dict(event_id="a"*20,received_at=datetime.now(timezone.utc),
+                             symbol="BTCUSDT",side="LONG",timeframe="5m",
+                             level_status="VALID",entry_price="80000",
+                             stop_loss="79000",take_profit="82000",
+                             order_type="MARKET",source_bar_id=bar,
+                             handoff_order_type=declared)
+                    # Simulates a stored receipt + optional handoff; no DB changes,
+                    # exchange requests or orders.
+                    con=Mock();cursor=Mock()
+                    cursor.fetchall.return_value=[row]
+                    con.cursor.return_value.__enter__=Mock(return_value=cursor)
+                    con.cursor.return_value.__exit__=Mock(return_value=False)
+                    with (patch.object(backend,"_db_connect",return_value=nullcontext(con)),
+                          patch.object(backend,"_ensure_schema"),
+                          patch.object(backend,"_incoming_visible_since",
+                                       return_value=datetime.now(timezone.utc))):
+                        res=client.get("/terminal/incoming-signals?production=1")
+                    self.assertEqual(res.status_code,200)
+                    self.assertEqual(res.json["signals"][0]["execution_qualification"],expected)
+                    self.assertEqual(res.json["signals"][0]["status_label"],"NOT EXECUTED")
+                    self.assertFalse(res.json["orders_enabled"])
+                    self.assertFalse(res.json["live_trading"])
+
 if __name__=="__main__":
     unittest.main()
