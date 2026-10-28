@@ -2148,6 +2148,30 @@ def terminal_receipt_cursor():
 def home():
     if not _terminal_permitted():
         return _terminal_guard()
+    from live_preparation_terminal import live_preparation_mode, LIVE_PREPARATION_PAGE
+    if live_preparation_mode():
+        response=Response(render_template_string(
+            LIVE_PREPARATION_PAGE,csrf_token=session.get('csrf_token','')),
+            mimetype='text/html')
+        response.headers['Cache-Control']='private, no-store'
+        response.headers['X-Frame-Options']='DENY'
+        response.headers['X-Content-Type-Options']='nosniff'
+        return response
+    return _render_legacy_home()
+
+
+@app.get('/terminal/legacy-testnet')
+def terminal_legacy_testnet():
+    """Private historical terminal; needed until open Testnet exposure is flat."""
+    if not _terminal_permitted():
+        return _terminal_guard()
+    from live_preparation_terminal import live_preparation_mode
+    if not live_preparation_mode():
+        return redirect('/',code=303)
+    return _render_legacy_home()
+
+
+def _render_legacy_home():
     try:
         count, records = _db_recent()
         with _db_connect() as con:
@@ -2162,6 +2186,64 @@ def home():
     response.headers['Cache-Control'] = 'no-store'
     response.headers['X-Frame-Options'] = 'DENY'
     response.headers['X-Content-Type-Options'] = 'nosniff'
+    return response
+
+
+@app.get('/terminal/live-preparation/status')
+def terminal_live_preparation_status():
+    """Production account READ-ONLY readiness; never submits futures orders."""
+    if not _terminal_permitted():
+        return _terminal_guard()
+    from live_preparation_terminal import live_preparation_checks
+    account_ok=False; positions_ok=False; receipts_ok=False
+    equity=None;available=None;positions=[];received=None;legacy_unresolved=None
+    try:
+        acc=_gate_futures_account_summary()
+        if (acc.get('currency')=='USDT' and acc.get('source')=='GATE_IO_FUTURES_CLASSIC_ACCOUNT'
+            and float(acc['equity_usdt'])>0 and float(acc['available_usdt'])>=0):
+            account_ok=True
+            equity=acc['equity_usdt']
+            available=acc['available_usdt']
+    except (RuntimeError,HTTPError,URLError,TimeoutError,ValueError,KeyError,TypeError,OSError):
+        pass
+    try:
+        positions=_gate_read_only_positions()
+        positions_ok=True
+    except (RuntimeError,HTTPError,URLError,TimeoutError,ValueError,KeyError,TypeError,OSError):
+        positions=[]
+    try:
+        with _db_connect() as con:
+            with con.cursor() as cur:
+                cur.execute('SELECT COUNT(*) AS count FROM luxalgo_signal_receipts')
+                received=int(cur.fetchone()['count'])
+                receipts_ok=True
+                cur.execute("""SELECT COUNT(*) AS count
+                    FROM luxalgo_testnet_protected_journal
+                    WHERE state IN ('PROTECTED_VERIFIED','RECOVERING','HALTED_UNKNOWN',
+                                    'HALTED_UNPROTECTED','EMERGENCY_CLOSE_REQUIRED')""")
+                legacy_unresolved=int(cur.fetchone()['count'])
+    except (psycopg.Error,RuntimeError,OSError,ValueError,KeyError,TypeError):
+        legacy_unresolved=None
+    prepared=live_preparation_checks(
+        account_ok=account_ok,positions_ok=positions_ok,db_ok=receipts_ok,
+        webhook_ok=len(expected_webhook_token())>=24,
+        legacy_count=legacy_unresolved,
+        prod_write_requested=(
+            os.getenv('LIVE_TRADING_ENABLED','false').strip().lower()!='false'
+            or os.getenv('ORDERS_ENABLED','false').strip().lower()!='false'))
+    response=jsonify(**prepared,account_verified=account_ok,
+        positions_verified=positions_ok,receipts_verified=receipts_ok,
+        equity_usdt=equity,available_usdt=available,
+        production_position_count=len(positions) if positions_ok else None,
+        production_positions=[dict(contract=p['contract'],side=p['side'],
+            size_contracts=p['size_contracts'],entry_price=p['entry_price'],
+            mark_price=p['mark_price'],unrealized_pnl=p['unrealized_pnl'])
+            for p in positions],
+        received_signals=received,
+        legacy_testnet_unresolved=legacy_unresolved,
+        timestamp=datetime.now(timezone.utc).isoformat())
+    response.headers['Cache-Control']='private, no-store'
+    response.headers['X-Content-Type-Options']='nosniff'
     return response
 
 
