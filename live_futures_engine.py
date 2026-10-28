@@ -98,6 +98,34 @@ def price_geometry(side, entry, sl, tp):
         raise LiveSafetyError("Invalid protective geometry")
     return e,s,t
 
+
+def verified_account_equity(account):
+    """Classic Gate USDT-M equity = total cash balance + unrealized P&L.
+
+    Prevents a misleading risk limit based on total alone when an existing
+    position has negative unrealized P&L. Unified account modes fail closed.
+    """
+    if not isinstance(account,dict) or account.get("currency")!="USDT":
+        raise LiveSafetyError("USDT live account readback not verified")
+    if account.get("margin_mode",0) not in (0,"0",None):
+        raise LiveSafetyError("Unified Futures equity mapping unsupported")
+    def signed_amount(field):
+        value=account.get(field)
+        if value is None or isinstance(value,bool):
+            raise LiveSafetyError("Account field missing: "+field)
+        try:
+            x=Decimal(str(value))
+        except (InvalidOperation,TypeError,ValueError) as exc:
+            raise LiveSafetyError("Invalid account amount") from exc
+        if not x.is_finite():
+            raise LiveSafetyError("Non-finite account balance")
+        return x
+    equity=signed_amount("total")+signed_amount("unrealised_pnl")
+    available=signed_amount("available")
+    if equity<=0 or available<0:
+        raise LiveSafetyError("No positive equity or usable available margin")
+    return equity,available
+
 def active_positions(positions):
     if not isinstance(positions,list):
         raise LiveSafetyError("Position inventory unavailable")
@@ -179,8 +207,12 @@ def build_entry_order(plan):
     qty=int(plan["contracts"])*(1 if plan["side"]=="LONG" else -1)
     if qty==0 or not CONTRACT_RE.fullmatch(plan["contract"]):
         raise LiveSafetyError("Invalid live order quantity/contract")
+    slip=dec(plan.get("max_entry_slippage_ratio","0.001"),"slippage")
+    if slip>Decimal("0.001"):
+        raise LiveSafetyError("Entry slippage permission exceeds 0.10%")
     return dict(contract=plan["contract"],size=qty,price="0",tif="ioc",
-                text=plan["client_text"],reduce_only=False,close=False)
+                text=plan["client_text"],reduce_only=False,
+                market_order_slip_ratio=str(slip))
 
 def build_protective_trigger(plan, kind):
     """Full-close exchange-native stop/target with authenticated position mode.
