@@ -347,7 +347,7 @@ def reconcile_ledger(ledger_rows,positions,trigger_orders):
             side="LONG" if Decimal(str(p["size"]))>0 else "SHORT"
             if side!=item.get("side"): raise LiveSafetyError("Direction mismatch")
             plan={"contract":item["contract"],"side":item["side"],
-                  "entry":item["entry_price"],"sl":item["stop_loss"],"tp":item["take_profit"]}
+                  "entry":item["entry_price"],"sl":item["stop_loss"],"tp":item["take_profit"],"position_mode":item["position_mode"]}
             protection=evaluate_protection(plan,trigger_orders)
             results.append({"event_id":item["event_id"],
                             "state":"PROTECTED_READBACK" if protection["verified"] else "HALT_UNPROTECTED",
