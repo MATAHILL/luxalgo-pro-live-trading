@@ -8,7 +8,8 @@ class OriginalDashboardRoutingTests(unittest.TestCase):
     def setUp(self):
         self.ctx=patch.dict("os.environ",{"TERMINAL_PASSWORD":"Z"*32,
             "TERMINAL_USER":"admin","LIVE_TERMINAL_PREPARATION":"true",
-            "LIVE_TRADING_ENABLED":"false","ORDERS_ENABLED":"false"})
+            "LIVE_TRADING_ENABLED":"false","ORDERS_ENABLED":"false",
+            "PRODUCTION_TERMINAL_VIEW":"false"})
         self.ctx.start()
         self.client=app.test_client()
 
@@ -40,13 +41,16 @@ class OriginalDashboardRoutingTests(unittest.TestCase):
             r=self.client.get("/")
         self.assertEqual(r.status_code,200)
         self.assertIn(b"ORIGINAL DASHBOARD",r.data)
-        dashboard.assert_called_once_with()
+        dashboard.assert_called_once_with(production_view=False)
 
-    def test_authenticated_legacy_bookmark_redirects_to_original_home(self):
+    def test_authenticated_legacy_bookmark_keeps_private_recovery_view(self):
         self.sign_in()
-        r=self.client.get("/terminal/legacy-testnet")
-        self.assertEqual(r.status_code,303)
-        self.assertEqual(r.headers["Location"],"/")
+        with patch("app._render_legacy_home",
+                   return_value=Response("PRIVATE RECOVERY",mimetype="text/html")) as legacy:
+            r=self.client.get("/terminal/legacy-testnet")
+        self.assertEqual(r.status_code,200)
+        self.assertIn(b"PRIVATE RECOVERY",r.data)
+        legacy.assert_called_once_with(production_view=False)
 
     def test_preparation_is_separate_and_has_no_live_order_controls(self):
         self.sign_in()
