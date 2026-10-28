@@ -10,7 +10,8 @@ from live_execution_coordinator import status_fallback
 
 PLAN={"event_id":"tv-BTCUSDT-5m-20261028","client_text":client_text("tv-BTCUSDT-5m-20261028"),
       "contract":"BTC_USDT","side":"LONG","contracts":2,"entry":"80000",
-      "sl":"79000","tp":"82000","estimated_risk_usdt":"0.2","timeframe":"5m"}
+      "sl":"79000","tp":"82000","estimated_risk_usdt":"0.2","timeframe":"5m",
+      "position_mode":"single"}
 
 class MockLiveFlow(unittest.TestCase):
     def test_workflow_blocks_before_database_or_network(self):
@@ -70,10 +71,11 @@ class MockLiveFlow(unittest.TestCase):
                 ("XRP_USDT","2","1.9","2.2")]:
             k=len(rows)*2+501
             plan={"contract":symbol,"side":"LONG","entry":entry,
-                  "sl":stop,"tp":take}
+                  "sl":stop,"tp":take,"position_mode":"single"}
             rows.append({"contract":symbol,"side":"LONG","state":"PROTECTED",
                          "entry_price":entry,"stop_loss":stop,"take_profit":take,
-                         "stop_order_id":str(k),"take_order_id":str(k+1)})
+                         "stop_order_id":str(k),"take_order_id":str(k+1),
+                         "position_mode":"single"})
             positions.append({"contract":symbol,"size":"1"})
             triggers.append(dict(build_protective_trigger(plan,"SL"),
                                  id=k,status="open"))
