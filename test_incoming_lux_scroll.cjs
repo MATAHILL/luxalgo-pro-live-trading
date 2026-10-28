@@ -16,7 +16,7 @@ assert(page.includes('scrollArea.scrollTop=0'),'Status-filter scroll reset missi
 assert(page.includes('id="incomingLuxClear"'),'Existing visible-reset button must stay');
 assert(page.includes('id="v4PaperCards"'),'Original protected position cards must stay');
 const explanations=fs.readFileSync('incoming_testnet_status.py','utf8');
-assert(page.includes('explain_testnet_attempt'),'Dashboard must use clear preflight reason descriptions');
+assert(app.includes('explain_testnet_attempt'),'Dashboard backend must use clear preflight reason descriptions');
 assert(explanations.includes('Testnet automatic execution paused at the terminal'),'Disabled worker must be explained honestly');
 assert(app.includes("ORDER BY i.received_at DESC LIMIT 25"),'Backend must retain 25 latest signals');
 assert(app.includes("luxalgo_incoming_display_reset"),'Safety-preserving visible history reset missing');
