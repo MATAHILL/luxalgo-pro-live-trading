@@ -68,6 +68,32 @@ class TestnetExecutionSafetyTests(unittest.TestCase):
         self.assertFalse(verify_testnet_protection({**order,"finish_as":"cancelled"},positions,triggers,**args)["verified"])
         self.assertFalse(verify_testnet_protection(order,[],triggers,**args)["verified"])
 
+    def test_actual_negative_hedge_short_position_with_linked_native_tpsl(self):
+        order={"id":456,"contract":"DOGE_USDT","status":"finished","finish_as":"filled"}
+        positions=[{"contract":"DOGE_USDT","mode":"dual_short","size":-1}]
+        linked=[
+          {"id":9001,"status":"open","order_type":"close-short-order","me_order_id":456,
+           "initial":{"contract":"DOGE_USDT"},"trigger":{"price":"0.101","rule":1}},
+          {"id":9002,"status":"open","order_type":"close-short-order","me_order_id":456,
+           "initial":{"contract":"DOGE_USDT"},"trigger":{"price":"0.089","rule":2}}]
+        args=dict(expected_contract="DOGE_USDT",expected_side="SHORT",
+                  stop_price="0.101",target_price="0.089")
+        result=verify_testnet_protection(order,positions,linked,**args)
+        self.assertTrue(result["verified"],result)
+        self.assertEqual(result["protective_order_ids"],["9001","9002"])
+        # Same negative quantity in the wrong hedge mode cannot be accepted.
+        wrong=[{**positions[0],"mode":"dual_long"}]
+        self.assertFalse(verify_testnet_protection(order,wrong,linked,**args)["verified"])
+        # Reject the old bug's incorrect positive size for a short.
+        bad=[{**positions[0],"size":1}]
+        self.assertEqual(verify_testnet_protection(order,bad,linked,**args)["reason"],
+                         "POSITION_QUANTITY_SIDE_MISMATCH")
+        for qty in ("NaN","Infinity","garbled"):
+            with self.subTest(qty=qty):
+                bad=[{**positions[0],"size":qty}]
+                self.assertFalse(verify_testnet_protection(order,bad,linked,**args)["verified"])
+        self.assertFalse(verify_testnet_protection(order,positions,linked[:1],**args)["verified"])
+
     def test_unknown_entry_recovered_by_custom_id(self):
         with patch("gate_testnet_execution.signed_testnet_request",return_value={
                  "id":456,"text":"t-abc123","contract":"BTC_USDT","size":1,
