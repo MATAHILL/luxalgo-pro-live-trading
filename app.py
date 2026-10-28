@@ -2382,6 +2382,74 @@ def terminal_production_bot_update():
                        error='Operator state could not be persisted; treating as HALT'),503
 
 
+@app.get('/terminal/acceptance-test/status')
+def terminal_acceptance_test_status():
+    """Read-only BTC one-lot test audit. NEVER claims a ledger is a fill.
+
+    The exchange reconciliation endpoint must separately verify actual positions,
+    protection IDs, and their linkage to this bot ledger.
+    """
+    if not _terminal_permitted():
+        return _terminal_guard()
+    try:
+        with _db_connect() as con:
+            with con.cursor() as cur:
+                cur.execute("""SELECT event_id,state,contracts,entry_order_id,
+                         stop_order_id,take_order_id,created_at,updated_at
+                         FROM luxalgo_prod_execution_ledger
+                         WHERE contract='BTC_USDT' AND side='LONG'
+                         ORDER BY created_at DESC LIMIT 1""")
+                ledger=cur.fetchone()
+                cur.execute("""SELECT event_id,received_at,source_bar_id,
+                         order_type,level_status
+                         FROM luxalgo_live_signal_handoff
+                         WHERE symbol='BTCUSDT' AND side='LONG'
+                           AND source_bar_id IS NOT NULL
+                           AND order_type='MARKET' AND level_status='VALID'
+                         ORDER BY received_at DESC LIMIT 1""")
+                signal=cur.fetchone()
+                cur.execute("""SELECT halted FROM luxalgo_prod_execution_control
+                               WHERE id=1""")
+                gate=cur.fetchone()
+        if gate is None:
+            raise RuntimeError('Acceptance emergency control unavailable')
+        data=dict(
+            contract='BTC_USDT',side='LONG',max_contracts=1,
+            max_margin_usdt='1.70',max_notional_usdt='8.30',
+            max_modeled_loss_usdt='0.10',max_leverage='5',
+            max_entry_slippage_pct='0.10',
+            executor='LUXALGO_PRO_GATE_IO_ACCEPTANCE_SENDER_NOT_RELEASED',
+            read_only=True,can_execute=False,
+            bot_order_recorded=ledger is not None,
+            ledger_state=ledger['state'] if ledger else None,
+            ledger_event_id=ledger['event_id'] if ledger else None,
+            recorded_entry_order_id=str(ledger['entry_order_id'])
+                if ledger and ledger['entry_order_id'] is not None else None,
+            recorded_stop_order_id=str(ledger['stop_order_id'])
+                if ledger and ledger['stop_order_id'] is not None else None,
+            recorded_take_order_id=str(ledger['take_order_id'])
+                if ledger and ledger['take_order_id'] is not None else None,
+            ledger_updated_at=ledger['updated_at'].isoformat()
+                if ledger and ledger['updated_at'] else None,
+            eligible_btc_long_signal_seen=signal is not None,
+            last_eligible_signal_at=signal['received_at'].isoformat()
+                if signal else None,
+            persistent_emergency_halt=gate['halted'] is not False,
+            status='BOT_LEDGER_PRESENT_EXCHANGE_READBACK_REQUIRED'
+                if ledger else 'NO_BOT_TEST_ORDER_RECORDED',
+            exchange_fill_verified=False,
+            native_sl_tp_verified=False,
+            fetched_at=datetime.now(timezone.utc).isoformat())
+        response=jsonify(data)
+        response.headers['Cache-Control']='private, no-store'
+        response.headers['X-Content-Type-Options']='nosniff'
+        return response
+    except (psycopg.Error,RuntimeError,OSError,ValueError,TypeError,KeyError):
+        app.logger.warning('BTC acceptance audit state unavailable',exc_info=False)
+        return jsonify(status='UNVERIFIED',read_only=True,can_execute=False,
+                       error='Acceptance audit unavailable; no fill can be claimed'),503
+
+
 @app.get('/terminal/live-execution/snapshot')
 def terminal_live_execution_snapshot():
     """Authenticated production GET reconciliation; absolutely no order writes."""
