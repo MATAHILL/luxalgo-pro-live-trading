@@ -308,6 +308,15 @@ def reconcile_ledger(ledger_rows,positions,trigger_orders):
     results=[]
     for item in ledger_rows:
         same=[p for p in openpos if p.get("contract")==item.get("contract")]
+        state=item.get("state")
+        if state=="RESERVED" and not same:
+            results.append({"event_id":item.get("event_id"),"state":"RESERVED_NOT_SENT",
+                            "reason":"DURABLE_RESERVATION_ONLY"})
+            continue
+        if state=="CLOSED_VERIFIED" and not same:
+            results.append({"event_id":item.get("event_id"),"state":"CLOSED_READBACK",
+                            "reason":"NO_CURRENT_EXCHANGE_POSITION"})
+            continue
         if len(same)!=1:
             results.append({"event_id":item.get("event_id"),"state":"HALT_RECONCILIATION",
                             "reason":"POSITION_MISSING_OR_AMBIGUOUS"})
