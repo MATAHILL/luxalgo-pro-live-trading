@@ -78,6 +78,18 @@ CREATE TABLE IF NOT EXISTS luxalgo_testnet_execution_handoff (
  status TEXT NOT NULL CHECK (status IN ('BLOCKED','REJECTED')),
  reason TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS luxalgo_live_signal_handoff (
+ event_id TEXT PRIMARY KEY,
+ received_at TIMESTAMPTZ NOT NULL,
+ symbol TEXT NOT NULL,
+ side TEXT NOT NULL,
+ timeframe TEXT NOT NULL,
+ order_type TEXT,
+ level_status TEXT NOT NULL,
+ status TEXT NOT NULL DEFAULT 'SIGNAL_ONLY' CHECK(status='SIGNAL_ONLY'),
+ created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+-- Historical Testnet journal retained for audit only, not market data.
 CREATE TABLE IF NOT EXISTS luxalgo_one_trade_candidate (
  singleton_id SMALLINT PRIMARY KEY CHECK(singleton_id=1),
  event_id TEXT NOT NULL UNIQUE,
@@ -838,7 +850,7 @@ header.terminal-header{border-radius:17px!important}
 <div class="tablewrap market-scroll"><table><thead><tr><th>PAIR · CHART ↗</th><th>PRICE</th><th>24H %</th><th>24H VOL (USDT)</th></tr></thead><tbody id="radarBody"><tr><td colspan="4">Loading…</td></tr></tbody></table></div>
 </section>
 <section class="panel market-panel"><div class="panel-heading"><h2>AI FUTURES OPPORTUNITY SCANNER <span class="gloss-cyan">● TECHNICAL</span></h2><button class="btn gloss-action" id="scannerRefresh" type="button">↻ Scan</button></div>
-<p class="light">Rule-based opportunity watchlist · all accessible USDT perpetual pairs scanned progressively; not predictive AI.</p>
+<p class="light">Rule-based opportunity watchlist · 36 highest-volume Gate.io USDT perpetual pairs; completed candles; not predictive AI.</p>
 <div class="market-tabs" id="scannerTabs"><button class="btn selected" data-scan="bullish">BULLISH BREAKOUT</button><button class="btn" data-scan="mixed">EARLY / MIXED</button><button class="btn" data-scan="bearish">BEARISH BREAKDOWN</button><button class="btn" data-scan="all">ALL RESULTS</button></div>
 <div class="market-filters"><select id="scannerTf"><option value="15m">15m</option><option value="5m">5m</option></select><input id="scannerSearch" placeholder="Search pair" maxlength="30"></div>
 <p class="light" id="scannerStatus">Loading scanner…</p>
@@ -1208,6 +1220,8 @@ header.terminal-header{border-radius:17px!important}
 (function(){
  const label=document.getElementById('botControlLabel'),detail=document.getElementById('botControlDetail');
  const on=document.getElementById('botTurnOn'),off=document.getElementById('botTurnOff'),indicator=document.getElementById('botStateIndicator');
+  // Production removes Testnet buttons. Do not halt market-data UI startup.
+  if(!on||!off||!label||!detail)return;
  function render(enabled,armed){const active=enabled&&armed;if(indicator){indicator.className='bot-state-indicator '+(active?'on':'off');indicator.textContent=active?'● TESTNET ON':'● TESTNET PAUSED';}on.classList.toggle('next-action',!enabled);off.classList.toggle('next-action',enabled);label.textContent=active?'BOT ON · TESTNET EXECUTION ACTIVE':(enabled?'BOT ON · TESTNET SAFETY PAUSE':'BOT OFF · TESTNET SIGNALS PAUSED');label.style.color=active?'#6cf3ba':'#ffc47c';detail.textContent=active?'Only eligible fresh LuxAlgo signals can submit Gate.io Testnet protected orders. Real-money OFF.':(enabled?'Testnet entry permissions are disabled for safety. No new exchange orders; recovery monitoring remains independent.':'New signals are logged; new Testnet entries paused. Existing positions remain monitored.');on.disabled=enabled;off.disabled=!enabled;}
  async function refresh(){try{const r=await fetch('/terminal/bot-control',{cache:'no-store'});const d=await r.json();if(!r.ok)throw Error();render(d.bot_enabled,d.testnet_automation_armed===true);}catch(e){render(false,false);if(indicator){indicator.className='bot-state-indicator unknown';indicator.textContent='● STATUS UNKNOWN · SAFE OFF';}detail.textContent='Cannot verify saved bot state: treat as OFF.';on.disabled=true;}}
  async function change(enabled){on.disabled=true;off.disabled=true;try{const r=await fetch('/terminal/bot-control',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({enabled}),cache:'no-store'});const d=await r.json();if(!r.ok)throw Error(d.error||'Update rejected');render(d.bot_enabled,d.testnet_automation_armed===true);}catch(e){detail.textContent='Cannot change bot state: '+e.message;await refresh();}}
@@ -1383,7 +1397,7 @@ loadRadar();loadScanner();setInterval(()=>{if(!document.hidden)loadRadar()},6000
    if(refreshButton)refreshButton.disabled=true;
    status.textContent=force?'Refreshing headlines…':'Updating headlines…';
    try{
-     const ctl=new AbortController();const t=setTimeout(()=>ctl.abort(),9500);
+     const ctl=new AbortController();const t=setTimeout(()=>ctl.abort(),15500);
      let res;
      try{res=await fetch('/terminal/news'+(force?'?refresh=1':''),{cache:'no-store',signal:ctl.signal})}finally{clearTimeout(t)}
      if(!res.ok)throw Error('News unavailable');
@@ -1999,7 +2013,7 @@ def terminal_news():
         return response
     found=[]
     # Independent timeouts; publisher outages must never break the trading dashboard.
-    with ThreadPoolExecutor(max_workers=3) as pool:
+    with ThreadPoolExecutor(max_workers=len(NEWS_FEEDS)) as pool:
         jobs=[pool.submit(_news_fetch_source, source) for source in NEWS_FEEDS]
         for job in jobs:
             try: found.extend(job.result(timeout=9))
@@ -2579,47 +2593,19 @@ def webhook():
     except (psycopg.Error,RuntimeError,OSError):
         app.logger.exception('Cannot durably record incoming LuxAlgo signal')
         return jsonify(error='Signal not stored; retry later',orders_placed=0),503
-    # Testnet-only workflow: preserve signal receipts and the durable
-    # eligibility queue, but never enqueue hypothetical paper executions.
-    # TESTNET-only optional webhook pipeline. Both independent switches default OFF.
-    # No production exchange order-writing API is imported here.
-    if (not duplicate and level_status=='VALID' and
-        os.getenv('GATE_TESTNET_PROTECTED_EXECUTION_ENABLED','false').lower()=='true' and
-        os.getenv('GATE_TESTNET_WEBHOOK_AUTOMATION_ENABLED','false').lower()=='true'):
-        try:
-            from testnet_execution_attempts import record_testnet_attempt
-            record_testnet_attempt(event_id,{"state":"WORKER_QUEUED","submitted":False})
-            _testnet_auto_executor.submit(_process_testnet_webhook_soon,event_id)
-        except (psycopg.Error,RuntimeError,OSError,ValueError,TypeError) as exc:
-            # No worker is launched if its durable audit cannot be created.
-            app.logger.error('Testnet worker was not queued: %s',type(exc).__name__)
-    # Every newly received signal is durably passed into TESTNET pre-execution
-    # validation. The handoff is permanently fail-closed: no exchange write.
+    # LIVE production signal-only audit, independent of Testnet credentials,
+    # worker, endpoints or journal. No exchange order is submitted here.
     try:
-        elapsed=(datetime.now(timezone.utc)-received_at).total_seconds()
-        reasons=[]
-        if duplicate: reasons.append('DUPLICATE_CANDLE_SIGNAL')
-        if elapsed < 0 or elapsed > 120: reasons.append('SIGNAL_EXPIRED')
-        if level_status!='VALID': reasons.append('INVALID_OR_MISSING_ENTRY_SL_TP')
-        if declared_order_type not in ('MARKET','LIMIT'): reasons.append('ORDER_TYPE_NOT_DECLARED')
-        # Always audit independently of Testnet order submission.
-        # The configured Testnet execution path is OFF unless both switches
-        # are explicitly enabled; this audit record is not a fill confirmation.
-        if (os.getenv('GATE_TESTNET_PROTECTED_EXECUTION_ENABLED','false').lower()!='true' or
-            os.getenv('GATE_TESTNET_WEBHOOK_AUTOMATION_ENABLED','false').lower()!='true'):
-            reasons.append('TESTNET_AUTOMATION_DISABLED')
-        else:
-            reasons.append('TESTNET_HANDOFF_AUDIT_NOT_EXCHANGE_FILL')
         with _db_connect() as con:
             _ensure_schema(con)
-            con.execute("""INSERT INTO luxalgo_testnet_execution_handoff
-                (event_id,received_at,symbol,side,timeframe,order_type,status,reason)
-                VALUES (%s,%s,%s,%s,%s,%s,'BLOCKED',%s)
+            con.execute("""INSERT INTO luxalgo_live_signal_handoff
+                (event_id,received_at,symbol,side,timeframe,order_type,level_status,status)
+                VALUES (%s,%s,%s,%s,%s,%s,%s,'SIGNAL_ONLY')
                 ON CONFLICT(event_id) DO NOTHING""",
-                (event_id,received_at,symbol,allowed[side],tf,declared_order_type,','.join(reasons)))
+                (event_id,received_at,symbol,allowed[side],tf,declared_order_type,level_status))
     except (psycopg.Error,RuntimeError,OSError):
-        app.logger.exception('Testnet handoff audit unavailable')
-        return jsonify(error='Signal stored but Testnet handoff could not be audited',orders_placed=0),503
+        app.logger.exception('Production signal handoff audit unavailable')
+        return jsonify(error='Signal stored but production handoff audit unavailable',orders_placed=0),503
     # One-trade handoff: durable first-candidate reservation ONLY. Not an order.
     # Preserves existing webhook receipt behavior and does not call exchange APIs.
     one_trade_candidate = 'NOT_ELIGIBLE'
@@ -5451,12 +5437,7 @@ def _testnet_recovery_monitor():
         except (psycopg.Error,RuntimeError,OSError,ValueError,TypeError,KeyError) as exc:
             app.logger.warning('Testnet recovery polling unavailable: %s',type(exc).__name__)
 
-if (os.getenv('GATE_TESTNET_RECOVERY_ENABLED','false').lower()=='true' or
-    (os.getenv('GATE_TESTNET_PROTECTED_EXECUTION_ENABLED','false').lower()=='true' and
-     os.getenv('GATE_TESTNET_WEBHOOK_AUTOMATION_ENABLED','false').lower()=='true')):
-    from threading import Thread
-    Thread(target=_testnet_recovery_monitor,daemon=True,
-           name='luxalgo-testnet-recovery').start()
+# Retired Testnet recovery cannot rearm on production startup.
 
 def _process_testnet_webhook_soon(event_id):
     from testnet_execution_attempts import record_testnet_attempt
