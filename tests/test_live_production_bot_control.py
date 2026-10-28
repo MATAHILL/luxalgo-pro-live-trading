@@ -52,12 +52,18 @@ class ProductionBotTests(unittest.TestCase):
         self.assertTrue(any("SET operator_on=FALSE" in sql for sql in statements))
         self.assertTrue(any("pg_advisory_xact_lock" in sql for sql in statements))
 
-    def test_dashboard_single_switch_by_radar_and_scanners_preserved(self):
+    def test_dashboard_restores_two_buttons_and_both_indicators_above_radar(self):
         html=production_monitor_page(backend.PAGE)
-        self.assertEqual(html.count('id="productionBotSwitch"'),1)
-        self.assertLess(html.index('id="productionBotSwitch"'),
+        self.assertEqual(html.count('id="productionBotOn"'),1)
+        self.assertEqual(html.count('id="productionBotOff"'),1)
+        self.assertEqual(html.count('id="productionBotIndicator"'),1)
+        self.assertIn('● EXECUTION OFF',html)
+        self.assertIn('LIVE ORDERS OFF',html)
+        self.assertNotIn('id="productionBotSwitch"',html)
+        self.assertLess(html.index('id="productionBotOn"'),
                         html.index('GATE.IO FUTURES RADAR <span'))
-        self.assertNotIn('bot-state-indicator off" role="status">● EXECUTION OFF',html)
+        self.assertLess(html.index('id="productionBotOff"'),
+                        html.index('GATE.IO FUTURES RADAR <span'))
         for x in ("radarBody","scannerBody","advancedScanBody","newsStack","productionPositionCards"):
             self.assertIn('id="'+x+'"',html)
         self.assertIn("'/terminal/production-bot-control'",html)
