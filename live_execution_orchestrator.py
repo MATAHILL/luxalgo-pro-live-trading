@@ -132,7 +132,7 @@ def assert_existing_protected_exposure(rows,snapshot):
             raise LiveSafetyError("Position direction mismatch")
         plan={"contract":row["contract"],"side":row["side"],
               "entry":row["entry_price"],"sl":row["stop_loss"],
-              "tp":row["take_profit"]}
+              "tp":row["take_profit"],"position_mode":row["position_mode"]}
         check=evaluate_protection(plan,snapshot["triggers"])
         if (not check["verified"] or
             check["stop_order_id"]!=str(row["stop_order_id"]) or
