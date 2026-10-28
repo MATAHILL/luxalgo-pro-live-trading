@@ -353,11 +353,8 @@ def terminal_bot_control_get():
             _ensure_schema(con)
             with con.cursor() as cur:
                 enabled=_bot_enabled(cur)
-        from testnet_automation import testnet_automation_armed
-        from testnet_unknown_exposure import unknown_exposure_gate
-        armed=testnet_automation_armed() and unknown_exposure_gate()
-        return jsonify(bot_enabled=enabled,testnet_automation_armed=armed,
-                       scope='GATE_TESTNET_SIGNAL_CONTROL_ONLY', live_trading=False, orders_enabled=False)
+        return jsonify(bot_enabled=False,stored_historical_toggle=enabled,
+                       scope='PRODUCTION_SIGNAL_ONLY', live_trading=False, orders_enabled=False)
     except (psycopg.Error,RuntimeError,OSError):
         return jsonify(error='Bot state unavailable; treat as OFF',bot_enabled=False,orders_enabled=False),503
 
@@ -387,11 +384,9 @@ def terminal_bot_control_post():
     if not isinstance(data,dict) or type(data.get('enabled')) is not bool:
         return jsonify(error='Boolean enabled is required'),400
     desired=data['enabled']
-    if desired and os.getenv('PRODUCTION_TERMINAL_VIEW','false').strip().lower()=='true':
-        return jsonify(error='Testnet entries permanently retired from production view; recovery only',
+    if desired:
+        return jsonify(error='Archived toggle cannot arm Testnet or real-money execution',
                        orders_enabled=False,live_trading=False),409
-    if desired and os.getenv('LIVE_TRADING_ENABLED','false').strip().lower()!='false':
-        return jsonify(error='Live-trading environment must remain disabled'),503
     try:
         with _db_connect() as con:
             _ensure_schema(con)
@@ -400,11 +395,8 @@ def terminal_bot_control_post():
                 cur.execute('UPDATE luxalgo_bot_control SET enabled=%s, changed_at=NOW() WHERE id=1',(desired,))
                 if not desired:
                     cur.execute("UPDATE luxalgo_auto_paper_queue SET state='REJECTED', checked_at=NOW(),note='Bot manually switched OFF' WHERE state='PENDING'")
-        from testnet_automation import testnet_automation_armed
-        from testnet_unknown_exposure import unknown_exposure_gate
-        armed=testnet_automation_armed() and unknown_exposure_gate()
-        return jsonify(bot_enabled=desired,testnet_automation_armed=armed,
-                       scope='GATE_TESTNET_SIGNAL_CONTROL_ONLY',orders_enabled=False,live_trading=False)
+        return jsonify(bot_enabled=False,scope='PRODUCTION_SIGNAL_ONLY',
+                       orders_enabled=False,live_trading=False)
     except (psycopg.Error,RuntimeError,OSError):
         return jsonify(error='Unable to save bot state; treat as OFF',orders_enabled=False),503
 
@@ -5093,7 +5085,7 @@ def _incoming_visible_since(cursor):
     The Render reset environment value seeds a fresh view even if no user
     ever clicks Clear. Interactive clear advances the same durable cursor.
     """
-    from incoming_testnet_status import parse_reset_time
+    # Production display reset uses standard ISO 8601; no Testnet UI module.
     cursor.execute("""CREATE TABLE IF NOT EXISTS luxalgo_incoming_display_reset (
        id SMALLINT PRIMARY KEY CHECK(id=1),
        cleared_at TIMESTAMPTZ NOT NULL
@@ -5101,7 +5093,15 @@ def _incoming_visible_since(cursor):
     cursor.execute("SELECT cleared_at FROM luxalgo_incoming_display_reset WHERE id=1")
     row=cursor.fetchone()
     boundary=row['cleared_at'] if row else datetime(1970,1,1,tzinfo=timezone.utc)
-    seeded=parse_reset_time(os.getenv('LUXALGO_INCOMING_VISIBLE_AFTER_UTC',''))
+    raw_reset=os.getenv('LUXALGO_INCOMING_VISIBLE_AFTER_UTC','')
+    seeded=None
+    if raw_reset:
+        try:
+            seeded=datetime.fromisoformat(raw_reset.replace('Z','+00:00'))
+            if seeded.tzinfo is None: raise ValueError('Reset requires timezone')
+            seeded=seeded.astimezone(timezone.utc)
+        except (ValueError,TypeError,AttributeError):
+            raise ValueError('Invalid incoming display reset time') from None
     if seeded is not None and seeded>boundary:
         cursor.execute("""INSERT INTO luxalgo_incoming_display_reset(id,cleared_at)
             VALUES(1,%s) ON CONFLICT(id) DO UPDATE
@@ -5144,6 +5144,51 @@ def terminal_incoming_signals():
         return _terminal_guard()
     production_monitor=(request.args.get('production')=='1' and
                         os.getenv('PRODUCTION_TERMINAL_VIEW','false').strip().lower()=='true')
+    if production_monitor:
+        # Live production signal monitor is sourced solely from the webhook
+        # receipt and validated levels tables. No Testnet broker, worker,
+        # execution attempts, positions, or legacy DB tables are consulted.
+        try:
+            with _db_connect() as con:
+                _ensure_schema(con)
+                with con.cursor() as cur:
+                    cutoff=_incoming_visible_since(cur)
+                    cur.execute("""SELECT p.event_id,p.received_at,p.symbol,p.side,p.timeframe,
+                           l.status AS level_status,l.entry_price,l.stop_loss,l.take_profit,
+                           o.order_type
+                        FROM (
+                           SELECT DISTINCT ON (event_id)
+                               event_id,received_at,symbol,side,timeframe
+                           FROM luxalgo_signal_receipts
+                           WHERE received_at>%s
+                           ORDER BY event_id,received_at DESC
+                        ) p
+                        LEFT JOIN luxalgo_signal_levels l ON l.event_id=p.event_id
+                        LEFT JOIN luxalgo_signal_order_types o ON o.event_id=p.event_id
+                        ORDER BY p.received_at DESC LIMIT 25""",(cutoff,))
+                    rows=cur.fetchall()
+            signals=[]
+            for r in rows:
+                level=r['level_status'] or 'MISSING'
+                reason=('Recorded LuxAlgo alert; real-money execution disabled until native SL/TP and recovery are verified'
+                        if level=='VALID' else
+                        'Alert stored but entry, stop or target levels are missing/invalid; no exchange order')
+                signals.append(dict(event_id=r['event_id'],time=r['received_at'].isoformat(),
+                     symbol=r['symbol'],side=r['side'],timeframe=r['timeframe'],
+                     entry=str(r['entry_price']) if r['entry_price'] is not None else None,
+                     stop_loss=str(r['stop_loss']) if r['stop_loss'] is not None else None,
+                     take_profit=str(r['take_profit']) if r['take_profit'] is not None else None,
+                     order_type=r['order_type'] or 'UNDECLARED',state='NOT EXECUTED',
+                     status_label='NOT EXECUTED',reason=reason,level_status=level))
+            response=jsonify(signals=signals,count=len(signals),display_limit=25,
+                             display_since=cutoff.isoformat(),mode='PRODUCTION_SIGNAL_ONLY',
+                             live_trading=False,orders_enabled=False,
+                             audit_records_preserved=True)
+            response.headers['Cache-Control']='no-store'
+            return response
+        except (psycopg.Error,RuntimeError,OSError,ValueError,TypeError):
+            app.logger.exception('Production signal receipt monitor unavailable')
+            return jsonify(error='Production signal monitor unavailable',orders_placed=0),503
     try:
         from testnet_execution_attempts import DDL as _execution_attempts_schema
         with _db_connect() as con:
