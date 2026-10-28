@@ -161,6 +161,8 @@ def execute_confirmed_signal(open_connection,plan,client=None):
         install(con)
         if control(con)["halted"]:
             raise LiveSafetyError("Production emergency halt active")
+        from production_bot_control import require_operator_on
+        require_operator_on(con)
         # A fresh account snapshot must have no untracked orders before sending.
         snap=client.snapshot()
         existing=read_rows(con)
@@ -169,6 +171,10 @@ def execute_confirmed_signal(open_connection,plan,client=None):
         risk_reserve(con,plan,snap["positions"],verified_equity)
     event=plan["event_id"]
     entry_verified=False
+    # Re-read operator intent after reservation and before exchange POST.
+    with open_connection() as con:
+        from production_bot_control import require_operator_on
+        require_operator_on(con)
     persist_state(open_connection,event,"SENDING")
     # From this point on, a lost response can still mean an accepted order.
     # Therefore never retry POST after an ambiguous outcome.
