@@ -5,7 +5,7 @@ from live_futures_engine import (
     verified_account_equity,build_entry_order)
 from live_execution_orchestrator import full_close_oneway_order
 NOW=1800000000
-CONTRACT={"name":"BTC_USDT","quanto_multiplier":"0.0001","order_size_min":1,"order_size_max":100000,"taker_fee_rate":"0.00075"
+CONTRACT={"name":"BTC_USDT","quanto_multiplier":"0.0001","order_size_min":1,"order_size_max":100000,"taker_fee_rate":"0.00075"}
 def plan(side="LONG",mode="dual"):
     return build_plan(dict(event_id="tv-exchange-mode-20261028",contract="BTC_USDT",
                 side=side,timeframe="5m",levels_status="VALID",position_mode=mode,
