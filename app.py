@@ -2336,6 +2336,93 @@ def terminal_chart():
         return jsonify(error='Public candle data temporarily unavailable'),502
 
 
+@app.get('/terminal/live-execution/snapshot')
+def terminal_live_execution_snapshot():
+    """Authenticated production GET reconciliation; absolutely no order writes."""
+    if not _terminal_permitted():
+        return _terminal_guard()
+    try:
+        from live_execution_coordinator import reconcile_and_halt_if_needed
+        with _db_connect() as con:
+            status=reconcile_and_halt_if_needed(con)
+        response=jsonify(status)
+        response.headers['Cache-Control']='private, no-store'
+        return response
+    except (psycopg.Error,RuntimeError,OSError,ValueError,TypeError,KeyError):
+        app.logger.warning('Production exchange reconciliation unavailable',exc_info=False)
+        from live_execution_coordinator import status_fallback
+        return jsonify(status_fallback('ACCOUNT_OR_DB_READBACK_FAILED')),503
+
+
+@app.post('/terminal/live-execution/emergency-halt')
+def terminal_live_execution_halt():
+    """Durable halt only. Does not pretend to close exchange positions."""
+    if not _terminal_permitted():return _terminal_guard()
+    if not _csrf_valid():return jsonify(error='Invalid session CSRF'),403
+    try:
+        from live_execution_coordinator import install,halt
+        with _db_connect() as con:
+            install(con)
+            result=halt(con,'OPERATOR_PERSISTENT_HALT')
+        return jsonify(result),200
+    except (psycopg.Error,RuntimeError,OSError,ValueError,TypeError):
+        app.logger.error('Production emergency halt database unavailable')
+        return jsonify(error='HALT_CONFIRMATION_UNKNOWN',orders_enabled=False),503
+
+
+@app.post('/terminal/live-execution/plan')
+def terminal_live_execution_plan():
+    """Validated real signal + current exchange inventory -> PREVIEW, not order."""
+    if not _terminal_permitted():return _terminal_guard()
+    if not _csrf_valid():return jsonify(error='Invalid session CSRF'),403
+    body=request.get_json(silent=True) if request.is_json else None
+    event_id=body.get('event_id') if isinstance(body,dict) else None
+    if not isinstance(event_id,str) or not re.fullmatch(r'[a-f0-9]{20}',event_id):
+        return jsonify(error='Valid stored event ID required'),422
+    try:
+        from live_futures_engine import GateLiveClient,build_plan,LiveSafetyError
+        from live_execution_coordinator import install,control,read_rows
+        with _db_connect() as con:
+            _ensure_schema(con);install(con)
+            if control(con)['halted']:
+                return jsonify(error='Persistent execution HALT is active',
+                               orders_enabled=False),409
+            with con.cursor() as cur:
+                cur.execute("""SELECT r.event_id,r.received_at,r.symbol,r.side,r.timeframe,
+                       l.entry_price,l.stop_loss,l.take_profit,l.status AS levels_status,
+                       t.order_type
+                       FROM luxalgo_signal_receipts r
+                       JOIN luxalgo_signal_levels l ON l.event_id=r.event_id
+                       LEFT JOIN luxalgo_signal_order_types t ON t.event_id=r.event_id
+                       WHERE r.event_id=%s ORDER BY r.received_at DESC LIMIT 1""",(event_id,))
+                row=cur.fetchone()
+            ledger=read_rows(con)
+        if not row or row['order_type'] not in ('MARKET','LIMIT'):
+            return jsonify(error='Signal or declared order type not verified',
+                           orders_enabled=False),422
+        client=GateLiveClient()
+        snap=client.snapshot()
+        contract=row['symbol'].removesuffix('USDT')+'_USDT'
+        meta=client.request('GET','/api/v4/futures/usdt/contracts/'+contract)
+        if not isinstance(meta,dict):
+            raise LiveSafetyError('Contract metadata invalid')
+        equity=snap['account'].get('total')
+        available=snap['account'].get('available')
+        reserved=sum(Decimal(str(x['risk_usdt'])) for x in ledger
+                     if x['state']!='CLOSED_VERIFIED')
+        plan=build_plan(dict(event_id=event_id,side=row['side'],contract=contract,
+                    timeframe=row['timeframe'],levels_status=row['levels_status'],
+                    entry=row['entry_price'],sl=row['stop_loss'],tp=row['take_profit'],
+                    received_epoch=int(row['received_at'].timestamp()),leverage=5),
+                    meta,equity,available,snap['positions'],reserved_risk=reserved)
+        return jsonify(status='PREVIEW_ONLY_NOT_EXECUTABLE',plan=plan,
+                       orders_enabled=False,live_trading=False),200
+    except (psycopg.Error,RuntimeError,OSError,ValueError,TypeError,KeyError,
+            InvalidOperation,OverflowError):
+        return jsonify(error='Contract/risk/live account verification failed closed',
+                       orders_enabled=False),503
+
+
 @app.get('/health')
 def health():
     """Lightweight process liveness; never represents trade readiness."""
