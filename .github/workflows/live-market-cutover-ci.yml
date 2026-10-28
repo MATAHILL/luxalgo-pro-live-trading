@@ -26,6 +26,8 @@ jobs:
       - name: Install production dependencies
         run: python -m pip install -r requirements.txt
       - name: Validate production Python syntax
-        run: python -m py_compile app.py production_cutover_view.py
+        run: python -m py_compile app.py production_cutover_view.py live_futures_engine.py
+      - name: Test isolated live execution engine (mocked; NO ORDERS)
+        run: python -m unittest discover -s tests -p 'test_live_execution_safety.py' -v
       - name: Test production market data and Testnet isolation (mocked, no orders)
         run: python -m unittest discover -s tests -p 'test_live_market_cutover.py' -v
