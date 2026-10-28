@@ -123,9 +123,15 @@ def inspect(con, client=None):
             "stop_order_id":coverage.get("stop_order_id"),
             "take_order_id":coverage.get("take_order_id"),
         })
-    untracked_orders=[o for o in snap["orders"] if str(o.get("text","")) not in
-                      {r["client_text"] for r in rows}]
-    anomalies=comparison["requires_halt"] or bool(untracked_orders)
+    known_text={r["client_text"] for r in rows}
+    known_trigger_ids={str(r[k]) for r in rows for k in
+                       ("stop_order_id","take_order_id") if r.get(k)}
+    untracked_orders=[o for o in snap["orders"]
+                      if str(o.get("text","")) not in known_text]
+    untracked_triggers=[o for o in snap["triggers"]
+                        if str(o.get("id","")) not in known_trigger_ids]
+    anomalies=(comparison["requires_halt"] or bool(untracked_orders)
+               or bool(untracked_triggers))
     return {"status":"READ_ONLY_RECONCILED" if not anomalies else "HALT_REVIEW_REQUIRED",
             "halted":bool(ctrl["halted"]) or anomalies,
             "halt_reason":ctrl["reason"] if not anomalies else "UNKNOWN_OR_UNPROTECTED_EXPOSURE",
@@ -133,6 +139,7 @@ def inspect(con, client=None):
             "exchange_open_orders":len(snap["orders"]),
             "exchange_open_triggers":len(snap["triggers"]),
             "untracked_open_orders":len(untracked_orders),
+            "untracked_open_triggers":len(untracked_triggers),
             "reconciliation":comparison,
             "orders_enabled":False,"live_trading":False,
             "exchange_source":snap["source"],
@@ -147,7 +154,8 @@ def reconcile_and_halt_if_needed(con, client=None):
         install(con)
         halt(con,"EXCHANGE_RECONCILIATION_FAILED")
         raise
-    if status["reconciliation"]["requires_halt"] or status["untracked_open_orders"]:
+    if (status["reconciliation"]["requires_halt"] or
+        status["untracked_open_orders"] or status["untracked_open_triggers"]):
         halt(con,"UNPROTECTED_OR_UNKNOWN_EXCHANGE_EXPOSURE")
     return status
 
