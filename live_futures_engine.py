@@ -33,6 +33,21 @@ READ_PATHS = {PREFIX + suffix for suffix in
               ("/accounts", "/positions", "/orders", "/price_orders", "/contracts")}
 WRITE_PATHS = {PREFIX + "/orders", PREFIX + "/price_orders"}
 MIGRATION_SQL = """
+DO $luxalgo_schema$
+BEGIN
+-- Dashboard reconciliation keeps its transaction open during exchange GETs.
+-- Even ALTER TABLE ... IF NOT EXISTS takes ACCESS EXCLUSIVE until commit.
+-- Check the committed catalog first, without caching transaction-local state,
+-- so a normal readback never queues behind a redundant schema migration.
+IF to_regclass('luxalgo_prod_execution_control') IS NOT NULL
+   AND to_regclass('idx_prod_ledger_state') IS NOT NULL
+   AND EXISTS (
+       SELECT 1 FROM pg_attribute
+       WHERE attrelid = to_regclass('luxalgo_prod_execution_ledger')
+         AND attname = 'position_mode' AND NOT attisdropped
+   ) THEN
+    RETURN;
+END IF;
 CREATE TABLE IF NOT EXISTS luxalgo_prod_execution_ledger (
  event_id TEXT PRIMARY KEY,
  client_text TEXT NOT NULL UNIQUE,
@@ -67,6 +82,8 @@ CREATE TABLE IF NOT EXISTS luxalgo_prod_execution_control (
 );
 INSERT INTO luxalgo_prod_execution_control(id,halted,reason)
 VALUES (1,TRUE,'NOT_VERIFIED_FOR_REAL_MONEY') ON CONFLICT(id) DO NOTHING;
+END;
+$luxalgo_schema$;
 """
 class LiveSafetyError(RuntimeError):
     pass
@@ -433,3 +450,4 @@ def reconcile_ledger(ledger_rows,positions,trigger_orders):
     return {"safe_to_dispatch":False,"results":results,
             "requires_halt":any(x["state"].startswith("HALT") for x in results),
             "orders_enabled":False}
+
