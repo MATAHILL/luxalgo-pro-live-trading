@@ -254,6 +254,34 @@ def build_protective_trigger(plan, kind):
                        "rule":rule,"expiration":86400},
             "order_type":"close-long-position" if islong else "close-short-position"}
 
+def _verified_full_close_initial(initial, mode, expected):
+    """Prove full close from Gate native trigger readback, fail closed.
+
+    Gate documents auto_size as write-only. A missing echo of auto_size in
+    dual mode is not evidence of a missing full close when the read-only
+    is_close/is_reduce_only flags confirm it and order_type matches.
+    If auto_size IS returned, it must match exactly; never accept the
+    opposite side. One-way size=0 requires close/is_close, not merely
+    reduce_only. No order submission is performed by this function.
+    """
+    if not isinstance(initial, dict):
+        return False
+    if not (initial.get("reduce_only") is True or
+            initial.get("is_reduce_only") is True):
+        return False
+    reported_auto_size = initial.get("auto_size")
+    if mode == "single":
+        return (reported_auto_size in (None, "") and
+                (initial.get("close") is True or initial.get("is_close") is True))
+    if mode == "dual":
+        expected_auto_size = expected["initial"]["auto_size"]
+        if reported_auto_size not in (None, ""):
+            return reported_auto_size == expected_auto_size
+        return (initial.get("is_close") is True and
+                initial.get("is_reduce_only") is True)
+    return False
+
+
 def evaluate_protection(plan, price_orders):
     """Strict readback: identifies two independent live, correct-side trigger orders.
 
@@ -274,11 +302,7 @@ def evaluate_protection(plan, price_orders):
                     int(z.get("rule",-1))==expected["trigger"]["rule"] and
                     int(z.get("price_type",-1))==1 and
                     Decimal(str(z.get("price")))==Decimal(expected["trigger"]["price"]) and
-                    (bool(x.get("close")) or bool(x.get("reduce_only")) or
-                     bool(x.get("is_close")) or bool(x.get("is_reduce_only"))) and
-                    (x.get("auto_size")==expected["initial"].get("auto_size")
-                     if plan["position_mode"]=="dual"
-                     else x.get("auto_size") in (None,"")) and
+                    _verified_full_close_initial(x,plan["position_mode"],expected) and
                     Decimal(str(x.get("size","0")))==0 and
                     str(x.get("price")) in ("0","0.0") and
                     str(x.get("tif","ioc")).lower()=="ioc" and

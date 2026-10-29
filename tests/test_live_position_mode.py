@@ -43,6 +43,42 @@ class ModeProtection(unittest.TestCase):
         self.assertFalse(evaluate_protection(
             p,[dict(sl,id=1001,status="open"),dict(tp,id=1002,status="open")])["verified"])
 
+    def test_hedge_native_readback_can_prove_full_close_without_write_only_auto_size(self):
+        # Gate's readback exposes is_close/is_reduce_only but does not have
+        # to echo auto_size, which is documented as write-only.
+        for side in ("LONG", "SHORT"):
+            with self.subTest(side=side):
+                p=plan(side)
+                orders=[]
+                for kind,identifier in (("SL",1001),("TP",1002)):
+                    trigger=build_protective_trigger(p,kind)
+                    trigger["initial"].pop("auto_size")
+                    trigger["initial"].pop("reduce_only")
+                    trigger["initial"]["is_close"]=True
+                    trigger["initial"]["is_reduce_only"]=True
+                    orders.append(dict(trigger,id=identifier,status="open"))
+                self.assertTrue(evaluate_protection(p,orders)["verified"])
+
+    def test_hedge_unknown_or_wrong_side_close_remains_unverified(self):
+        p=plan()
+        valid=[dict(build_protective_trigger(p,kind),id=idx,status="open")
+               for kind,idx in (("SL",1001),("TP",1002))]
+        for trigger in valid:
+            trigger["initial"]["is_close"]=True
+            trigger["initial"]["is_reduce_only"]=True
+        valid[0]["initial"]["auto_size"]="close_short"
+        self.assertFalse(evaluate_protection(p,valid)["verified"])
+        valid[0]["initial"].pop("auto_size")
+        valid[0]["initial"]["is_close"]=False
+        self.assertFalse(evaluate_protection(p,valid)["verified"])
+
+    def test_oneway_reduce_only_without_full_close_flag_is_not_protection(self):
+        p=plan(mode="single")
+        orders=[dict(build_protective_trigger(p,kind),id=idx,status="open")
+                for kind,idx in (("SL",1001),("TP",1002))]
+        orders[0]["initial"].pop("close")
+        self.assertFalse(evaluate_protection(p,orders)["verified"])
+
     def test_unknown_and_split_position_mode_forbidden(self):
         for mode in ("dual_plus","UNKNOWN",None):
             with self.subTest(mode=mode),self.assertRaises(LiveSafetyError):
