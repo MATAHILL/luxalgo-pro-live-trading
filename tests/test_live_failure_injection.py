@@ -56,6 +56,7 @@ class NonTradingFaultInjections(unittest.TestCase):
             p["initial"].pop("close",None)
             p["initial"].pop("reduce_only",None)
             p["initial"]["is_close"]=True
+            p["initial"]["is_reduce_only"]=True
             book.append(p)
         outcome=evaluate_protection(PLAN,book)
         self.assertTrue(outcome["verified"])
