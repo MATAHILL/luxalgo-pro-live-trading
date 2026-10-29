@@ -133,19 +133,30 @@ async function refresh(){
        execution_status:'UNKNOWN',protection_reason:'TRIGGER_READBACK_UNAVAILABLE'}));
    mode='POSITION GET ONLY · PROTECTION UNKNOWN';
   }
+  // Remove the initial loading/empty-state placeholder only AFTER a verified
+  // exchange response. Otherwise CSS grid treats it as a live position slot
+  // and pushes the first real card to the second column.
+  for(const placeholder of cards.querySelectorAll('.v4-prompt'))placeholder.remove();
   const old=new Map([...cards.querySelectorAll('article[data-production-key]')]
      .map(card=>[card.dataset.productionKey,card]));
   const seen=new Set();
-  count.textContent='Gate.io Production Positions ('+positions.length+')';
   for(const p of positions){
     if(!CARD_RE.test(String(p.contract||''))||!['LONG','SHORT'].includes(p.side))continue;
-    const key=p.contract+'|'+p.side;seen.add(key);
+    const key=p.contract+'|'+p.side;
+    if(seen.has(key))continue; // Never create two UI cards for the same exchange exposure.
+    seen.add(key);
     let card=old.get(key);
     if(!card){card=makeCard(p,key);cards.appendChild(card);}
     updateCard(card,p,reconciled);
   }
   for(const [key,card] of old){if(!seen.has(key))card.remove();}
-  if(!positions.length){cards.replaceChildren(node('div','v4-prompt','No open production positions reported in current exchange readback.'));}
+  count.textContent='Gate.io Production Positions ('+seen.size+')';
+  cards.classList.toggle('one-position',seen.size===1);
+  if(!seen.size){
+    cards.replaceChildren(node('div','v4-prompt',positions.length?
+      'Some exchange positions have invalid contract/side metadata; details cannot be shown.':
+      'No open production positions reported in current exchange readback.'));
+  }
   // Existing card nodes and web components survive 30-second refreshes.
   status.textContent=mode+' · '+new Date().toLocaleTimeString('en-IN',{timeZone:'Asia/Kolkata'})+
     ' IST · Trading is not enabled by chart display';
@@ -367,6 +378,8 @@ body.production-view #btcAcceptanceReason,body.production-view #btcAcceptanceChe
 @media(max-width:900px){body.production-view .acceptance-audit-summary{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:550px){body.production-view .acceptance-audit-summary{grid-template-columns:1fr}}
 body.production-view .production-position-cards{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;padding:12px 16px 17px}
+body.production-view .production-position-cards.one-position{grid-template-columns:minmax(0,1fr)}
+body.production-view .production-position-cards.one-position .production-position-card{max-width:980px}
 body.production-view .production-position-card{border:1px solid #355a7b;background:linear-gradient(145deg,#142d49,#0a1d32);border-radius:12px;padding:14px;min-width:0}
 body.production-view .production-position-card .v4-trade-top{display:flex;gap:10px;align-items:center}
 body.production-view .production-position-card .v4-numbers{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin-top:16px}
