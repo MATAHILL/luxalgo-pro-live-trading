@@ -201,20 +201,36 @@ def execute_confirmed_signal(open_connection,plan,client=None):
                 "stop_order_id":checked["stop_order_id"],
                 "take_order_id":checked["take_order_id"],
                 "filled":True,"protection_verified":True}
-    except (AckUnknown,LiveSafetyError,ValueError,InvalidOperation,TypeError,KeyError) as exc:
-        # The entry could exist. Quarantine, halt future entries, attempt one
-        # close only when the exchange definitely confirms a live position.
-        # Do NOT auto-retry ambiguous entry acknowledgments.
-        emergency_persist_halt(open_connection,"UNKNOWN_OR_UNPROTECTED_POST_ACK",event)
-        close_result={"closed_verified":False,"reason":"UNVERIFIED_ENTRY_NO_AUTOMATIC_CLOSE"}
-        if entry_verified:
-            # A *verified* filled position with failed native protection may
-            # be reduced once. Never close based only on ambiguous POST ACK.
-            close_result=emergency_close_once(client,plan)
+    except Exception as exc:
+        # A database failure *after* the entry POST can leave live exposure
+        # without a journal record. Treat ALL ordinary runtime exceptions as
+        # potentially post-submit, never as evidence that the entry failed.
+        # This branch never retries an entry or transmits a close order.
+        try:
+            emergency_persist_halt(open_connection,"UNKNOWN_OR_UNPROTECTED_POST_ACK",event)
+        except Exception as halt_exc:
+            # Do not claim durable HALT or attempt any exchange write when
+            # the database cannot confirm its emergency control record.
+            return {"state":"HALT_PERSISTENCE_UNVERIFIED",
+                    "reason":type(exc).__name__,
+                    "halt_error":type(halt_exc).__name__,
+                    "halt_persisted":False,
+                    "exchange_position_may_be_open":True,
+                    "emergency_close":{"closed_verified":False,
+                                       "reason":"DURABLE_HALT_UNAVAILABLE_NO_CLOSE"},
+                    "automatic_retry":False,
+                    "requires_manual_exchange_review":True}
+        # An automatic emergency close needs a persisted one-shot close claim
+        # and transaction-specific authorization. Neither is implemented here.
+        # A verified entry alone does NOT confer permission to transmit a close.
         return {"state":"HALTED_UNKNOWN","reason":type(exc).__name__,
-                "exchange_position_may_be_open":not close_result["closed_verified"],
-                "emergency_close":close_result,"automatic_retry":False,
-                "requires_manual_exchange_review":not close_result["closed_verified"]}
+                "halt_persisted":True,
+                "exchange_position_may_be_open":True,
+                "entry_fill_readback_verified":entry_verified,
+                "emergency_close":{"closed_verified":False,
+                                   "reason":"ONE_SHOT_CLOSE_NOT_CERTIFIED"},
+                "automatic_retry":False,
+                "requires_manual_exchange_review":True}
 
 # Separate release gate for continuous automation, independent of a one-order
 # live acceptance test. Changing environment variables cannot bypass this.
