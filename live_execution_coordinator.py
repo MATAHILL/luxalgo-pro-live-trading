@@ -4,10 +4,10 @@ No exchange-writing operations are invoked here. Live sender remains SOURCE_LOCK
 PostgreSQL advisory transaction locks protect simultaneous reservations across workers.
 """
 from __future__ import annotations
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 from datetime import datetime, timezone
 from live_futures_engine import (
-    MIGRATION_SQL, LiveSafetyError, MAX_POSITIONS, MAX_AGGREGATE_RISK,
+    MIGRATION_SQL, LiveSafetyError, MAX_POSITIONS, PER_ENTRY_RISK, MAX_AGGREGATE_RISK,
     GateLiveClient, build_plan, evaluate_protection, reconcile_ledger, active_positions,
 )
 
@@ -22,7 +22,8 @@ def read_rows(con):
                         risk_usdt,entry_price,stop_loss,take_profit,contracts,
                         entry_order_id,stop_order_id,take_order_id,created_at,updated_at
                        FROM luxalgo_prod_execution_ledger
-                       ORDER BY created_at DESC LIMIT 150""")
+                       ORDER BY (state <> 'CLOSED_VERIFIED') DESC,
+                                created_at DESC LIMIT 150""")
         return [dict(r) for r in cur.fetchall()]
 
 def control(con):
@@ -73,10 +74,22 @@ def risk_reserve(con,plan,exchange_positions,account_equity):
             raise LiveSafetyError("Untracked open position: halt risk reservation")
         if len(exchange_contracts|reserved_contracts)>=MAX_POSITIONS:
             raise LiveSafetyError("Five-position cap including pending reservations")
-        used=sum((Decimal(str(r["risk_usdt"])) for r in existing),Decimal("0"))
-        incremental=Decimal(plan["estimated_risk_usdt"])
-        equity=Decimal(str(account_equity))
-        if not equity.is_finite() or equity<=0 or used+incremental>equity*MAX_AGGREGATE_RISK:
+        # Independently enforce the per-trade limit even if the caller
+        # supplies a stale, malformed or manipulated trading plan.
+        try:
+            reserved=[Decimal(str(r["risk_usdt"])) for r in existing]
+            incremental=Decimal(str(plan["estimated_risk_usdt"]))
+            equity=Decimal(str(account_equity))
+        except (InvalidOperation,TypeError,ValueError,KeyError) as exc:
+            raise LiveSafetyError("Invalid reserved risk or account equity") from exc
+        if (not equity.is_finite() or equity<=0 or
+            not incremental.is_finite() or incremental<=0 or
+            any(not amount.is_finite() or amount<=0 for amount in reserved)):
+            raise LiveSafetyError("Invalid reserved risk or account equity")
+        used=sum(reserved,Decimal("0"))
+        if incremental>equity*PER_ENTRY_RISK:
+            raise LiveSafetyError("Atomic per-entry 0.5% risk cap")
+        if used+incremental>equity*MAX_AGGREGATE_RISK:
             raise LiveSafetyError("Atomic account-wide risk cap")
         cur.execute("""INSERT INTO luxalgo_prod_execution_ledger(
                         event_id,client_text,contract,side,timeframe,position_mode,state,risk_usdt,
