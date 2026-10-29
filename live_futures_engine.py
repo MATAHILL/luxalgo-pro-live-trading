@@ -150,9 +150,16 @@ def active_positions(positions):
     for p in positions:
         if not isinstance(p,dict) or not CONTRACT_RE.fullmatch(str(p.get("contract",""))):
             raise LiveSafetyError("Unexpected live position")
-        size=Decimal(str(p.get("size","0")))
+        # Missing size is UNKNOWN exposure, never proof of a flat account.
+        raw_size=p.get("size")
+        if raw_size is None or isinstance(raw_size,bool) or str(raw_size).strip()=="":
+            raise LiveSafetyError("Missing or invalid live position size")
+        try:
+            size=Decimal(str(raw_size))
+        except (InvalidOperation,TypeError,ValueError) as exc:
+            raise LiveSafetyError("Invalid live position size") from exc
         if not size.is_finite():
-            raise LiveSafetyError("Invalid position size")
+            raise LiveSafetyError("Non-finite live position size")
         if size: out.append(p)
     return out
 
@@ -424,6 +431,12 @@ def reconcile_ledger(ledger_rows,positions,trigger_orders):
             results.append({"event_id":item.get("event_id"),
                             "state":"HALT_RECONCILIATION" if same else "CLOSED_READBACK",
                             "reason":"CLOSED_LEDGER_BUT_EXCHANGE_POSITION_OPEN" if same else "NO_CURRENT_EXCHANGE_POSITION"})
+            continue
+        if state!="PROTECTED":
+            # Open exposure cannot become certified merely because a trigger
+            # happens to exist while the durable entry/ack journal is pending.
+            results.append({"event_id":item.get("event_id"),"state":"HALT_RECONCILIATION",
+                            "reason":"UNVERIFIED_LEDGER_LIFECYCLE_STATE"})
             continue
         if len(same)!=1:
             results.append({"event_id":item.get("event_id"),"state":"HALT_RECONCILIATION",

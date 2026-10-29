@@ -108,7 +108,8 @@ class LiveFuturesSafetyTests(unittest.TestCase):
     def test_reconciliation_does_not_invent_protection(self):
         plan=planned()
         row={"event_id":BASE["event_id"],"contract":"BTC_USDT","side":"LONG",
-             "entry_price":plan["entry"],"stop_loss":plan["sl"],"take_profit":plan["tp"],"position_mode":"single"}
+             "state":"PROTECTED", "entry_price":plan["entry"],"stop_loss":plan["sl"],
+             "take_profit":plan["tp"],"position_mode":"single"}
         bare=reconcile_ledger([row],[{"contract":"BTC_USDT","size":"2"}],[])
         self.assertTrue(bare["requires_halt"])
         self.assertEqual(bare["results"][0]["state"],"HALT_UNPROTECTED")
