@@ -432,6 +432,12 @@ def reconcile_ledger(ledger_rows,positions,trigger_orders):
                             "state":"HALT_RECONCILIATION" if same else "CLOSED_READBACK",
                             "reason":"CLOSED_LEDGER_BUT_EXCHANGE_POSITION_OPEN" if same else "NO_CURRENT_EXCHANGE_POSITION"})
             continue
+        if state!="PROTECTED":
+            # Open exposure cannot become certified merely because a trigger
+            # happens to exist while the durable entry/ack journal is pending.
+            results.append({"event_id":item.get("event_id"),"state":"HALT_RECONCILIATION",
+                            "reason":"UNVERIFIED_LEDGER_LIFECYCLE_STATE"})
+            continue
         if len(same)!=1:
             results.append({"event_id":item.get("event_id"),"state":"HALT_RECONCILIATION",
                             "reason":"POSITION_MISSING_OR_AMBIGUOUS"})
