@@ -150,9 +150,16 @@ def active_positions(positions):
     for p in positions:
         if not isinstance(p,dict) or not CONTRACT_RE.fullmatch(str(p.get("contract",""))):
             raise LiveSafetyError("Unexpected live position")
-        size=Decimal(str(p.get("size","0")))
+        # Missing size is UNKNOWN exposure, never proof of a flat account.
+        raw_size=p.get("size")
+        if raw_size is None or isinstance(raw_size,bool) or str(raw_size).strip()=="":
+            raise LiveSafetyError("Missing or invalid live position size")
+        try:
+            size=Decimal(str(raw_size))
+        except (InvalidOperation,TypeError,ValueError) as exc:
+            raise LiveSafetyError("Invalid live position size") from exc
         if not size.is_finite():
-            raise LiveSafetyError("Invalid position size")
+            raise LiveSafetyError("Non-finite live position size")
         if size: out.append(p)
     return out
 
