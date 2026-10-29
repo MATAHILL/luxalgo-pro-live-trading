@@ -27,7 +27,7 @@ class Element {
        return enable;
     },contains:(name)=>this.className.split(/\s+/).includes(name)};
   }
-  set textContent(t){this._text=String(t);this.replaceChildren();}
+  set textContent(t){this.replaceChildren();this._text=String(t);}
   get textContent(){return this._text+this.children.map(c=>c.textContent).join('');}
   append(...nodes){for(const n of nodes){assert(n instanceof Element);n.parentElement=this;this.children.push(n);}}
   appendChild(n){this.append(n);return n;}
