@@ -6,80 +6,157 @@ Never creates a real-money order sender or changes exchange state.
 """
 import re
 
-PRODUCTION_CARDS=r'''<section class="panel" id="productionCardsPanel" aria-label="Gate.io production futures position cards read-only">
+PRODUCTION_CARDS=r'''<section class="panel" id="productionCardsPanel" aria-label="Gate.io live futures position cards">
 <div class="v4-head"><div><strong>LUXALGO PRO · LIVE FUTURES POSITION CARDS</strong>
-<p class="light">Production Gate.io positions only · Exchange readback · Native SL/TP proof shown individually</p></div></div>
+<p class="light">Authenticated Gate.io positions · Click a token to expand its TradingView chart</p></div></div>
 <div class="v4-tabs"><strong id="productionTabCount">Checking production exchange positions…</strong></div>
 <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;padding:12px 18px 0;flex-wrap:wrap">
-<strong>GATE.IO PRODUCTION · READ-ONLY POSITION CARDS</strong>
+<strong>GATE.IO PRODUCTION · POSITION MONITOR</strong>
 <button class="btn gloss-action" type="button" id="productionCardsRefresh">↻ Refresh Live Positions</button></div>
 <p class="light" id="productionCardsStatus" role="status" style="padding:6px 18px">Production position readback pending.</p>
-<div id="productionPositionCards" class="production-position-cards" role="status" aria-live="polite">
+<div id="productionPositionCards" class="production-position-cards" aria-live="polite">
 <div class="v4-prompt">Loading authenticated production positions…</div></div>
 </section>
 <script>(function(){'use strict';
-const section=document.getElementById('productionCardsPanel'),cards=document.getElementById('productionPositionCards'),
-  status=document.getElementById('productionCardsStatus'),count=document.getElementById('productionTabCount'),
-  btn=document.getElementById('productionCardsRefresh');
-if(!section||!cards||!status||!count||!btn)return;
-function node(tag,cls,value){const n=document.createElement(tag);if(cls)n.className=cls;if(value!==undefined)n.textContent=value;return n;}
+const cards=document.getElementById('productionPositionCards'),
+  status=document.getElementById('productionCardsStatus'),
+  count=document.getElementById('productionTabCount'),btn=document.getElementById('productionCardsRefresh');
+if(!cards||!status||!count||!btn)return;
+const CARD_RE=/^[A-Z0-9]{2,28}_USDT$/;
+function node(tag,cls,value){
+ const n=document.createElement(tag);if(cls)n.className=cls;
+ if(value!==undefined)n.textContent=value;return n;
+}
 function safe(v){return v===null||v===undefined||v===''?'—':String(v);}
-function field(container,label,value){const wrap=node('div','v4-number'),title=node('div','v4-number-label',label);
- const val=node('div','v4-number-value',safe(value));wrap.append(title,val);container.appendChild(wrap);}
+function field(grid,label,key){
+ const wrap=node('div','v4-number'),name=node('div','v4-number-label',label);
+ const value=node('div','v4-number-value','—');value.dataset.productionField=key;
+ wrap.append(name,value);grid.appendChild(wrap);
+}
+function makeCard(p,key){
+ const card=node('article','v4-trade production-position-card');
+ card.dataset.productionKey=key;
+ const top=node('div','v4-trade-top');
+ const title=node('button','v4-token production-token-toggle',p.contract.replace('_',''));
+ title.type='button';title.setAttribute('aria-expanded','false');
+ title.title='Show or hide this position’s TradingView chart below the card';
+ const tag=node('span','v4-tag',safe(p.side));top.append(title,tag);card.appendChild(top);
+ const grid=node('div','v4-numbers');
+ for(const [key,label] of [['pnl','EXCHANGE UNREALIZED P&L (USDT)'],
+ ['contracts','SIZE (GATE CONTRACTS)'],['entry','ENTRY PRICE'],
+ ['mark','GATE MARK PRICE'],['sl','STOP LOSS'],['tp','TAKE PROFIT']]){
+   field(grid,label,key);
+ }
+ card.appendChild(grid);
+ card.appendChild(node('p','v45-refresh-state'));
+ const controls=node('div','v4-controls');
+ for(const action of ['Market Close — LOCKED','Close — LOCKED','Reverse — LOCKED']){
+   const b=node('button','btn gloss-safe-disabled',action);b.type='button';b.disabled=true;
+   b.title='Manual live trading order submission is not certified; use Gate.io to close an open position';
+   controls.appendChild(b);
+ }
+ const manage=node('a','btn production-exchange-manage','Manage / Close on Gate.io ↗');
+ manage.href='https://www.gate.com/futures/USDT/'+encodeURIComponent(p.contract);
+ manage.target='_blank';manage.rel='noopener noreferrer';
+ manage.title='Open Gate.io to manage this existing position; this does not send an API order';
+ controls.appendChild(manage);
+ card.appendChild(controls);
+ const chart=node('div','production-chart');chart.hidden=true;card.appendChild(chart);
+ title.addEventListener('click',()=>{
+   const opening=chart.hidden;
+   // Only one live chart stays open, without removing any position cards.
+   cards.querySelectorAll('.production-chart').forEach(panel=>{
+      if(panel!==chart){panel.hidden=true;const previous=panel.parentElement.querySelector('.production-token-toggle');
+       if(previous)previous.setAttribute('aria-expanded','false');}
+   });
+   chart.hidden=!opening;
+   title.setAttribute('aria-expanded',String(opening));
+   if(opening&&!chart.firstChild)renderChart(chart,p.contract);
+ });
+ return card;
+}
+function renderChart(mount,contract){
+ // A live TradingView public market chart is not the user's private LuxAlgo indicator.
+ if(!CARD_RE.test(contract)){
+   mount.appendChild(node('p','light','TradingView symbol cannot be verified.'));
+   return;
+ }
+ const pair=contract.replace('_','');
+ const market='GATEIO:'+pair+'.P';
+ const section=node('section','v45-indicator');
+ const header=node('div','v45-indicator-head');
+ header.appendChild(node('strong','',pair+' · Gate.io Perpetual · TradingView 5m'));
+ const link=node('a','production-tv-external','Open in TradingView ↗');
+ link.href='https://www.tradingview.com/chart/?symbol='+encodeURIComponent(market);
+ link.rel='noopener noreferrer';link.target='_blank';header.appendChild(link);
+ section.appendChild(header);
+ const widgetWrap=node('div','production-tv-widget');
+ const widget=document.createElement('tv-advanced-chart');
+ widget.setAttribute('symbol',market);
+ widget.setAttribute('interval','5');
+ widget.setAttribute('theme','dark');
+ widget.setAttribute('timezone','Asia/Kolkata');
+ widget.setAttribute('chart-type','candles');
+ widgetWrap.appendChild(widget);section.appendChild(widgetWrap);
+ section.appendChild(node('p','v45-indicator-foot',
+  'TradingView public exchange chart · Paid LuxAlgo overlays require opening your own TradingView workspace.'));
+ mount.appendChild(section);
+}
+function updateCard(card,p,reconciled){
+ const protectedByExchange=reconciled&&p.protection_status==='EXCHANGE_VERIFIED';
+ const values={pnl:p.unrealized_pnl,contracts:p.size_contracts,entry:p.entry_price,
+   mark:p.mark_price,sl:protectedByExchange?p.stop_loss:'NOT VERIFIED',
+   tp:protectedByExchange?p.take_profit:'NOT VERIFIED'};
+ for(const item of card.querySelectorAll('[data-production-field]')){
+   item.textContent=safe(values[item.dataset.productionField]);
+ }
+ const state=card.querySelector('.v45-refresh-state');
+ state.textContent='Execution: '+safe(p.execution_status)+' · SL/TP: '+safe(p.protection_status)+
+   ' · '+safe(p.protection_reason)+' · Live order controls locked; exchange management link available';
+}
+let busy=false;
 async function refresh(){
- if(btn.disabled)return;btn.disabled=true;
+ if(busy)return;busy=true;btn.disabled=true;
  try{
-  let positions=[],reconciled=false,halted=true,mode='READBACK UNVERIFIED';
+  let positions=[],reconciled=false,mode='READBACK UNVERIFIED';
   try{
    const res=await fetch('/terminal/live-execution/snapshot',{cache:'no-store',credentials:'same-origin'});
    const data=await res.json();
    if(!res.ok||!Array.isArray(data.positions))throw Error('Execution protection readback unavailable');
-   positions=data.positions;reconciled=true;halted=data.halted===true;mode=String(data.status||'READ_ONLY');
+   positions=data.positions;reconciled=true;mode=String(data.status||'READ_ONLY');
   }catch(reconcileError){
-   // Keep account positions visible even if trigger-order readback fails.
-   // Never claim protective coverage from this fallback.
    const res=await fetch('/terminal/live-preparation/status',{cache:'no-store',credentials:'same-origin'});
    const data=await res.json();
    if(!res.ok||!data.positions_verified||!Array.isArray(data.production_positions))
-     throw Error('Authenticated production position inventory unavailable');
+      throw Error('Authenticated position inventory unavailable');
    positions=data.production_positions.map(p=>({...p,protection_status:'NOT_VERIFIED',
-    execution_status:'UNKNOWN','protection_reason':'TRIGGER_READBACK_UNAVAILABLE'}));
+       execution_status:'UNKNOWN',protection_reason:'TRIGGER_READBACK_UNAVAILABLE'}));
    mode='POSITION GET ONLY · PROTECTION UNKNOWN';
   }
-  cards.replaceChildren();count.textContent='Gate.io Production Positions ('+positions.length+')';
-  if(!positions.length)cards.appendChild(node('div','v4-prompt','No open production positions reported in current exchange readback.'));
+  const old=new Map([...cards.querySelectorAll('article[data-production-key]')]
+     .map(card=>[card.dataset.productionKey,card]));
+  const seen=new Set();
+  count.textContent='Gate.io Production Positions ('+positions.length+')';
   for(const p of positions){
-   const card=node('article','v4-trade production-position-card');
-   const top=node('div','v4-trade-top');
-   const title=node('strong','v4-token',safe(p.contract).replace('_USDT','USDT'));
-   const tag=node('span','v4-tag',safe(p.side));top.append(title,tag);card.appendChild(top);
-   const grid=node('div','v4-numbers');
-   field(grid,'EXCHANGE UNREALIZED P&L (USDT)',p.unrealized_pnl);
-   field(grid,'SIZE (GATE CONTRACTS)',p.size_contracts);
-   field(grid,'ENTRY PRICE',p.entry_price);field(grid,'GATE MARK PRICE',p.mark_price);
-   const protectedByExchange=reconciled && p.protection_status==='EXCHANGE_VERIFIED';
-   field(grid,'STOP LOSS',protectedByExchange?p.stop_loss:'NOT VERIFIED');
-   field(grid,'TAKE PROFIT',protectedByExchange?p.take_profit:'NOT VERIFIED');
-   card.appendChild(grid);
-   card.appendChild(node('p','v45-refresh-state',
-     'Execution: '+safe(p.execution_status)+' · SL/TP: '+safe(p.protection_status)+
-     ' · '+safe(p.protection_reason)+' · Order controls locked'));
-   const controls=node('div','v4-controls');
-   for(const action of ['Market Close — LOCKED','Close — LOCKED','Reverse — LOCKED']){
-      const b=node('button','btn gloss-safe-disabled',action);b.disabled=true;controls.appendChild(b);
-   }card.appendChild(controls);cards.appendChild(card);
+    if(!CARD_RE.test(String(p.contract||''))||!['LONG','SHORT'].includes(p.side))continue;
+    const key=p.contract+'|'+p.side;seen.add(key);
+    let card=old.get(key);
+    if(!card){card=makeCard(p,key);cards.appendChild(card);}
+    updateCard(card,p,reconciled);
   }
+  for(const [key,card] of old){if(!seen.has(key))card.remove();}
+  if(!positions.length){cards.replaceChildren(node('div','v4-prompt','No open production positions reported in current exchange readback.'));}
+  // Existing card nodes and web components survive 30-second refreshes.
   status.textContent=mode+' · '+new Date().toLocaleTimeString('en-IN',{timeZone:'Asia/Kolkata'})+
-   ' IST · Market scanners run independently';
+    ' IST · Trading is not enabled by chart display';
  }catch(e){
-  status.textContent='PRODUCTION READBACK UNAVAILABLE — exposure UNKNOWN, protection UNKNOWN; check BOT control';
-  count.textContent='Exchange positions not verified';
- }finally{btn.disabled=false;}
+   status.textContent='PRODUCTION READBACK UNAVAILABLE — exposure UNKNOWN, protection UNKNOWN; check Gate.io';
+   count.textContent='Exchange positions not verified';
+ }finally{busy=false;btn.disabled=false;}
 }
 btn.addEventListener('click',refresh);refresh();
 setInterval(()=>{if(!document.hidden)refresh();},30000);
 })();</script>'''
-
 PRODUCTION_BANNER='''<section class="live-ops-banner" aria-label="Production trading preparation">
 <div><strong>GATE.IO FUTURES · PRODUCTION MONITOR</strong><p>Live market feeds and read-only exchange reconciliation run independently of BOT ON/OFF. Position protection must be exchange verified.</p></div>
 <span class="live-ops-state">LIVE MARKET FEED</span></section>'''
@@ -295,6 +372,21 @@ body.production-view .production-position-card .v4-trade-top{display:flex;gap:10
 body.production-view .production-position-card .v4-numbers{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin-top:16px}
 body.production-view .production-position-card .v4-controls{display:flex;flex-wrap:wrap;gap:7px;margin-top:12px}
 body.production-view .production-position-card .v4-controls button{flex:1}
+body.production-view .production-position-card .production-token-toggle{
+  border:0;background:transparent;color:#b8edff;font-weight:900;
+  padding:4px 1px;cursor:pointer;text-decoration:underline;text-underline-offset:3px
+}
+body.production-view .production-position-card .production-token-toggle:focus-visible{outline:2px solid #66e6ff;outline-offset:3px}
+body.production-view .production-position-card .production-token-toggle[aria-expanded="true"]{color:#78edc7}
+body.production-view .production-position-card .production-chart[hidden]{display:none!important}
+body.production-view .production-position-card .production-chart{width:100%;margin-top:14px}
+body.production-view .production-position-card .production-tv-widget{height:350px;min-height:300px;width:100%}
+body.production-view .production-position-card tv-advanced-chart{display:block;width:100%;height:100%}
+body.production-view .production-position-card .production-tv-external{color:#bdefff;text-decoration:underline}
+body.production-view .production-position-card .production-exchange-manage{display:inline-flex;align-items:center;
+  justify-content:center;flex:1;min-height:35px;color:#e5fcff;background:#164e76;
+  border:1px solid #4bb8f2;border-radius:7px;text-decoration:none}
+
 @media(max-width:1050px){body.production-view .production-position-cards{grid-template-columns:1fr}}
 @media(max-width:550px){body.production-view .production-position-card .v4-numbers{grid-template-columns:repeat(2,minmax(0,1fr))}}
 '''
