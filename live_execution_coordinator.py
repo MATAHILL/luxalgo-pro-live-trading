@@ -9,6 +9,7 @@ from datetime import datetime, timezone
 from live_futures_engine import (
     MIGRATION_SQL, LiveSafetyError, MAX_POSITIONS, PER_ENTRY_RISK, MAX_AGGREGATE_RISK,
     GateLiveClient, build_plan, evaluate_protection, reconcile_ledger, active_positions,
+    verify_ledger_position,
 )
 
 LOCK_ID = 805513217
@@ -22,8 +23,13 @@ def read_rows(con):
                         risk_usdt,entry_price,stop_loss,take_profit,contracts,
                         entry_order_id,stop_order_id,take_order_id,created_at,updated_at
                        FROM luxalgo_prod_execution_ledger
+                       WHERE state <> 'CLOSED_VERIFIED'
+                          OR event_id IN (
+                              SELECT event_id FROM luxalgo_prod_execution_ledger
+                              WHERE state = 'CLOSED_VERIFIED'
+                              ORDER BY created_at DESC LIMIT 150)
                        ORDER BY (state <> 'CLOSED_VERIFIED') DESC,
-                                created_at DESC LIMIT 150""")
+                                created_at DESC""")
         return [dict(r) for r in cur.fetchall()]
 
 def control(con):
@@ -121,14 +127,10 @@ def inspect(con, client=None):
         item=by_contract.get(position["contract"])
         coverage={"verified":False,"reason":"UNTRACKED_EXCHANGE_POSITION"}
         if item:
-            expectation={"contract":item["contract"],"side":item["side"],
-                         "entry":item["entry_price"],"sl":item["stop_loss"],
-                         "tp":item["take_profit"],"position_mode":item["position_mode"]}
-            coverage=evaluate_protection(expectation,snap["triggers"])
-            if (coverage["verified"] and
-                (coverage["stop_order_id"]!=str(item.get("stop_order_id") or "") or
-                 coverage["take_order_id"]!=str(item.get("take_order_id") or ""))):
-                coverage={"verified":False,"reason":"PROTECTION_ORDER_IDS_NOT_LINKED_TO_LEDGER"}
+            coverage=verify_ledger_position(item,position,snap["triggers"])
+            if sum(r['contract']==position['contract'] and r['state']!='CLOSED_VERIFIED'
+                   for r in rows) != 1:
+                coverage={'verified':False,'reason':'DUPLICATE_ACTIVE_LEDGER_CONTRACT'}
         cards.append({
             "contract":position["contract"],
             "side":"LONG" if Decimal(str(position["size"]))>0 else "SHORT",
@@ -151,7 +153,7 @@ def inspect(con, client=None):
     untracked_orders=[o for o in snap["orders"]
                       if str(o.get("text","")) not in known_text]
     untracked_triggers=[o for o in snap["triggers"]
-                        if str(o.get("id","")) not in known_trigger_ids]
+                        if str(o.get("id_string") or o.get("id") or "") not in known_trigger_ids]
     anomalies=(comparison["requires_halt"] or bool(untracked_orders)
                or bool(untracked_triggers))
     return {"status":"READ_ONLY_RECONCILED" if not anomalies else "HALT_REVIEW_REQUIRED",
@@ -186,3 +188,4 @@ def status_fallback(reason):
     return {"status":"UNAVAILABLE","halted":True,"halt_reason":reason,
             "positions_verified":False,"positions":None,"open_positions":None,
             "orders_enabled":False,"live_trading":False}
+

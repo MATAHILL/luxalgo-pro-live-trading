@@ -414,20 +414,57 @@ class GateLiveClient:
         return self.request("POST",PREFIX+"/price_orders",
                             payload=build_protective_trigger(plan,kind))
 
+def verify_ledger_position(item, position, trigger_orders):
+    """Prove lifecycle, exact exposure and journal-linked native protection."""
+    try:
+        if item.get('state') != 'PROTECTED':
+            return {'verified': False, 'reason': 'UNVERIFIED_LEDGER_LIFECYCLE_STATE'}
+        if item.get('contract') != position.get('contract'):
+            raise LiveSafetyError('Contract mismatch')
+        quantity = dec(item.get('contracts'), 'journal contracts')
+        if quantity != quantity.to_integral_value():
+            raise LiveSafetyError('Fractional journal contracts')
+        if item.get('side') not in ('LONG', 'SHORT'):
+            raise LiveSafetyError('Unknown journal side')
+        expected = quantity if item['side'] == 'LONG' else -quantity
+        if Decimal(str(position.get('size'))) != expected:
+            return {'verified': False, 'reason': 'POSITION_SIZE_OR_SIDE_MISMATCH'}
+        plan = dict(contract=item['contract'], side=item['side'],
+                    entry=item['entry_price'], sl=item['stop_loss'],
+                    tp=item['take_profit'], position_mode=item['position_mode'])
+        result = evaluate_protection(plan, trigger_orders)
+        if result['verified'] and (
+            result['stop_order_id'] != str(item.get('stop_order_id') or '') or
+            result['take_order_id'] != str(item.get('take_order_id') or '')
+        ):
+            return {'verified': False, 'reason': 'PROTECTION_ORDER_IDS_NOT_LINKED_TO_LEDGER'}
+        return result
+    except (LiveSafetyError, KeyError, TypeError, InvalidOperation, ValueError):
+        return {'verified': False, 'reason': 'MALFORMED_POSITION_OR_LEDGER'}
+
+
 def reconcile_ledger(ledger_rows,positions,trigger_orders):
     """Read-only restart comparison; unknown exposure is never called CLOSED."""
     if not isinstance(ledger_rows,list):
         raise LiveSafetyError("Durable ledger unavailable")
     openpos=active_positions(positions)
     results=[]
+    active_contracts=[r.get('contract') for r in ledger_rows
+                      if r.get('state') != 'CLOSED_VERIFIED']
     for item in ledger_rows:
         same=[p for p in openpos if p.get("contract")==item.get("contract")]
         state=item.get("state")
+        if state != 'CLOSED_VERIFIED' and active_contracts.count(item.get('contract')) != 1:
+            results.append(dict(event_id=item.get('event_id'), state='HALT_RECONCILIATION',
+                                reason='DUPLICATE_ACTIVE_LEDGER_CONTRACT'))
+            continue
         if state=="RESERVED" and not same:
             results.append({"event_id":item.get("event_id"),"state":"RESERVED_NOT_SENT",
                             "reason":"DURABLE_RESERVATION_ONLY"})
             continue
         if state=="CLOSED_VERIFIED":
+            # A later tracked trade on the same contract does not reopen history.
+            same = same if item.get('contract') not in active_contracts else []
             results.append({"event_id":item.get("event_id"),
                             "state":"HALT_RECONCILIATION" if same else "CLOSED_READBACK",
                             "reason":"CLOSED_LEDGER_BUT_EXCHANGE_POSITION_OPEN" if same else "NO_CURRENT_EXCHANGE_POSITION"})
@@ -444,11 +481,7 @@ def reconcile_ledger(ledger_rows,positions,trigger_orders):
             continue
         p=same[0]
         try:
-            side="LONG" if Decimal(str(p["size"]))>0 else "SHORT"
-            if side!=item.get("side"): raise LiveSafetyError("Direction mismatch")
-            plan={"contract":item["contract"],"side":item["side"],
-                  "entry":item["entry_price"],"sl":item["stop_loss"],"tp":item["take_profit"],"position_mode":item["position_mode"]}
-            protection=evaluate_protection(plan,trigger_orders)
+            protection=verify_ledger_position(item,p,trigger_orders)
             results.append({"event_id":item["event_id"],
                             "state":"PROTECTED_READBACK" if protection["verified"] else "HALT_UNPROTECTED",
                             "reason":protection["reason"],"protection":protection})
@@ -463,4 +496,5 @@ def reconcile_ledger(ledger_rows,positions,trigger_orders):
     return {"safe_to_dispatch":False,"results":results,
             "requires_halt":any(x["state"].startswith("HALT") for x in results),
             "orders_enabled":False}
+
 

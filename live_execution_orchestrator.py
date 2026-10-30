@@ -12,7 +12,7 @@ import time
 from live_futures_engine import (
     EXCHANGE_WRITE_RELEASE, LiveSafetyError, AckUnknown, GateLiveClient,
     PREFIX, ORDER_RE, build_plan, client_text, evaluate_protection,
-    verified_account_equity)
+    verified_account_equity, verify_ledger_position)
 from live_execution_coordinator import install,control,halt,read_rows,risk_reserve
 
 def persist_state(open_connection, event_id, state, *, entry_order_id=None,
@@ -122,19 +122,13 @@ def assert_existing_protected_exposure(rows,snapshot):
     known_triggers={str(r[k]) for r in open_rows
                     for k in ("stop_order_id","take_order_id") if r.get(k)}
     for trigger in snapshot["triggers"]:
-        if str(trigger.get("id","")) not in known_triggers:
+        if str(trigger.get("id_string") or trigger.get("id") or "") not in known_triggers:
             raise LiveSafetyError("Orphan or external native trigger")
     for p in snapshot["positions"]:
         row=tracked.get(p["contract"])
         if not row or row["state"]!="PROTECTED":
             raise LiveSafetyError("Open position without protected ledger")
-        expected_side="LONG" if Decimal(str(p["size"]))>0 else "SHORT"
-        if expected_side!=row["side"]:
-            raise LiveSafetyError("Position direction mismatch")
-        plan={"contract":row["contract"],"side":row["side"],
-              "entry":row["entry_price"],"sl":row["stop_loss"],
-              "tp":row["take_profit"],"position_mode":row["position_mode"]}
-        check=evaluate_protection(plan,snapshot["triggers"])
+        check=verify_ledger_position(row,p,snapshot["triggers"])
         if (not check["verified"] or
             check["stop_order_id"]!=str(row["stop_order_id"]) or
             check["take_order_id"]!=str(row["take_order_id"])):
@@ -144,6 +138,8 @@ def assert_existing_protected_exposure(rows,snapshot):
     for row in open_rows:
         if row["state"] not in ("PROTECTED",):
             raise LiveSafetyError("Pending or uncertain order lifecycle blocks new entry")
+        if sum(p['contract']==row['contract'] for p in snapshot['positions']) != 1:
+            raise LiveSafetyError('Protected ledger position missing or ambiguous')
     return {"protected_open_positions":len(snapshot["positions"]),
             "unknown_orders":0,"unknown_triggers":0}
 
@@ -295,6 +291,8 @@ def restart_reconcile(open_connection,client=None):
     client=client or GateLiveClient()
     with open_connection() as con:
         result=reconcile_and_halt_if_needed(con,client)
-    if result["reconciliation"]["requires_halt"] or result["untracked_open_orders"]:
+    if (result["reconciliation"]["requires_halt"] or result["untracked_open_orders"]
+            or result['untracked_open_triggers']):
         return {"status":"HALTED_REVIEW_REQUIRED","orders_resubmitted":0,"readback":result}
     return {"status":"RECONCILED_READ_ONLY","orders_resubmitted":0,"readback":result}
+

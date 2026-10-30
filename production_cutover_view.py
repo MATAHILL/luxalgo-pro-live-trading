@@ -247,7 +247,8 @@ async function update(){
    return;
   }
   if(exchange.fetched_at){
-   const d=new Date(exchange.fetched_at);
+   const d=new Date(typeof exchange.fetched_at==='number'?
+     exchange.fetched_at*1000:exchange.fetched_at);
    checked.textContent='Gate.io readback: '+(Number.isFinite(d.getTime())?
     d.toLocaleString('en-IN',{timeZone:'Asia/Kolkata'})+' IST':'UNVERIFIED TIMESTAMP');
   }
@@ -454,3 +455,4 @@ def production_monitor_page(page):
         raise ValueError("Signal monitor script changed unexpectedly")
     out=out.replace(old,"fetch('/terminal/incoming-signals?production=1',{cache:'no-store'})",1)
     return out
+
