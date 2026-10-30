@@ -22,6 +22,7 @@ def test_safe_webhooks(monkeypatch, tmp_path):
         assert c.get("/terminal").status_code == 200
         assert c.get("/setup").status_code == 403
         assert c.get("/binance/diagnostics").status_code == 403
+        assert c.get("/binance/account").status_code == 403
         setup = c.get("/setup", headers={"X-Admin-Token": "test-admin"})
         assert setup.status_code == 200
         assert setup.headers["cache-control"] == "no-store"
@@ -36,6 +37,10 @@ def test_safe_webhooks(monkeypatch, tmp_path):
         public_check = c.get("/binance/diagnostics", headers={"X-Admin-Token": "test-admin"})
         assert public_check.status_code == 200
         assert public_check.json()["orders_enabled"] is False
+        account = c.get("/binance/account", headers={"X-Admin-Token":"test-admin"})
+        assert account.status_code == 200
+        assert account.json()["orders_enabled"] is False
+        assert account.headers["cache-control"] == "no-store"
         assert c.post("/webhook/bad", json=p).status_code == 403
         a = c.post("/webhook/test-hook", json=p).json()
         b = c.post("/webhook/test-hook", json=p).json()
