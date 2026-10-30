@@ -2358,6 +2358,57 @@ def terminal_production_bot_state():
                        reason='UNVERIFIED_HALT',safety_gates=['STATE_UNAVAILABLE']),503
 
 
+@app.get('/terminal/live-execution/unlock-readiness')
+def terminal_live_unlock_readiness():
+    """Authenticated, non-monetary unlock diagnostic. Never authorizes a trade.
+
+    Fresh Gate.io snapshots use authenticated GET only. An observed flat
+    account is not proof of a past accepted entry or native SL/TP protection.
+    """
+    if not _terminal_permitted():
+        return _terminal_guard()
+    try:
+        from production_bot_control import state
+        from live_futures_engine import (
+            GateLiveClient, LiveSafetyError, EXCHANGE_WRITE_RELEASE)
+        from live_execution_orchestrator import AUTOMATIC_WORKER_RELEASE
+        from live_unlock_preflight import assess_unlock_readiness
+        with _db_connect() as con:
+            current = state(con)
+            with con.cursor() as cur:
+                cur.execute("""SELECT COUNT(*)::int AS unresolved
+                               FROM luxalgo_prod_execution_ledger
+                               WHERE state <> 'CLOSED_VERIFIED'""")
+                count = cur.fetchone()
+            if count is None:
+                raise RuntimeError('Production execution ledger unavailable')
+        try:
+            # Strictly authenticated Gate.io USDT-M GET operations; no POST.
+            snapshot = GateLiveClient().snapshot()
+            exchange_available = True
+        except (LiveSafetyError, OSError, ValueError, TypeError, KeyError):
+            snapshot = None
+            exchange_available = False
+        report = assess_unlock_readiness(
+            current, snapshot, sender_released=EXCHANGE_WRITE_RELEASE,
+            worker_released=AUTOMATIC_WORKER_RELEASE,
+            unresolved_ledger_rows=count['unresolved'])
+        report['exchange_snapshot_available'] = exchange_available
+        report['exchange_fetched_at'] = snapshot.get('fetched_at') if snapshot else None
+        response = jsonify(report)
+        response.status_code = 200 if exchange_available else 503
+        response.headers['Cache-Control'] = 'private, no-store'
+        response.headers['X-Content-Type-Options'] = 'nosniff'
+        return response
+    except (psycopg.Error, RuntimeError, OSError, ValueError, TypeError, KeyError):
+        response = jsonify(status='BLOCKED_STATE_UNAVAILABLE',
+                           source_sender_locked=True, automatic_worker_locked=True,
+                           automatic_real_money_trading_certified=False,
+                           orders_enabled_by_this_check=False, orders_submitted=0)
+        response.headers['Cache-Control'] = 'private, no-store'
+        return response, 503
+
+
 @app.post('/terminal/production-bot-control')
 def terminal_production_bot_update():
     """Operator OFF halts future entries; ON requires independently released gates."""
