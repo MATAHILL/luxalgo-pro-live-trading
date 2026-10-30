@@ -9,7 +9,7 @@ import re
 import sqlite3
 import time
 
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.responses import HTMLResponse
 from dashboard import DASHBOARD_HTML
 from exchange_diagnostics import get_binance_public_status
@@ -113,9 +113,11 @@ def admin_auth(request: Request):
 
 
 @app.get("/setup")
-def setup(request: Request):
+def setup(request: Request, response: Response):
     """Only an authenticated operator can retrieve the private webhook URL."""
     admin_auth(request)
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["Referrer-Policy"] = "no-referrer"
     return {
         "connection": "CONFIGURED" if WEBHOOK_SECRET else "NOT_CONFIGURED",
         "webhook_url": (
