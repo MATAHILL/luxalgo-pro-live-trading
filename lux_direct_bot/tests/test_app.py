@@ -23,6 +23,16 @@ def test_safe_webhooks(monkeypatch, tmp_path):
         assert c.get("/setup").status_code == 403
         assert c.get("/binance/diagnostics").status_code == 403
         assert c.get("/binance/account").status_code == 403
+        assert c.post("/admin/selftest").status_code == 403
+        dry = c.post("/admin/selftest", headers={"X-Admin-Token": "test-admin"})
+        assert dry.status_code == 200
+        assert dry.headers["cache-control"] == "no-store"
+        assert dry.json()["result"] == "PASS"
+        assert [c["side"] for c in dry.json()["checks"]] == ["BUY", "SELL"]
+        assert dry.json()["test_records_persisted"] == 0
+        assert dry.json()["exchange_orders_sent"] == 0
+        assert dry.json()["actual_luxalgo_alert_verified"] is False
+        assert c.get("/signals", headers={"X-Admin-Token":"test-admin"}).json() == []
         setup = c.get("/setup", headers={"X-Admin-Token": "test-admin"})
         assert setup.status_code == 200
         assert setup.headers["cache-control"] == "no-store"
@@ -54,3 +64,7 @@ def test_safe_webhooks(monkeypatch, tmp_path):
         assert c.post("/webhook/test-hook", json=q).json()["side"] == "SELL"
         assert c.post("/webhook/test-hook", json=dict(p,ticker="ETHUSDT")).status_code == 422
         assert c.post("/webhook/test-hook", json=dict(p,alert="Take Profit")).status_code == 422
+        assert c.post("/webhook/test-hook", json=dict(p,tf="1")).status_code == 422
+        assert c.post("/webhook/test-hook", json=dict(p,bartime="2026-10-30T16:00:00Z")).status_code == 422
+        assert c.post("/webhook/test-hook", json=dict(p,bartime=1793375400000)).json()["result"] == "DUPLICATE"
+        assert c.get("/setup", headers={"X-Admin-Token":"test-admin"}).json()["allowed_timeframes"] == ["5"]
