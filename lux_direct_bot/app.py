@@ -34,8 +34,9 @@ def database():
 
 @app.on_event("startup")
 def initialize():
-    if not WEBHOOK_SECRET or not ADMIN_TOKEN or WEBHOOK_SECRET == ADMIN_TOKEN:
-        raise RuntimeError("Unique WEBHOOK_SECRET and ADMIN_TOKEN required")
+    # Unconfigured deployment is health-only. /webhook and /signals remain forbidden.
+    if WEBHOOK_SECRET and ADMIN_TOKEN and WEBHOOK_SECRET == ADMIN_TOKEN:
+        raise RuntimeError("Webhook and admin secrets must differ")
     with database() as db:
         db.execute("""CREATE TABLE IF NOT EXISTS signals (
             id TEXT PRIMARY KEY, at INTEGER NOT NULL, symbol TEXT NOT NULL,
