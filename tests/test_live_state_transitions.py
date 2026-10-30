@@ -58,7 +58,7 @@ class JournalTransitions(unittest.TestCase):
         connect,cur=self.connection()
         persist_state(connect,'event123','ENTRY_CONFIRMED',entry_order_id='123')
         sql,params=cur.execute.call_args.args
-        self.assertIn('entry_order_id IS NULL OR %s IS NULL OR entry_order_id=%s',sql)
+        self.assertIn('entry_order_id IS NULL OR %s::text IS NULL OR entry_order_id=%s',sql)
         self.assertEqual(params[7:9],('123','123'))
 
     def test_protection_acknowledgments_must_match_get_ids(self):

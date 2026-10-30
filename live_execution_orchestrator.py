@@ -49,9 +49,9 @@ def persist_state(open_connection, event_id, state, *, entry_order_id=None,
                                detail=COALESCE(%s::jsonb,detail),
                                updated_at=NOW()
                            WHERE event_id=%s AND state=%s
-                             AND (entry_order_id IS NULL OR %s IS NULL OR entry_order_id=%s)
-                             AND (stop_order_id IS NULL OR %s IS NULL OR stop_order_id=%s)
-                             AND (take_order_id IS NULL OR %s IS NULL OR take_order_id=%s)""",
+                             AND (entry_order_id IS NULL OR %s::text IS NULL OR entry_order_id=%s)
+                             AND (stop_order_id IS NULL OR %s::text IS NULL OR stop_order_id=%s)
+                             AND (take_order_id IS NULL OR %s::text IS NULL OR take_order_id=%s)""",
                         (state,entry_order_id,stop_order_id,take_order_id,
                          detail,event_id,predecessors[state],
                          entry_order_id,entry_order_id,stop_order_id,stop_order_id,
