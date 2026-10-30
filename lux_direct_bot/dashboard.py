@@ -32,6 +32,7 @@ p.muted,.muted{color:var(--muted)}
 th{text-align:left;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);font-size:11px;padding:11px;border-bottom:1px solid var(--line)}
 td{padding:12px 11px;border-bottom:1px solid #253244}tr:last-child td{border-bottom:0}
 .buy{color:#61dfac;font-weight:800}.sell{color:#ff9496;font-weight:800}
+.setup{margin-bottom:20px}.setup .muted{font-size:13px}.setup pre{background:#0e1824;border:1px solid var(--line);border-radius:8px;padding:12px;white-space:pre-wrap;overflow-wrap:anywhere;font-size:12px}
 .note{margin-top:18px;font-size:12px;color:var(--muted);display:flex;justify-content:space-between;flex-wrap:wrap;gap:10px}
 strong.accent{color:var(--accent)}.hidden{display:none!important}
 @media(max-width:760px){.grid{grid-template-columns:repeat(2,minmax(0,1fr))}.wrapper{padding:16px 12px 48px}.card{padding:15px}.kpi .value{font-size:16px}}
@@ -45,6 +46,22 @@ strong.accent{color:var(--accent)}.hidden{display:none!important}
   <div class="card kpi"><div class="label">LuxAlgo signals</div><div class="value" id="signals">Not verified</div><div class="hint" id="signalsHint">Waiting for actual alert</div></div>
   <div class="card kpi"><div class="label">Binance Futures</div><div class="value" id="exchange">Not connected</div><div class="hint">No API access installed</div></div>
   <div class="card kpi"><div class="label">Orders / positions</div><div class="value">Unavailable</div><div class="hint">Exchange connection required</div></div>
+</section>
+<section class="card setup" aria-labelledby="setupTitle">
+  <div class="section-head"><h2 id="setupTitle">TradingView connection</h2><span class="pill">Trading OFF</span></div>
+  <p class="muted">Private webhook and LuxAlgo alert JSON. Unlock using your Render operator token below. This page does not access TradingView or submit orders.</p>
+  <div id="setupControls" class="hidden">
+    <div class="actions">
+      <button id="copyWebhook" type="button">Copy private webhook URL</button>
+      <button id="copyTemplate" type="button">Copy LuxAlgo alert JSON</button>
+      <button id="probeBinance" type="button">Check Binance public API</button>
+    </div>
+    <details style="margin-top:12px"><summary>Show alert JSON template</summary>
+      <pre id="setupTemplate"></pre>
+    </details>
+  </div>
+  <p class="muted" id="setupMessage">Operator authentication required. Private webhook URL is not shown publicly.</p>
+  <p class="muted" id="binanceMessage">Binance account API: not connected. No live trading.</p>
 </section>
 <section class="card" aria-labelledby="signalTitle">
   <div class="section-head"><div><h1 id="signalTitle">Received LuxAlgo signals</h1><div class="muted" style="font-size:12px">Actual webhook records only · No simulated trade fills</div></div>
@@ -65,6 +82,7 @@ strong.accent{color:var(--accent)}.hidden{display:none!important}
 (function(){
 'use strict';
 var token = '';
+var setupConfig = null;
 var $ = function(id){return document.getElementById(id);};
 function show(id, visible){$(id).classList.toggle('hidden', !visible);}
 function setText(id,text){$(id).textContent=text;}
@@ -87,6 +105,37 @@ async function health(){
     setText('warning','Unable to verify bot service status. Please retry.');
     setText('checked','Health check failed');
   }
+}
+async function loadSetup(){
+  if(!token)return;
+  try{
+    var res=await fetch('/setup',{cache:'no-store',headers:{'X-Admin-Token':token}});
+    if(!res.ok){setText('setupMessage','Operator authentication required for setup.');return;}
+    setupConfig=await res.json();
+    if(!setupConfig.webhook_url){setText('setupMessage','Webhook configuration not yet available.');return;}
+    show('setupControls',true);
+    setText('setupTemplate',setupConfig.luxalgo_alert_message||'');
+    setText('setupMessage','Ready: copy the private URL and JSON into a LuxAlgo Any alert() function call alert. Enable bullish and bearish confirmations only. Keep the webhook URL secret.');
+  }catch(error){setText('setupMessage','Unable to load private alert settings: '+error.message);}
+}
+async function copySetup(field){
+  if(!token || !setupConfig || !setupConfig[field])return;
+  try{
+    await navigator.clipboard.writeText(setupConfig[field]);
+    setText('setupMessage',field==='webhook_url'?'Private webhook URL copied. Paste only into TradingView webhook settings.':'LuxAlgo alert message copied. Paste into the LuxAlgo custom alert message field.');
+  }catch(error){
+    setText('setupMessage','Clipboard permission unavailable. Copy from the operator setup page using a secure browser.');
+  }
+}
+async function diagnoseBinance(){
+  if(!token)return;
+  setText('binanceMessage','Checking public Binance Futures connectivity (no private account access)...');
+  try{
+    var resp=await fetch('/binance/diagnostics',{cache:'no-store',headers:{'X-Admin-Token':token}});
+    if(!resp.ok)throw new Error('HTTP '+resp.status);
+    var value=await resp.json();
+    setText('binanceMessage','Binance public API: '+value.public_api+' · BTCUSDT: '+value.btc_usdt+' · Account API: NOT CONNECTED · Orders: OFF.');
+  }catch(error){setText('binanceMessage','Binance diagnostics unavailable: '+error.message);}
 }
 function draw(records){
   $('rows').replaceChildren();
@@ -118,9 +167,12 @@ async function signals(){
     draw(records);
   }catch(e){setText('message','Unable to load signal history: '+e.message);}
 }
-$('login').addEventListener('submit',function(e){e.preventDefault();token=$('token').value.trim();$('token').value='';show('login',false);show('lock',true);signals();});
+$('login').addEventListener('submit',function(e){e.preventDefault();token=$('token').value.trim();$('token').value='';show('login',false);show('lock',true);signals();loadSetup();});
 $('refresh').addEventListener('click',function(){health();signals();});
-$('lock').addEventListener('click',function(){token='';setText('signals','Locked');setText('signalsHint','Private history');setText('message','Signal history locked.');$('rows').replaceChildren();show('tableBox',false);show('login',true);show('lock',false);});
+$('lock').addEventListener('click',function(){token='';setupConfig=null;show('setupControls',false);setText('setupTemplate','');setText('setupMessage','Operator authentication required. Private webhook URL is not shown publicly.');setText('signals','Locked');setText('signalsHint','Private history');setText('message','Signal history locked.');$('rows').replaceChildren();show('tableBox',false);show('login',true);show('lock',false);});
+$('copyWebhook').addEventListener('click',function(){copySetup('webhook_url');});
+$('copyTemplate').addEventListener('click',function(){copySetup('luxalgo_alert_message');});
+$('probeBinance').addEventListener('click',diagnoseBinance);
 health();setInterval(function(){health();signals();},15000);
 })();
 </script></body></html>"""
