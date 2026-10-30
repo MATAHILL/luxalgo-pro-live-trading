@@ -12,7 +12,8 @@ import time
 from live_futures_engine import (
     EXCHANGE_WRITE_RELEASE, LiveSafetyError, AckUnknown, GateLiveClient,
     PREFIX, ORDER_RE, build_plan, client_text, evaluate_protection,
-    verified_account_equity, verify_ledger_position, dec, price_geometry)
+    verified_account_equity, verify_ledger_position, dec, price_geometry,
+    verify_execution_preflight)
 from live_execution_coordinator import install,control,halt,read_rows,risk_reserve
 
 def persist_state(open_connection, event_id, state, *, entry_order_id=None,
@@ -212,6 +213,8 @@ def execute_confirmed_signal(open_connection,plan,client=None):
         require_operator_on(con)
         # A fresh account snapshot must have no untracked orders before sending.
         snap=client.snapshot()
+        metadata=client.request('GET',PREFIX+'/contracts/'+plan['contract'])
+        verify_execution_preflight(plan,metadata,snap)
         existing=read_rows(con)
         assert_existing_protected_exposure(existing,snap)
         verified_equity,_=verified_account_equity(snap["account"])
