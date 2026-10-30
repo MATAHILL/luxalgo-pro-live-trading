@@ -21,3 +21,27 @@ jobs:
         run: pip install -r requirements.txt
       - name: Run isolated tests
         run: python -m pytest -q tests
+      - name: Verify deployed service health and unauthenticated rejection
+        run: |
+          python - <<'PY'
+          import json
+          import urllib.error
+          import urllib.request
+          base = "https://lux-direct-bot-dryrun.onrender.com"
+          with urllib.request.urlopen(base + "/health", timeout=50) as response:
+              data = json.load(response)
+          assert data["mode"] == "DRY_RUN", data
+          assert data["live_trading"] is False, data
+          request = urllib.request.Request(
+              base + "/webhook/invalid",
+              data=b'{"alert":"Bullish Confirmation Signal"}',
+              headers={"Content-Type": "application/json"},
+              method="POST",
+          )
+          try:
+              urllib.request.urlopen(request, timeout=50)
+              raise AssertionError("Missing/invalid webhook secret unexpectedly accepted")
+          except urllib.error.HTTPError as error:
+              assert error.code == 403, error.code
+          print("Deployed health and unauthorized webhook checks passed")
+          PY
