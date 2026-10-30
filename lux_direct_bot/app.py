@@ -19,9 +19,9 @@ MODE = "DRY_RUN"  # Code-level interlock: this build can NEVER transmit exchange
 WEBHOOK_SECRET = os.environ.get("WEBHOOK_SECRET", "")
 ADMIN_TOKEN = os.environ.get("ADMIN_TOKEN", "")
 DB_PATH = os.environ.get("DB_PATH", "/tmp/lux-direct-bot.sqlite3")
-ALLOWED_SYMBOLS = {s.strip().upper() for s in os.environ.get("ALLOWED_SYMBOLS", "BTCUSDT").split(",") if s.strip()}
+ALLOWED_SYMBOLS = {s.strip().upper() for s in os.environ.get("ALLOWED_SYMBOLS", "XRPUSDT").split(",") if s.strip()}
 ALLOWED_TIMEFRAMES = {s.strip().upper() for s in os.environ.get("ALLOWED_TIMEFRAMES", "5").split(",") if s.strip()}
-SYMBOL_MAP = json.loads(os.environ.get("SYMBOL_MAP_JSON", '{"BTCUSDT.P":"BTCUSDT"}'))
+SYMBOL_MAP = json.loads(os.environ.get("SYMBOL_MAP_JSON", '{"XRPUSDT.P":"XRPUSDT"}'))
 EVENTS = {
     "bullish confirmation signal": "BUY",
     "bullish confirmation": "BUY",
