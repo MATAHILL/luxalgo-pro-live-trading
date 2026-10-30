@@ -37,6 +37,7 @@ class PostAckDatabaseFailureTests(unittest.TestCase):
              patch.object(orchestrator, "control", return_value={"halted": False}), \
              patch.object(orchestrator, "read_rows", return_value=[]), \
              patch.object(orchestrator, "risk_reserve"), \
+             patch.object(orchestrator, "verify_execution_preflight"), \
              patch.object(orchestrator, "assert_existing_protected_exposure"), \
              patch.object(orchestrator, "verified_account_equity", return_value=(1000, 1000)), \
              patch("production_bot_control.require_operator_on"), \
@@ -74,3 +75,4 @@ class PostAckDatabaseFailureTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+

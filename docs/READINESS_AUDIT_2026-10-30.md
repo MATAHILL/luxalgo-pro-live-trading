@@ -77,3 +77,20 @@ Validation: 109 live-safety tests passed locally, including nine new journal and
 readback tests. These are offline tests, not proof of cross-process PostgreSQL
 stress behavior or live exchange acceptance. The remaining release blockers
 listed above still apply. No execution flag or authorization window was changed.
+
+## Follow-up: fresh exchange configuration checks
+
+The execution path now checks authenticated per-contract leverage and position
+mode against the plan, current trading status, market-order lot limits, original
+protective-price ticks, signal age, fresh margin including fee/slippage allowance,
+and modeled risk against fresh equity. Missing or inconsistent settings reject
+the order; this code never changes leverage or rounds the original signal.
+Zero-size position settings are retained for verification.
+
+Validation: 120 live-safety tests passed, including eleven new preflight tests.
+Contract field semantics were checked against Gate's official futures API docs:
+https://www.gate.com/docs/developers/apiv4/en/futures/
+
+This implements guards; it does not certify actual contract settings or eliminate
+the interval between readback and dispatch. The acceptance, recovery, source
+alert and concurrency blockers above remain. Live dispatch remains disabled.

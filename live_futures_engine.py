@@ -231,6 +231,7 @@ def build_plan(signal, metadata, equity, available, positions, reserved_risk=0, 
     if risk>eq*PER_ENTRY_RISK or risk+reserve>eq*MAX_AGGREGATE_RISK:
         raise LiveSafetyError("Risk cap crossed")
     return dict(event_id=event,client_text=text,contract=contract,side=side,timeframe=tf,
+                received_epoch=int(signal['received_epoch']),
                 contracts=int(count),entry=str(e),sl=str(s),tp=str(t),
                 estimated_risk_usdt=str(risk),risk_cap_usdt=str(budget),
                 risk_includes_modeled_taker_fees_and_slippage=True,
@@ -238,6 +239,79 @@ def build_plan(signal, metadata, equity, available, positions, reserved_risk=0, 
                 modeled_fee_slippage_usdt=str(count*unit_fee_slip),
                 max_entry_slippage_ratio=str(slip),
                 leverage=str(lev),position_mode=position_mode,verified_live_order=False)
+
+
+def verify_execution_preflight(plan, metadata, snapshot, now=None):
+    """Verify actual exchange settings; never change leverage or round signals."""
+    now=int(time.time()) if now is None else int(now)
+    try:
+        age=now-int(plan['received_epoch'])
+    except (KeyError,TypeError,ValueError,OverflowError) as exc:
+        raise LiveSafetyError('Signal timestamp unavailable for execution') from exc
+    if not 0<=age<=MAX_SIGNAL_AGE_SECONDS:
+        raise LiveSafetyError('Signal expired before dispatch')
+    if (not isinstance(metadata,dict) or metadata.get('name')!=plan['contract'] or
+            metadata.get('in_delisting') is not False or metadata.get('status')!='trading'):
+        raise LiveSafetyError('Contract not independently verified as trading')
+    quantity=dec(plan.get('contracts'),'contracts')
+    minimum=dec(metadata.get('order_size_min'),'minimum lot')
+    maximum=dec(metadata.get('order_size_max'),'maximum lot')
+    raw_market=metadata.get('market_order_size_max')
+    if raw_market is None or isinstance(raw_market,bool):
+        raise LiveSafetyError('Market order limit missing')
+    try:market_max=Decimal(str(raw_market))
+    except (InvalidOperation,ValueError,TypeError) as exc:
+        raise LiveSafetyError('Market order limit invalid') from exc
+    if not market_max.is_finite() or market_max<0:
+        raise LiveSafetyError('Market order limit invalid')
+    market_max=maximum if market_max==0 else min(maximum,market_max)
+    if quantity!=quantity.to_integral_value() or not minimum<=quantity<=market_max:
+        raise LiveSafetyError('Order exceeds verified market lot constraints')
+    tick=dec(metadata.get('order_price_round'),'price tick')
+    for key in ('sl','tp'):
+        if dec(plan.get(key),key)%tick!=0:
+            raise LiveSafetyError('Original LuxAlgo protective price is off tick')
+    mode=plan.get('position_mode')
+    if mode not in ('single','dual') or snapshot['account'].get('position_mode')!=mode:
+        raise LiveSafetyError('Account position mode changed or unknown')
+    settings=snapshot.get('position_settings')
+    expected_mode='single' if mode=='single' else ('dual_long' if plan['side']=='LONG' else 'dual_short')
+    if not isinstance(settings,list):
+        raise LiveSafetyError('Authenticated contract leverage settings unavailable')
+    matching=[p for p in settings if isinstance(p,dict) and
+              p.get('contract')==plan['contract'] and p.get('mode')==expected_mode]
+    if len(matching)!=1:
+        raise LiveSafetyError('Contract leverage configuration missing or ambiguous')
+    raw=matching[0].get('leverage')
+    if raw is None or isinstance(raw,bool):
+        raise LiveSafetyError('Authenticated leverage missing')
+    try:isolated=Decimal(str(raw))
+    except (InvalidOperation,ValueError,TypeError) as exc:
+        raise LiveSafetyError('Authenticated leverage invalid') from exc
+    if not isolated.is_finite() or isolated<0:
+        raise LiveSafetyError('Authenticated leverage invalid')
+    actual=dec(matching[0].get('cross_leverage_limit'),'cross leverage') if isolated==0 else isolated
+    planned=dec(plan.get('leverage'),'planned leverage')
+    if (actual!=planned or actual>MAX_LEVERAGE or
+        not dec(metadata.get('leverage_min'),'minimum leverage')<=actual<=dec(metadata.get('leverage_max'),'maximum leverage')):
+        raise LiveSafetyError('Actual leverage does not match verified plan limits')
+    entry,sl,tp=price_geometry(plan['side'],plan['entry'],plan['sl'],plan['tp'])
+    mark=dec(metadata.get('mark_price'),'live mark')
+    price_geometry(plan['side'],mark,sl,tp)
+    equity,available=verified_account_equity(snapshot['account'])
+    multiplier=dec(metadata.get('quanto_multiplier'),'contract multiplier')
+    slip=dec(plan.get('max_entry_slippage_ratio'),'slippage')
+    fee=dec(metadata.get('taker_fee_rate'),'taker fee')
+    if slip>Decimal('0.001') or fee>Decimal('0.01'):
+        raise LiveSafetyError('Fee/slippage ceiling exceeded')
+    notional=quantity*multiplier*max(entry,mark)*(1+slip)
+    if notional/planned+notional*fee>available:
+        raise LiveSafetyError('Insufficient fresh margin including entry fee and slippage')
+    reserved=dec(plan.get('estimated_risk_usdt'),'modeled risk')
+    fresh_risk=quantity*multiplier*(abs(entry-sl)+max(entry,mark)*(2*fee+2*slip))
+    if reserved>equity*PER_ENTRY_RISK or fresh_risk>min(reserved,equity*PER_ENTRY_RISK):
+        raise LiveSafetyError('Fresh equity no longer supports modeled risk')
+    return {'verified':True,'orders_sent':0,'actual_leverage':str(actual)}
 
 def build_entry_order(plan):
     if not isinstance(plan,dict) or plan.get("side") not in ("LONG","SHORT"):
@@ -403,6 +477,7 @@ class GateLiveClient:
         if len(orders)>=100 or len(triggers)>=100:
             raise LiveSafetyError("Order pagination required; exposure ambiguous")
         return {"account":account,"positions":active_positions(positions),
+                "position_settings":positions,
                 "orders":orders,"triggers":triggers,"source":"GATE_IO_LIVE_FUTURES",
                 "fetched_at":int(time.time()),"orders_enabled":False}
 
