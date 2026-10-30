@@ -36,7 +36,7 @@ def test_read_only_binance_signed_get(monkeypatch):
             }])
         if request.url.path == "/fapi/v3/positionRisk":
             return httpx.Response(200, json=[{
-                "symbol": "BTCUSDT", "positionAmt": "0.001", "positionSide": "BOTH",
+                "symbol": "XRPUSDT", "positionAmt": "0.001", "positionSide": "BOTH",
                 "entryPrice": "60000", "markPrice": "61000", "unRealizedProfit": "1.0",
                 "leverage": "3"
             }, {"symbol": "ETHUSDT", "positionAmt": "0"}])
