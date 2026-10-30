@@ -13,6 +13,7 @@ from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.responses import HTMLResponse
 from dashboard import DASHBOARD_HTML
 from exchange_diagnostics import get_binance_public_status
+from binance_account import read_account_snapshot
 
 MODE = "DRY_RUN"  # Code-level interlock: this build can NEVER transmit exchange orders.
 WEBHOOK_SECRET = os.environ.get("WEBHOOK_SECRET", "")
@@ -147,6 +148,15 @@ def binance_diagnostics(request: Request):
     admin_auth(request)
     result = get_binance_public_status()
     return result
+
+
+@app.get("/binance/account")
+def binance_account(request: Request, response: Response):
+    """Authenticated read-only Binance USD-M Futures account snapshot."""
+    admin_auth(request)
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["Referrer-Policy"] = "no-referrer"
+    return read_account_snapshot()
 
 
 @app.get("/signals")
