@@ -12,12 +12,33 @@ import time
 from live_futures_engine import (
     EXCHANGE_WRITE_RELEASE, LiveSafetyError, AckUnknown, GateLiveClient,
     PREFIX, ORDER_RE, build_plan, client_text, evaluate_protection,
-    verified_account_equity, verify_ledger_position)
+    verified_account_equity, verify_ledger_position, dec, price_geometry)
 from live_execution_coordinator import install,control,halt,read_rows,risk_reserve
 
 def persist_state(open_connection, event_id, state, *, entry_order_id=None,
                   stop_order_id=None, take_order_id=None, detail=None):
-    """Persist lifecycle milestone before/after external effects."""
+    """Compare-and-set milestones; late workers cannot overwrite HALT/closure.
+
+    No generic route to CLOSED_VERIFIED: closure needs separate exchange proof.
+    A rejected transition must halt the caller, never be retried as a new entry.
+    """
+    predecessors = {
+        'SENDING': 'RESERVED',
+        'ACK_UNKNOWN': 'SENDING',
+        'ENTRY_CONFIRMED': 'SENDING',
+        'PROTECTION_PENDING': 'ENTRY_CONFIRMED',
+        'PROTECTED': 'PROTECTION_PENDING',
+    }
+    if state not in predecessors:
+        raise LiveSafetyError('Unsupported journal transition')
+    if state == 'ENTRY_CONFIRMED' and not ORDER_RE.fullmatch(str(entry_order_id or '')):
+        raise LiveSafetyError('Confirmed entry requires verified order identity')
+    if state == 'PROTECTED' and (
+        not ORDER_RE.fullmatch(str(stop_order_id or '')) or
+        not ORDER_RE.fullmatch(str(take_order_id or '')) or
+        str(stop_order_id) == str(take_order_id)
+    ):
+        raise LiveSafetyError('Protected journal requires two distinct native order IDs')
     with open_connection() as con:
         with con.cursor() as cur:
             cur.execute("""UPDATE luxalgo_prod_execution_ledger
@@ -27,11 +48,16 @@ def persist_state(open_connection, event_id, state, *, entry_order_id=None,
                                take_order_id=COALESCE(%s,take_order_id),
                                detail=COALESCE(%s::jsonb,detail),
                                updated_at=NOW()
-                           WHERE event_id=%s""",
+                           WHERE event_id=%s AND state=%s
+                             AND (entry_order_id IS NULL OR %s IS NULL OR entry_order_id=%s)
+                             AND (stop_order_id IS NULL OR %s IS NULL OR stop_order_id=%s)
+                             AND (take_order_id IS NULL OR %s IS NULL OR take_order_id=%s)""",
                         (state,entry_order_id,stop_order_id,take_order_id,
-                         detail,event_id))
+                         detail,event_id,predecessors[state],
+                         entry_order_id,entry_order_id,stop_order_id,stop_order_id,
+                         take_order_id,take_order_id))
             if cur.rowcount!=1:
-                raise LiveSafetyError("Journal state update was not persisted")
+                raise LiveSafetyError("Journal transition rejected: stale state or conflicting order identity")
     return state
 
 def emergency_persist_halt(open_connection, reason, event_id=None):
@@ -64,15 +90,40 @@ def require_full_entry_readback(client,plan,entry_ack):
     signed=int(plan["contracts"])*(1 if plan["side"]=="LONG" else -1)
     # The API uses signed size; IOC partially filled orders MUST NOT be mistaken
     # for the planned full size. Any ambiguity goes to HALT, not second entry.
-    if (filled!=signed or
+    if (filled!=signed or Decimal(str(order.get('size',0)))!=signed or
+        Decimal(str(order.get('left',0)))!=0 or
         order.get("status")!="finished" or
         Decimal(str(order.get("fill_price") or 0))<=0):
         raise AckUnknown("Order not fully filled and reconciled")
+    fill=dec(order.get('fill_price'),'fill price')
+    entry=dec(plan.get('entry'),'signal entry')
+    slip=dec(plan.get('max_entry_slippage_ratio','0.001'),'entry slippage')
+    if slip>Decimal('0.001') or (
+        fill>entry*(1+slip) if plan['side']=='LONG' else fill<entry*(1-slip)
+    ):
+        raise AckUnknown('Confirmed fill exceeds permitted entry slippage')
+    try:
+        price_geometry(plan['side'],fill,plan['sl'],plan['tp'])
+    except LiveSafetyError as exc:
+        raise AckUnknown('Fill invalidates original LuxAlgo protection geometry') from exc
     snap=client.snapshot()
     matches=[p for p in snap["positions"] if p["contract"]==plan["contract"]]
     if len(matches)!=1 or Decimal(str(matches[0]["size"]))!=Decimal(signed):
         raise AckUnknown("Position size/direction mismatches fill readback")
     return order_id,snap
+
+
+def require_linked_trigger_acknowledgments(stop, take, checked):
+    """Native GET identities must match these exact two POST acknowledgments."""
+    ids=[]
+    for acknowledgment in (stop,take):
+        identity=str(acknowledgment.get('id_string') or acknowledgment.get('id') or '') if isinstance(acknowledgment,dict) else ''
+        if not ORDER_RE.fullmatch(identity):
+            raise AckUnknown('Native protection acknowledgment identity missing')
+        ids.append(identity)
+    if (ids[0]==ids[1] or not checked.get('verified') or
+        ids != [checked.get('stop_order_id'),checked.get('take_order_id')]):
+        raise AckUnknown('Native protection readback does not match submitted orders')
 
 def full_close_oneway_order(plan):
     """Single/hedge-mode one-shot reduce-only emergency close.
@@ -190,6 +241,7 @@ def execute_confirmed_signal(open_connection,plan,client=None):
         checked=evaluate_protection(plan,snapshot["triggers"])
         if not checked["verified"]:
             raise AckUnknown("Native exchange protection verification failed")
+        require_linked_trigger_acknowledgments(stop,take,checked)
         persist_state(open_connection,event,"PROTECTED",
                       stop_order_id=checked["stop_order_id"],
                       take_order_id=checked["take_order_id"])
