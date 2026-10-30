@@ -45,7 +45,7 @@ strong.accent{color:var(--accent)}.hidden{display:none!important}
   <div class="card kpi"><div class="label">Service</div><div class="value" id="service">Checking…</div><div class="hint">Render web service</div></div>
   <div class="card kpi"><div class="label">LuxAlgo signals</div><div class="value" id="signals">Not verified</div><div class="hint" id="signalsHint">Waiting for actual alert</div></div>
   <div class="card kpi"><div class="label">Binance Futures</div><div class="value" id="exchange">Not connected</div><div class="hint">No API access installed</div></div>
-  <div class="card kpi"><div class="label">Orders / positions</div><div class="value">Unavailable</div><div class="hint">Exchange connection required</div></div>
+  <div class="card kpi"><div class="label">Orders / positions</div><div class="value" id="positionValue">Unavailable</div><div class="hint" id="positionHint">Exchange connection required</div></div>
 </section>
 <section class="card setup" aria-labelledby="setupTitle">
   <div class="section-head"><h2 id="setupTitle">TradingView connection</h2><span class="pill">Trading OFF</span></div>
@@ -54,14 +54,14 @@ strong.accent{color:var(--accent)}.hidden{display:none!important}
     <div class="actions">
       <button id="copyWebhook" type="button">Copy private webhook URL</button>
       <button id="copyTemplate" type="button">Copy LuxAlgo alert JSON</button>
-      <button id="probeBinance" type="button">Check Binance public API</button>
+      <button id="probeBinance" type="button">Check Binance public API</button><button id="readBinance" type="button">Read Binance account</button>
     </div>
     <details style="margin-top:12px"><summary>Show alert JSON template</summary>
       <pre id="setupTemplate"></pre>
     </details>
   </div>
   <p class="muted" id="setupMessage">Operator authentication required. Private webhook URL is not shown publicly.</p>
-  <p class="muted" id="binanceMessage">Binance account API: not connected. No live trading.</p>
+  <p class="muted" id="binanceMessage">Binance account API: not connected. No live trading.</p><div id="accountBox" class="hidden"><div class="muted" id="balanceLabel" style="margin:10px 0;font-size:13px"></div><div class="scroll"><table><thead><tr><th>Symbol</th><th>Side</th><th>Amount</th><th>Entry</th><th>Mark</th><th>Unrealized P&L</th></tr></thead><tbody id="positionRows"></tbody></table></div></div>
 </section>
 <section class="card" aria-labelledby="signalTitle">
   <div class="section-head"><div><h1 id="signalTitle">Received LuxAlgo signals</h1><div class="muted" style="font-size:12px">Actual webhook records only · No simulated trade fills</div></div>
@@ -137,6 +137,36 @@ async function diagnoseBinance(){
     setText('binanceMessage','Binance public API: '+value.public_api+' · BTCUSDT: '+value.btc_usdt+' · Account API: NOT CONNECTED · Orders: OFF.');
   }catch(error){setText('binanceMessage','Binance diagnostics unavailable: '+error.message);}
 }
+async function readBinanceAccount(){
+  if(!token)return;
+  setText('binanceMessage','Checking Binance USD-M Futures account (read-only)...');
+  show('accountBox',false);
+  try{
+    var resp=await fetch('/binance/account',{cache:'no-store',headers:{'X-Admin-Token':token}});
+    if(!resp.ok)throw new Error('HTTP '+resp.status);
+    var value=await resp.json();
+    if(value.status!=='CONNECTED_READ_ONLY'){
+      setText('binanceMessage','Binance account: '+value.status+'. No orders can be placed. '+(value.http_status?'Exchange HTTP '+value.http_status:''));
+      setText('exchange','Not connected');
+      setText('positionValue','Unavailable');
+      return;
+    }
+    setText('exchange','Read only');
+    setText('positionValue',String(value.positions.length)+' positions');
+    setText('positionHint','Verified exchange data (read only)');
+    setText('balanceLabel','USDT wallet: '+String(value.usdt_balance??'not returned')+' · Available: '+String(value.usdt_available??'not returned'));
+    $('positionRows').replaceChildren();
+    for(var p of value.positions){
+      var tr=document.createElement('tr');
+      for(var field of [p.symbol,p.position_side,p.amount,p.entry_price,p.mark_price,p.unrealized_pnl]){
+        var td=document.createElement('td');td.textContent=String(field??'—');tr.appendChild(td);
+      }
+      $('positionRows').appendChild(tr);
+    }
+    show('accountBox',true);
+    setText('binanceMessage','Binance authenticated READ-ONLY connection verified. Live orders remain disabled.');
+  }catch(error){setText('binanceMessage','Account read failed: '+error.message);}
+}
 function draw(records){
   $('rows').replaceChildren();
   if(!records.length){setText('message','No authenticated LuxAlgo signals recorded yet. No trade has been executed.');show('tableBox',false);setText('signals','0 received');return;}
@@ -169,10 +199,11 @@ async function signals(){
 }
 $('login').addEventListener('submit',function(e){e.preventDefault();token=$('token').value.trim();$('token').value='';show('login',false);show('lock',true);signals();loadSetup();});
 $('refresh').addEventListener('click',function(){health();signals();});
-$('lock').addEventListener('click',function(){token='';setupConfig=null;show('setupControls',false);setText('setupTemplate','');setText('setupMessage','Operator authentication required. Private webhook URL is not shown publicly.');setText('signals','Locked');setText('signalsHint','Private history');setText('message','Signal history locked.');$('rows').replaceChildren();show('tableBox',false);show('login',true);show('lock',false);});
+$('lock').addEventListener('click',function(){token='';setupConfig=null;show('setupControls',false);show('accountBox',false);setText('setupTemplate','');setText('exchange','Not connected');setText('positionValue','Unavailable');setText('positionHint','Exchange connection required');setText('setupMessage','Operator authentication required. Private webhook URL is not shown publicly.');setText('signals','Locked');setText('signalsHint','Private history');setText('message','Signal history locked.');$('rows').replaceChildren();show('tableBox',false);show('login',true);show('lock',false);});
 $('copyWebhook').addEventListener('click',function(){copySetup('webhook_url');});
 $('copyTemplate').addEventListener('click',function(){copySetup('luxalgo_alert_message');});
 $('probeBinance').addEventListener('click',diagnoseBinance);
+$('readBinance').addEventListener('click',readBinanceAccount);
 health();setInterval(function(){health();signals();},15000);
 })();
 </script></body></html>"""
