@@ -10,6 +10,8 @@ import sqlite3
 import time
 
 from fastapi import FastAPI, HTTPException, Request
+from fastapi.responses import HTMLResponse
+from dashboard import DASHBOARD_HTML
 
 MODE = "DRY_RUN"  # Code-level interlock: this build can NEVER transmit exchange orders.
 WEBHOOK_SECRET = os.environ.get("WEBHOOK_SECRET", "")
@@ -60,6 +62,24 @@ def parse_signal(payload):
     fingerprint = f"{ticker}|{event}|{tf}|{bartime}"
     signal_id = hashlib.sha256(fingerprint.encode()).hexdigest()[:28]
     return (signal_id, symbol, EVENTS[event], tf, bartime, event)
+
+@app.get("/", response_class=HTMLResponse)
+@app.get("/terminal", response_class=HTMLResponse)
+def terminal():
+    return HTMLResponse(
+        content=DASHBOARD_HTML,
+        headers={
+            "Cache-Control": "no-store",
+            "X-Content-Type-Options": "nosniff",
+            "Referrer-Policy": "no-referrer",
+            "X-Frame-Options": "DENY",
+            "Content-Security-Policy": (
+                "default-src 'none'; script-src 'unsafe-inline'; "
+                "style-src 'unsafe-inline'; connect-src 'self'; "
+                "form-action 'self'; base-uri 'none'; frame-ancestors 'none'"
+            ),
+        },
+    )
 
 @app.get("/health")
 def health():
