@@ -59,3 +59,21 @@ permissions, leverage, risk limits, operator controls, environment flags or HALT
 Production deploys from main. The historical live-execution-dev branch has
 diverged substantially; this repair uses an isolated branch from current main
 to avoid replacing newer production work with old branch contents.
+
+## Follow-up: journal transition and readback hardening
+
+The next repair adds compare-and-set journal updates so late workers cannot
+overwrite HALTED/CLOSED records, skip lifecycle stages or replace recorded order
+IDs. Generic state updates cannot declare CLOSED_VERIFIED. PROTECTED requires
+two distinct valid native IDs, and entry confirmation requires an order ID.
+
+Entry readback now requires the original order quantity to equal the planned
+quantity with zero remainder, checks actual fill slippage against the plan, and
+checks the original SL/TP geometry against the fill. Protection readback IDs must
+match the exact SL/TP submission acknowledgments. Any mismatch halts the existing
+workflow; it never retries entry or invents a successful fill.
+
+Validation: 109 live-safety tests passed locally, including nine new journal and
+readback tests. These are offline tests, not proof of cross-process PostgreSQL
+stress behavior or live exchange acceptance. The remaining release blockers
+listed above still apply. No execution flag or authorization window was changed.
