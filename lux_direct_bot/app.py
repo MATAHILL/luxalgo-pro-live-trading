@@ -20,6 +20,7 @@ WEBHOOK_SECRET = os.environ.get("WEBHOOK_SECRET", "")
 ADMIN_TOKEN = os.environ.get("ADMIN_TOKEN", "")
 DB_PATH = os.environ.get("DB_PATH", "/tmp/lux-direct-bot.sqlite3")
 ALLOWED_SYMBOLS = {s.strip().upper() for s in os.environ.get("ALLOWED_SYMBOLS", "BTCUSDT").split(",") if s.strip()}
+ALLOWED_TIMEFRAMES = {s.strip().upper() for s in os.environ.get("ALLOWED_TIMEFRAMES", "5").split(",") if s.strip()}
 SYMBOL_MAP = json.loads(os.environ.get("SYMBOL_MAP_JSON", '{"BTCUSDT.P":"BTCUSDT"}'))
 EVENTS = {
     "bullish confirmation signal": "BUY",
@@ -59,8 +60,10 @@ def parse_signal(payload):
         raise ValueError("Symbol is not allowlisted")
     tf = str(payload.get("tf", "")).strip()
     bartime = str(payload.get("bartime", "")).strip()
-    if not tf or not bartime.isdigit() or len(bartime) > 16:
-        raise ValueError("Timeframe and numeric candle time required")
+    if tf.upper() not in ALLOWED_TIMEFRAMES:
+        raise ValueError("Timeframe not allowlisted")
+    if not re.fullmatch(r"[0-9]{13}", bartime):
+        raise ValueError("LuxAlgo millisecond bar time required")
     fingerprint = f"{ticker}|{event}|{tf}|{bartime}"
     signal_id = hashlib.sha256(fingerprint.encode()).hexdigest()[:28]
     return (signal_id, symbol, EVENTS[event], tf, bartime, event)
@@ -136,6 +139,8 @@ def setup(request: Request, response: Response):
         "indicator": "LuxAlgo Signals & Overlays",
         "alert_condition": "Any alert() function call",
         "enable_conditions": ["Bullish Confirmation", "Bearish Confirmation"],
+        "allowed_symbols": sorted(ALLOWED_SYMBOLS),
+        "allowed_timeframes": sorted(ALLOWED_TIMEFRAMES),
         "mode": MODE,
         "real_money_enabled": False,
         "warning": "Webhook URL is private; never post or share it publicly.",
@@ -157,6 +162,54 @@ def binance_account(request: Request, response: Response):
     response.headers["Cache-Control"] = "no-store"
     response.headers["Referrer-Policy"] = "no-referrer"
     return read_account_snapshot()
+
+
+@app.post("/admin/selftest")
+def dry_run_signal_test(request: Request, response: Response):
+    """Parse, write and deduplicate realistic LuxAlgo signals, then ROLLBACK.
+
+    Never enters the real signal ledger or sends exchange orders.
+    """
+    admin_auth(request)
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["Referrer-Policy"] = "no-referrer"
+    if not ALLOWED_SYMBOLS or not ALLOWED_TIMEFRAMES:
+        raise HTTPException(503, "No allowed symbol/timeframe")
+    symbol = sorted(ALLOWED_SYMBOLS)[0]
+    timeframe = sorted(ALLOWED_TIMEFRAMES)[0]
+    millis = str(int(time.time() * 1000))
+    cases = [
+        {"alert": "Bullish Confirmation Signal", "ticker": symbol,
+         "tf": timeframe, "bartime": int(millis)},
+        {"alert": "Bearish Confirmation Signal", "ticker": symbol,
+         "tf": timeframe, "bartime": int(millis)},
+    ]
+    parsed = [parse_signal(item) for item in cases]
+    results = []
+    with database() as db:
+        before = db.execute("SELECT COUNT(*) FROM signals").fetchone()[0]
+        db.execute("SAVEPOINT dry_run_selftest")
+        try:
+            for signal in parsed:
+                sql = """INSERT OR IGNORE INTO signals
+                    (id,at,symbol,side,timeframe,bartime,event,status)
+                    VALUES(?,?,?,?,?,?,?,?)"""
+                args = (signal[0], int(time.time()), *signal[1:], "TEST_ONLY")
+                first = db.execute(sql, args).rowcount
+                duplicate = db.execute(sql, args).rowcount
+                results.append({"side": signal[2], "write": first,
+                                "duplicate_write": duplicate})
+            if not all(x["write"] == 1 and x["duplicate_write"] == 0 for x in results):
+                raise RuntimeError("Self-test insert/dedup failed")
+        finally:
+            db.execute("ROLLBACK TO SAVEPOINT dry_run_selftest")
+            db.execute("RELEASE SAVEPOINT dry_run_selftest")
+        after = db.execute("SELECT COUNT(*) FROM signals").fetchone()[0]
+    if before != after:
+        raise HTTPException(503, "Self-test record isolation failed")
+    return {"result": "PASS", "checks": results, "test_records_persisted": 0,
+            "actual_luxalgo_alert_verified": False,
+            "exchange_orders_sent": 0, "mode": MODE}
 
 
 @app.get("/signals")
