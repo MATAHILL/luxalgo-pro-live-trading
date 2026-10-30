@@ -12,6 +12,7 @@ import time
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse
 from dashboard import DASHBOARD_HTML
+from exchange_diagnostics import get_binance_public_status
 
 MODE = "DRY_RUN"  # Code-level interlock: this build can NEVER transmit exchange orders.
 WEBHOOK_SECRET = os.environ.get("WEBHOOK_SECRET", "")
@@ -105,11 +106,50 @@ async def webhook(token: str, request: Request):
     return {"result": "ACCEPTED" if cur.rowcount else "DUPLICATE",
             "signal_id": signal[0], "side": signal[2], "mode": MODE}
 
-@app.get("/signals")
-def signals(request: Request):
+def admin_auth(request: Request):
     token = request.headers.get("X-Admin-Token", "")
     if not ADMIN_TOKEN or not hmac.compare_digest(token, ADMIN_TOKEN):
         raise HTTPException(status_code=403, detail="Forbidden")
+
+
+@app.get("/setup")
+def setup(request: Request):
+    """Only an authenticated operator can retrieve the private webhook URL."""
+    admin_auth(request)
+    return {
+        "connection": "CONFIGURED" if WEBHOOK_SECRET else "NOT_CONFIGURED",
+        "webhook_url": (
+            "https://lux-direct-bot-dryrun.onrender.com/webhook/" + WEBHOOK_SECRET
+            if WEBHOOK_SECRET else None
+        ),
+        "luxalgo_alert_message": (
+            '{\n'
+            '  "alert": "{default}",\n'
+            '  "ticker": "{ticker}",\n'
+            '  "tf": "{tf}",\n'
+            '  "bartime": {time}\n'
+            '}'
+        ),
+        "indicator": "LuxAlgo Signals & Overlays",
+        "alert_condition": "Any alert() function call",
+        "enable_conditions": ["Bullish Confirmation", "Bearish Confirmation"],
+        "mode": MODE,
+        "real_money_enabled": False,
+        "warning": "Webhook URL is private; never post or share it publicly.",
+    }
+
+
+@app.get("/binance/diagnostics")
+def binance_diagnostics(request: Request):
+    """Only public USDT-M Binance metadata; no orders or account access."""
+    admin_auth(request)
+    result = get_binance_public_status()
+    return result
+
+
+@app.get("/signals")
+def signals(request: Request):
+    admin_auth(request)
     with database() as db:
         records = db.execute("""SELECT id,at,symbol,side,timeframe,bartime,event,status
             FROM signals ORDER BY at DESC, rowid DESC LIMIT 30""").fetchall()
