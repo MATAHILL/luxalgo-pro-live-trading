@@ -75,7 +75,7 @@ class MockLiveFlow(unittest.TestCase):
             rows.append({"contract":symbol,"side":"LONG","state":"PROTECTED",
                          "entry_price":entry,"stop_loss":stop,"take_profit":take,
                          "stop_order_id":str(k),"take_order_id":str(k+1),
-                         "position_mode":"single"})
+                         "position_mode":"single","contracts":1})
             positions.append({"contract":symbol,"size":"1"})
             triggers.append(dict(build_protective_trigger(plan,"SL"),
                                  id=k,status="open"))
@@ -101,3 +101,4 @@ class MockLiveFlow(unittest.TestCase):
 
 if __name__=="__main__":
     unittest.main()
+
