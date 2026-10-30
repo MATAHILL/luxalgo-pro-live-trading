@@ -135,7 +135,7 @@ async function diagnoseBinance(){
     var resp=await fetch('/binance/diagnostics',{cache:'no-store',headers:{'X-Admin-Token':token}});
     if(!resp.ok)throw new Error('HTTP '+resp.status);
     var value=await resp.json();
-    setText('binanceMessage','Binance public API: '+value.public_api+' · BTCUSDT: '+value.btc_usdt+' · Account API: NOT CONNECTED · Orders: OFF.');
+    setText('binanceMessage','Binance public API: '+value.public_api+' · XRPUSDT: '+value.xrp_usdt+' · Account API: NOT CONNECTED · Orders: OFF.');
   }catch(error){setText('binanceMessage','Binance diagnostics unavailable: '+error.message);}
 }
 async function readBinanceAccount(){
