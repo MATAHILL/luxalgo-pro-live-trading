@@ -8,7 +8,7 @@ def test_safe_webhooks(monkeypatch, tmp_path):
     monkeypatch.setenv("DB_PATH", str(tmp_path / "signals.sqlite"))
     import app
     bot = importlib.reload(app)
-    p = {"alert":"Bullish Confirmation Signal", "ticker":"BTCUSDT",
+    p = {"alert":"Bullish Confirmation Signal", "ticker":"XRPUSDT",
          "tf":"5", "bartime":"1793375400000"}
     with TestClient(bot.app) as c:
         assert c.get("/health").json()["live_trading"] is False
@@ -41,7 +41,7 @@ def test_safe_webhooks(monkeypatch, tmp_path):
         assert setup.json()["webhook_url"].endswith("/webhook/test-hook")
         assert '"bartime": {time}' in setup.json()["luxalgo_alert_message"]
         monkeypatch.setattr(bot, "get_binance_public_status", lambda: {
-            "public_api": "REACHABLE", "btc_usdt": "TRADING",
+            "public_api": "REACHABLE", "xrp_usdt": "TRADING",
             "api_credentials": "NOT_CONNECTED", "orders_enabled": False,
         })
         public_check = c.get("/binance/diagnostics", headers={"X-Admin-Token": "test-admin"})
