@@ -6349,13 +6349,17 @@ def terminal_scanner():
     tf = request.args.get('tf','15m')
     if tf not in ('5m','15m'):
         return jsonify(error='Unsupported timeframe'),422
+    now = time.time()
     with _scan_state_lock:
         state = _scan_state[tf]
-        due = state['at'] == 0 or time.time()-state['at'] > 600
-        if request.args.get('refresh') == '1':
-            due = True
-        if due and not state['running']:
-            state.update(running=True,results={},scanned=0,failed=0,total=0,at=time.time())
+        # Share the advanced scanner's cross-timeframe concurrency and refresh
+        # cooldown. Otherwise repeated requests can launch overlapping
+        # 36-contract scans and exhaust Gate.io/public HTTP worker capacity.
+        any_scan_running = any(item['running'] for item in _scan_state.values())
+        due = (not state['at'] or now-state['at'] > 600 or
+               (request.args.get('refresh') == '1' and now-state['at'] > 45))
+        if due and not any_scan_running:
+            state.update(running=True,results={},scanned=0,failed=0,total=0,at=now)
             Thread(target=_run_scan,args=(tf,),daemon=True).start()
         payload = {'results':list(state['results'].values()),'running':state['running'],
                    'total':state['total'],'scanned':state['scanned'],'failed':state['failed'],
