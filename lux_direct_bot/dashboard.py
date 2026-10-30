@@ -53,7 +53,7 @@ strong.accent{color:var(--accent)}.hidden{display:none!important}
   <div id="setupControls" class="hidden">
     <div class="actions">
       <button id="copyWebhook" type="button">Copy private webhook URL</button>
-      <button id="copyTemplate" type="button">Copy LuxAlgo alert JSON</button>
+      <button id="copyTemplate" type="button">Copy LuxAlgo alert JSON</button><button id="safeTest" type="button">Test signal reception (dry run)</button>
       <button id="probeBinance" type="button">Check Binance public API</button><button id="readBinance" type="button">Read Binance account</button>
     </div>
     <details style="margin-top:12px"><summary>Show alert JSON template</summary>
@@ -61,6 +61,7 @@ strong.accent{color:var(--accent)}.hidden{display:none!important}
     </details>
   </div>
   <p class="muted" id="setupMessage">Operator authentication required. Private webhook URL is not shown publicly.</p>
+  <p class="muted" id="safeTestMessage">No simulated signal test has been run in this browser session. Real LuxAlgo alert reception remains unverified.</p>
   <p class="muted" id="binanceMessage">Binance account API: not connected. No live trading.</p><div id="accountBox" class="hidden"><div class="muted" id="balanceLabel" style="margin:10px 0;font-size:13px"></div><div class="scroll"><table><thead><tr><th>Symbol</th><th>Side</th><th>Amount</th><th>Entry</th><th>Mark</th><th>Unrealized P&L</th></tr></thead><tbody id="positionRows"></tbody></table></div></div>
 </section>
 <section class="card" aria-labelledby="signalTitle">
@@ -167,6 +168,20 @@ async function readBinanceAccount(){
     setText('binanceMessage','Binance authenticated READ-ONLY connection verified. Live orders remain disabled.');
   }catch(error){setText('binanceMessage','Account read failed: '+error.message);}
 }
+async function runSafeTest(){
+  if(!token)return;
+  setText('safeTestMessage','Checking parser, BUY/SELL acceptance, database write, and duplicate handling...');
+  try{
+    var response=await fetch('/admin/selftest',{method:'POST',cache:'no-store',headers:{'X-Admin-Token':token}});
+    if(!response.ok)throw new Error('HTTP '+response.status);
+    var result=await response.json();
+    if(result.result!=='PASS' || result.test_records_persisted!==0 || result.exchange_orders_sent!==0)
+      throw new Error('Unexpected self-test outcome');
+    setText('safeTestMessage','DRY-RUN SELF-TEST PASSED · BUY/SELL checks and duplicate protection succeeded · Zero simulated signals saved · Zero exchange orders. Actual TradingView alerts are NOT YET verified.');
+  }catch(error){
+    setText('safeTestMessage','Self-test failed: '+error.message+' · Trading remains OFF.');
+  }
+}
 function draw(records){
   $('rows').replaceChildren();
   if(!records.length){setText('message','No authenticated LuxAlgo signals recorded yet. No trade has been executed.');show('tableBox',false);setText('signals','0 received');return;}
@@ -202,6 +217,7 @@ $('refresh').addEventListener('click',function(){health();signals();});
 $('lock').addEventListener('click',function(){token='';setupConfig=null;show('setupControls',false);show('accountBox',false);setText('setupTemplate','');setText('exchange','Not connected');setText('positionValue','Unavailable');setText('positionHint','Exchange connection required');setText('setupMessage','Operator authentication required. Private webhook URL is not shown publicly.');setText('signals','Locked');setText('signalsHint','Private history');setText('message','Signal history locked.');$('rows').replaceChildren();show('tableBox',false);show('login',true);show('lock',false);});
 $('copyWebhook').addEventListener('click',function(){copySetup('webhook_url');});
 $('copyTemplate').addEventListener('click',function(){copySetup('luxalgo_alert_message');});
+$('safeTest').addEventListener('click',runSafeTest);
 $('probeBinance').addEventListener('click',diagnoseBinance);
 $('readBinance').addEventListener('click',readBinanceAccount);
 health();setInterval(function(){health();signals();},15000);
