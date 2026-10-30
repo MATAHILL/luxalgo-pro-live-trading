@@ -16,12 +16,12 @@ def get_binance_public_status(client_factory=httpx.Client):
             clock = timer.json()
             if not isinstance(clock.get("serverTime"), int):
                 raise ValueError("Missing serverTime")
-            meta = client.get(BASE + "/fapi/v1/exchangeInfo", params={"symbol": "BTCUSDT"})
+            meta = client.get(BASE + "/fapi/v1/exchangeInfo", params={"symbol": "XRPUSDT"})
             meta.raise_for_status()
             data = meta.json()
-            matching = [s for s in data.get("symbols", []) if s.get("symbol") == "BTCUSDT"]
+            matching = [s for s in data.get("symbols", []) if s.get("symbol") == "XRPUSDT"]
             if not matching:
-                return {"public_api": "REACHABLE", "btc_usdt": "NOT_LISTED",
+                return {"public_api": "REACHABLE", "xrp_usdt": "NOT_LISTED",
                         "api_credentials": "NOT_CONNECTED", "orders_enabled": False}
             row = matching[0]
             filter_summary = {}
@@ -31,10 +31,10 @@ def get_binance_public_status(client_factory=httpx.Client):
                         k: v for k, v in f.items()
                         if k in ("minQty", "maxQty", "stepSize", "notional")
                     }
-            return {"public_api": "REACHABLE", "btc_usdt": row.get("status", "UNKNOWN"),
+            return {"public_api": "REACHABLE", "xrp_usdt": row.get("status", "UNKNOWN"),
                     "filters": filter_summary, "api_credentials": "NOT_CONNECTED",
                     "orders_enabled": False}
     except (httpx.HTTPError, ValueError, TypeError, KeyError) as e:
-        return {"public_api": "UNAVAILABLE", "btc_usdt": "UNVERIFIED",
+        return {"public_api": "UNAVAILABLE", "xrp_usdt": "UNVERIFIED",
                 "api_credentials": "NOT_CONNECTED", "orders_enabled": False,
                 "reason": type(e).__name__}
