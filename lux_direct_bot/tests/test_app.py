@@ -20,6 +20,22 @@ def test_safe_webhooks(monkeypatch, tmp_path):
         assert "test-admin" not in root.text
         assert root.headers["cache-control"] == "no-store"
         assert c.get("/terminal").status_code == 200
+        assert c.get("/setup").status_code == 403
+        assert c.get("/binance/diagnostics").status_code == 403
+        setup = c.get("/setup", headers={"X-Admin-Token": "test-admin"})
+        assert setup.status_code == 200
+        assert setup.headers["cache-control"] == "no-store"
+        assert setup.json()["mode"] == "DRY_RUN"
+        assert setup.json()["real_money_enabled"] is False
+        assert setup.json()["webhook_url"].endswith("/webhook/test-hook")
+        assert '"bartime": {time}' in setup.json()["luxalgo_alert_message"]
+        monkeypatch.setattr(bot, "get_binance_public_status", lambda: {
+            "public_api": "REACHABLE", "btc_usdt": "TRADING",
+            "api_credentials": "NOT_CONNECTED", "orders_enabled": False,
+        })
+        public_check = c.get("/binance/diagnostics", headers={"X-Admin-Token": "test-admin"})
+        assert public_check.status_code == 200
+        assert public_check.json()["orders_enabled"] is False
         assert c.post("/webhook/bad", json=p).status_code == 403
         a = c.post("/webhook/test-hook", json=p).json()
         b = c.post("/webhook/test-hook", json=p).json()
