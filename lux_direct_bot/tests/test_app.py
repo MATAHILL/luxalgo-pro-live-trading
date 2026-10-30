@@ -12,6 +12,14 @@ def test_safe_webhooks(monkeypatch, tmp_path):
          "tf":"5", "bartime":"1793375400000"}
     with TestClient(bot.app) as c:
         assert c.get("/health").json()["live_trading"] is False
+        root = c.get("/")
+        assert root.status_code == 200
+        assert "text/html" in root.headers["content-type"]
+        assert "LUX DIRECT BOT" in root.text
+        assert "No orders, positions or profit figures" in root.text
+        assert "test-admin" not in root.text
+        assert root.headers["cache-control"] == "no-store"
+        assert c.get("/terminal").status_code == 200
         assert c.post("/webhook/bad", json=p).status_code == 403
         a = c.post("/webhook/test-hook", json=p).json()
         b = c.post("/webhook/test-hook", json=p).json()
