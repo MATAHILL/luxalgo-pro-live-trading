@@ -4,7 +4,8 @@ from datetime import datetime, timezone, timedelta
 from unittest.mock import Mock
 from live_futures_engine import LiveSafetyError
 from live_emergency_one_shot_claim import (
-    evaluate_one_shot_close_candidate, claim_one_shot_recovery, CLAIM_SCHEMA,
+    evaluate_one_shot_close_candidate, claim_one_shot_recovery,
+    consume_one_shot_recovery_claim, finalize_one_shot_recovery_claim, CLAIM_SCHEMA,
 )
 
 NOW=datetime(2026,11,1,6,0,tzinfo=timezone.utc)
@@ -86,6 +87,31 @@ class DurableEmergencyOneShotTests(unittest.TestCase):
                     claim_one_shot_recovery(con,event_id=LEDGER["event_id"],
                         contract="XRP_USDT",approval_reference="EXAMPLE_LONG_RECOVERY_APPROVAL",
                         close_text="t-em-lxp-testhash")
+
+    def test_claim_consumption_is_once_only_before_exchange_call(self):
+        claim=dict(claimed=True,state="CLAIMED",event_id=LEDGER["event_id"],
+            contract="XRP_USDT",approval_reference="OWNER_APPROVED_EXAMPLE",
+            close_client_text="t-em-lxp-testhash")
+        con,cur=con_for_claim(dict(halted=True),dict(event_id=LEDGER["event_id"]))
+        self.assertTrue(consume_one_shot_recovery_claim(lambda:con,claim))
+        self.assertTrue(any("state='EXCHANGE_RESULT_UNKNOWN'" in a.args[0]
+                            and "state='CLAIMED'" in a.args[0]
+                            for a in cur.execute.call_args_list))
+        # A repeated invocation cannot get the CAS result again.
+        duplicate,cur2=con_for_claim(dict(halted=True),None)
+        with self.assertRaisesRegex(LiveSafetyError,"CLOSE_CLAIM_CONSUMED"):
+            consume_one_shot_recovery_claim(lambda:duplicate,claim)
+
+    def test_close_outcome_requires_persisted_finalization(self):
+        claim=dict(event_id=LEDGER["event_id"],contract="XRP_USDT",
+                   close_client_text="t-em-lxp-testhash")
+        con,cur=con_for_claim(dict(event_id=LEDGER["event_id"]))
+        self.assertTrue(finalize_one_shot_recovery_claim(lambda:con,claim))
+        self.assertTrue(any("FLAT_READBACK_VERIFIED" in a.args[0]
+                            for a in cur.execute.call_args_list))
+        missing,_=con_for_claim(None)
+        with self.assertRaisesRegex(LiveSafetyError,"CLOSE_VERIFICATION_NOT_PERSISTED"):
+            finalize_one_shot_recovery_claim(lambda:missing,claim)
 
     def test_invalid_approval_reference_rejected_before_db(self):
         con=Mock()
