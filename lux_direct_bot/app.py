@@ -225,6 +225,9 @@ def setup(request: Request, response: Response):
             '  "alert": "{default}",\n'
             '  "ticker": "{ticker}",\n'
             '  "tf": "{tf}",\n'
+            '  "close": "{close}",\n'
+            '  "sl1": "{sl1}",\n'
+            '  "tp1": "{tp1}",\n'
             '  "bartime": {time}\n'
             '}'
         ),
