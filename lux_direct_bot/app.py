@@ -148,6 +148,33 @@ def advanced():
     )
 
 
+@app.get("/operator/readiness")
+def operator_readiness(request: Request, response: Response):
+    """Minimal visible blockers; do not disclose API key values or webhook secrets."""
+    admin_auth(request)
+    response.headers["Cache-Control"] = "no-store"
+    blockers = []
+    if not os.environ.get("BINANCE_API_KEY") or not os.environ.get("BINANCE_API_SECRET"):
+        blockers.append("BINANCE_KEYS_NOT_CONFIGURED")
+    if DB_PATH.startswith("/tmp/") or DB_PATH == ":memory:":
+        blockers.append("PERSISTENT_SIGNAL_LEDGER_REQUIRED")
+    if not os.environ.get("FUTURES_ORDER_QTY"):
+        blockers.append("ORDER_QUANTITY_NOT_CONFIGURED")
+    if not os.environ.get("FUTURES_MAX_NOTIONAL_USDT"):
+        blockers.append("NOTIONAL_LIMIT_NOT_CONFIGURED")
+    if not os.environ.get("FUTURES_MAX_LOSS_USDT"):
+        blockers.append("LOSS_LIMIT_NOT_CONFIGURED")
+    if not os.environ.get("FUTURES_MAX_LEVERAGE"):
+        blockers.append("LEVERAGE_LIMIT_NOT_CONFIGURED")
+    blockers.extend((
+        "REAL_TRADINGVIEW_ALERT_NOT_INDEPENDENTLY_VERIFIED",
+        "EXCHANGE_ORDER_AND_PROTECTION_ACCEPTANCE_NOT_VERIFIED",
+        "LIVE_ORDER_SENDER_HARD_LOCKED",
+    ))
+    return {"ready": False, "operator_on": operator_enabled(),
+            "mode": MODE, "live_orders_enabled": False, "blockers": blockers}
+
+
 @app.get("/operator/status")
 def operator_status(request: Request, response: Response):
     admin_auth(request)
