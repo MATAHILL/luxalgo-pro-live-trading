@@ -24,6 +24,10 @@ def test_safe_webhooks(monkeypatch, tmp_path):
         assert c.get("/binance/diagnostics").status_code == 403
         assert c.get("/binance/account").status_code == 403
         assert c.get("/connection/status").status_code == 403
+        assert c.get("/connection/attempts").status_code == 403
+        empty_attempts = c.get("/connection/attempts", headers={"X-Admin-Token":"test-admin"}).json()
+        assert empty_attempts["attempts"] == []
+        assert empty_attempts["orders_enabled"] is False
         assert c.post("/admin/selftest").status_code == 403
         dry = c.post("/admin/selftest", headers={"X-Admin-Token": "test-admin"})
         assert dry.status_code == 200
@@ -33,6 +37,8 @@ def test_safe_webhooks(monkeypatch, tmp_path):
         assert dry.json()["test_records_persisted"] == 0
         assert dry.json()["exchange_orders_sent"] == 0
         assert dry.json()["actual_luxalgo_alert_verified"] is False
+        after_selftest = c.get("/connection/attempts", headers={"X-Admin-Token":"test-admin"}).json()
+        assert after_selftest["attempts"] == []
         assert c.get("/signals", headers={"X-Admin-Token":"test-admin"}).json() == []
         state = c.get("/connection/status", headers={"X-Admin-Token":"test-admin"}).json()
         assert state["state"] == "NO_WEBHOOK_RECORDS"
@@ -77,6 +83,12 @@ def test_safe_webhooks(monkeypatch, tmp_path):
         assert c.post("/webhook/test-hook", json=q).json()["side"] == "SELL"
         assert c.post("/webhook/test-hook", json=dict(p,ticker="ETHUSDT")).status_code == 422
         assert c.post("/webhook/test-hook", json=dict(p,alert="Take Profit")).status_code == 422
+        seen_attempts = c.get("/connection/attempts", headers={"X-Admin-Token":"test-admin"}).json()
+        assert seen_attempts["attempts"][0]["reason"] == "UNSUPPORTED_LUXALGO_SIGNAL"
+        assert any(x["result"] == "DUPLICATE" for x in seen_attempts["attempts"])
+        assert any(x["result"] == "ACCEPTED" for x in seen_attempts["attempts"])
+        assert seen_attempts["tradingview_sender_verified"] is False
+        assert all("test-hook" not in str(x) for x in seen_attempts["attempts"])
         assert c.post("/webhook/test-hook", json=dict(p,tf="1")).status_code == 422
         assert c.post("/webhook/test-hook", json=dict(p,bartime="2026-10-30T16:00:00Z")).status_code == 422
         assert c.post("/webhook/test-hook", json=dict(p,bartime=1793375400000)).json()["result"] == "DUPLICATE"
