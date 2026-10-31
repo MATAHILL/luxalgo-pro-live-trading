@@ -224,7 +224,9 @@ async def operator_switch(request: Request, response: Response):
 @app.get("/health")
 def health():
     return {"service": "LUX DIRECT BOT", "mode": MODE, "live_trading": False,
-            "exchange": "Binance Futures (NOT CONNECTED)", "stage": "WEBHOOK_TEST"}
+            "exchange": "Binance Futures (NOT CONNECTED)", "stage": "WEBHOOK_TEST",
+            "allowed_symbols": sorted(ALLOWED_SYMBOLS),
+            "allowed_timeframes": sorted(ALLOWED_TIMEFRAMES)}
 
 @app.post("/webhook/{token}")
 async def webhook(token: str, request: Request):
