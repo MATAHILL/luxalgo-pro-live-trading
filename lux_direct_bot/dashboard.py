@@ -39,12 +39,12 @@ strong.accent{color:var(--accent)}.hidden{display:none!important}
 @media(max-width:420px){.grid{grid-template-columns:1fr}.brand{font-size:20px}}
 </style></head><body>
 <main class="wrapper">
-<header><div class="brand">LUX DIRECT BOT<small>BINANCE:XRPUSDT.P · 5 minutes · LuxAlgo confirmation signals</small></div><span class="pill" id="mode">DRY RUN · ORDERS OFF</span></header>
-<section class="card warning" aria-live="polite"><strong>Real-money trading is disabled</strong><p id="warning">Binance Futures is not connected. No orders, positions or profit figures can be shown until the exchange connection is verified.</p></section>
+<header><div class="brand">LUX DIRECT BOT<small>Binance Futures · 5 minutes · LuxAlgo confirmation signals</small></div><span class="pill" id="mode">DRY RUN · ORDERS OFF</span></header>
+<section class="card warning" aria-live="polite"><strong>Real-money trading is disabled</strong><p id="warning">Signal entries are supplied by the webhook. Exchange entry and unrealized P&L are read-only account values; they are not attributed to a signal without a verified bot fill.</p></section>
 <section class="grid" aria-label="System status">
   <div class="card kpi"><div class="label">Service</div><div class="value" id="service">Checking…</div><div class="hint">Render web service</div></div>
   <div class="card kpi"><div class="label">LuxAlgo signals</div><div class="value" id="signals">Not verified</div><div class="hint" id="signalsHint">Waiting for actual alert</div></div>
-  <div class="card kpi"><div class="label">Binance Futures</div><div class="value" id="exchange">Not connected</div><div class="hint">No API access installed</div></div>
+  <div class="card kpi"><div class="label">Binance Futures</div><div class="value" id="exchange">Not connected</div><div class="hint">Authenticated read-only account data</div></div>
   <div class="card kpi"><div class="label">Orders / positions</div><div class="value" id="positionValue">Unavailable</div><div class="hint" id="positionHint">Exchange connection required</div></div>
 </section>
 <section class="card setup" aria-labelledby="setupTitle">
@@ -67,7 +67,7 @@ strong.accent{color:var(--accent)}.hidden{display:none!important}
   <p class="muted" id="binanceMessage">Binance account API: not connected. No live trading.</p><div id="accountBox" class="hidden"><div class="muted" id="balanceLabel" style="margin:10px 0;font-size:13px"></div><div class="scroll"><table><thead><tr><th>Symbol</th><th>Side</th><th>Amount</th><th>Entry</th><th>Mark</th><th>Unrealized P&L</th></tr></thead><tbody id="positionRows"></tbody></table></div></div>
 </section>
 <section class="card" aria-labelledby="signalTitle">
-  <div class="section-head"><div><h1 id="signalTitle">Received LuxAlgo signals</h1><div class="muted" style="font-size:12px">Actual webhook records only · No simulated trade fills</div></div>
+  <div class="section-head"><div><h1 id="signalTitle">Received LuxAlgo signals</h1><div class="muted" style="font-size:12px">Original webhook values · Entry is a signal reference, not a fill · Actual position P&amp;L appears in the Binance account table above</div></div>
     <div class="actions"><button id="refresh" type="button">Refresh now</button><button id="lock" type="button" class="hidden">Lock signals</button></div>
   </div>
   <form id="login" class="login" autocomplete="off">
@@ -76,7 +76,7 @@ strong.accent{color:var(--accent)}.hidden{display:none!important}
   </form>
   <p class="muted" id="message" role="status">Signal history is private. Unlock it using your Render ADMIN_TOKEN. The token is never included in the URL or stored by this page.</p>
   <div class="scroll hidden" id="tableBox"><table><thead><tr>
-    <th>Received (IST)</th><th>Symbol</th><th>Original action</th><th>Timeframe</th><th>Status</th><th>Event</th>
+    <th>Received (IST)</th><th>Symbol</th><th>Original action</th><th>Entry price (signal)</th><th>Unrealized P&amp;L (USDT)</th><th>Timeframe</th><th>Status</th><th>Event</th>
   </tr></thead><tbody id="rows"></tbody></table></div>
 </section>
 <div class="note"><span>Read-only dashboard. No BUY/SELL buttons or live-order controls.</span><span id="checked">Health not checked yet</span></div>
@@ -86,6 +86,7 @@ strong.accent{color:var(--accent)}.hidden{display:none!important}
 'use strict';
 var token = '';
 var setupConfig = null;
+var accountBusy = false;
 var $ = function(id){return document.getElementById(id);};
 function show(id, visible){$(id).classList.toggle('hidden', !visible);}
 function setText(id,text){$(id).textContent=text;}
@@ -100,7 +101,6 @@ async function health(){
     var result=await resp.json();
     setText('service','Online');
     setText('mode',String(result.mode||'UNKNOWN')+' · ORDERS OFF');
-    setText('exchange','Not connected');
     setText('checked','Last checked: '+new Date().toLocaleTimeString('en-IN',{timeZone:'Asia/Kolkata',hour12:true})+' IST');
     if(result.live_trading!==false){setText('warning','Unexpected live-trading status. Stop and investigate.');}
   }catch(err){
@@ -144,13 +144,16 @@ async function diagnoseBinance(){
   }catch(error){setText('binanceMessage','Binance diagnostics unavailable: '+error.message);}
 }
 async function readBinanceAccount(){
-  if(!token)return;
+  if(!token || accountBusy)return;
+  accountBusy = true;
+  var requestToken = token;
   setText('binanceMessage','Checking Binance USD-M Futures account (read-only)...');
   show('accountBox',false);
   try{
     var resp=await fetch('/binance/account',{cache:'no-store',headers:{'X-Admin-Token':token}});
     if(!resp.ok)throw new Error('HTTP '+resp.status);
     var value=await resp.json();
+    if(token!==requestToken)return;
     if(value.status!=='CONNECTED_READ_ONLY'){
       setText('binanceMessage','Binance signed account: '+value.status+
         '. No orders can be placed. '+
@@ -174,7 +177,8 @@ async function readBinanceAccount(){
     }
     show('accountBox',true);
     setText('binanceMessage','Binance authenticated READ-ONLY connection verified. Live orders remain disabled.');
-  }catch(error){setText('binanceMessage','Account read failed: '+error.message);}
+  }catch(error){if(token===requestToken){setText('binanceMessage','Account read failed: '+error.message);setText('positionValue','Unavailable');}}
+  finally{accountBusy=false;}
 }
 async function runSafeTest(){
   if(!token)return;
@@ -228,7 +232,7 @@ function draw(records){
   if(!records.length){setText('message','No authenticated LuxAlgo signals recorded yet. No trade has been executed.');show('tableBox',false);setText('signals','0 received');return;}
   for(var r of records){
     var tr=document.createElement('tr');
-    var values=[fmt(r.at),r.symbol,r.side,r.timeframe,r.status,r.event];
+    var values=[fmt(r.at),r.symbol,r.side,r.entry_reference??"Not supplied","N/A — no verified bot fill",r.timeframe,r.status,r.event];
     for(var i=0;i<values.length;i++){
       var td=document.createElement('td');
       td.textContent=String(values[i]??'—');
@@ -253,14 +257,14 @@ async function signals(){
     draw(records);
   }catch(e){setText('message','Unable to load signal history: '+e.message);}
 }
-$('login').addEventListener('submit',function(e){e.preventDefault();token=$('token').value.trim();$('token').value='';show('login',false);show('lock',true);signals();loadSetup();loadConnection();loadReceiverAttempts();});
-$('refresh').addEventListener('click',function(){health();signals();loadConnection();loadReceiverAttempts();});
+$('login').addEventListener('submit',function(e){e.preventDefault();token=$('token').value.trim();$('token').value='';show('login',false);show('lock',true);signals();loadSetup();loadConnection();loadReceiverAttempts();readBinanceAccount();});
+$('refresh').addEventListener('click',function(){health();signals();loadConnection();loadReceiverAttempts();readBinanceAccount();});
 $('lock').addEventListener('click',function(){token='';setupConfig=null;show('setupControls',false);show('accountBox',false);setText('setupTemplate','');setText('exchange','Not connected');setText('positionValue','Unavailable');setText('positionHint','Exchange connection required');setText('setupMessage','Operator authentication required. Private webhook URL is not shown publicly.');setText('connectionMessage','TradingView webhook status: locked.');setText('receiverMessage','Receiver diagnostics: locked.');setText('signals','Locked');setText('signalsHint','Private history');setText('message','Signal history locked.');$('rows').replaceChildren();show('tableBox',false);show('login',true);show('lock',false);});
 $('copyWebhook').addEventListener('click',function(){copySetup('webhook_url');});
 $('copyTemplate').addEventListener('click',function(){copySetup('luxalgo_alert_message');});
 $('safeTest').addEventListener('click',runSafeTest);
 $('probeBinance').addEventListener('click',diagnoseBinance);
 $('readBinance').addEventListener('click',readBinanceAccount);
-health();setInterval(function(){health();signals();loadConnection();loadReceiverAttempts();},15000);
+health();setInterval(function(){health();signals();loadConnection();loadReceiverAttempts();readBinanceAccount();},15000);
 })();
 </script></body></html>"""
