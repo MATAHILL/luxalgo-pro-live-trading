@@ -20,6 +20,14 @@ def test_safe_webhooks(monkeypatch, tmp_path):
         assert "test-admin" not in root.text
         assert root.headers["cache-control"] == "no-store"
         assert c.get("/terminal").status_code == 200
+        connect = c.get("/connect")
+        assert connect.status_code == 200
+        assert connect.headers["cache-control"] == "no-store"
+        assert "Copy private webhook URL" in connect.text
+        assert 'id="key"' in connect.text
+        assert "test-hook" not in connect.text
+        assert "test-admin" not in connect.text
+        assert "BINANCE:XRPUSDT.P" in connect.text
         assert c.get("/setup").status_code == 403
         assert c.get("/binance/diagnostics").status_code == 403
         assert c.get("/binance/account").status_code == 403
@@ -73,6 +81,11 @@ def test_safe_webhooks(monkeypatch, tmp_path):
         assert setup.json()["real_money_enabled"] is False
         assert setup.json()["webhook_url"].endswith("/webhook/test-hook")
         assert '"bartime": {time}' in setup.json()["luxalgo_alert_message"]
+        assert '"sl1"' not in setup.json()["luxalgo_alert_message"]
+        assert '"close"' not in setup.json()["luxalgo_alert_message"]
+        assert setup.json()["luxalgo_alert_message"].count("{default}") == 1
+        assert '"ticker": "{ticker}"' in setup.json()["luxalgo_alert_message"]
+        assert '"tf": "{tf}"' in setup.json()["luxalgo_alert_message"]
         monkeypatch.setattr(bot, "get_binance_public_status", lambda: {
             "public_api": "REACHABLE", "xrp_usdt": "TRADING",
             "api_credentials": "NOT_CONNECTED", "orders_enabled": False,
