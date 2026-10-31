@@ -53,7 +53,11 @@ class MockLiveFlow(unittest.TestCase):
 
     def test_emergency_close_requires_flat_plus_no_orphan_triggers(self):
         c=Mock()
-        c.request.return_value={"id":789}
+        close_readback={"id":789,"contract":"BTC_USDT",
+            "text":"t-em-"+PLAN["client_text"][2:25],"status":"finished",
+            "is_close":True,"is_reduce_only":True}
+        c.request.side_effect=[{"id":789},close_readback,
+                               {"id":789},close_readback]
         c.snapshot.return_value={"positions":[],"orders":[],
           "source":"GATE_IO_LIVE_FUTURES",
           "triggers":[{"initial":{"contract":"BTC_USDT"}}]}
@@ -63,6 +67,16 @@ class MockLiveFlow(unittest.TestCase):
           "source":"GATE_IO_LIVE_FUTURES","triggers":[]}
         good=emergency_close_once(c,PLAN,durable_claim=mock_durable_claim(PLAN))
         self.assertTrue(good["closed_verified"])
+
+    def test_emergency_close_unverified_readback_never_claims_success(self):
+        c=Mock()
+        c.request.side_effect=[{"id":789},{"id":789,"contract":"BTC_USDT",
+            "text":"WRONG_SOURCE","status":"finished","is_close":True,
+            "is_reduce_only":True}]
+        r=emergency_close_once(c,PLAN,durable_claim=mock_durable_claim(PLAN))
+        self.assertFalse(r["closed_verified"])
+        self.assertTrue(r["requires_manual_exchange_review"])
+        c.snapshot.assert_not_called()
 
     def test_emergency_close_denies_unclaimed_exchange_post(self):
         c=Mock()
