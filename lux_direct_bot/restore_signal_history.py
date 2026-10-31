@@ -53,10 +53,6 @@ def read_owner_archive(path):
 
 def restore_archive(zip_path, db_path, *, mount_path="/var/data"):
     records = read_owner_archive(zip_path)
-    if not records:
-        # Empty export may be valid, but there are no historical records to restore.
-        return {"verified_export": True, "restored": 0,
-                "already_present": 0, "non_executable_history_only": True}
     inserted = 0
     already = 0
     with open_ledger(db_path, require_persistence=True, mount_path=mount_path) as db:
