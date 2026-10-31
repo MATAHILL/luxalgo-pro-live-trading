@@ -74,3 +74,14 @@ def test_existing_webhook_history_retained_by_additive_upgrade(monkeypatch,tmp_p
         assert after[0]["levels_status"]=="INVALID"
         assert after[0]["entry_reference"] is None
         assert client.get("/health").json()["live_trading"] is False
+
+def test_partial_reference_prices_are_preserved_without_certifying_protection():
+    assert parse_luxalgo_reference_levels({"entry": "1.25"}, "BUY") == (
+        "1.25", None, None, "NOT_PROVIDED")
+    assert parse_luxalgo_reference_levels(
+        {"entry": "1.25", "sl": "1.20"}, "BUY") == (
+        "1.25", "1.20", None, "NOT_PROVIDED")
+    assert parse_luxalgo_reference_levels(
+        {"entry": "NaN"}, "BUY") == (None, None, None, "INVALID")
+    assert parse_luxalgo_reference_levels(
+        {"entry": True}, "BUY") == (None, None, None, "INVALID")
