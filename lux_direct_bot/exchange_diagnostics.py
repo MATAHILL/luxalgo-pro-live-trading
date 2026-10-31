@@ -34,7 +34,12 @@ def get_binance_public_status(client_factory=httpx.Client):
             return {"public_api": "REACHABLE", "xrp_usdt": row.get("status", "UNKNOWN"),
                     "filters": filter_summary, "api_credentials": "NOT_CONNECTED",
                     "orders_enabled": False}
+    except httpx.HTTPStatusError as e:
+        return {"public_api": "UNAVAILABLE", "xrp_usdt": "UNVERIFIED",
+                "api_credentials": "NOT_CHECKED", "orders_enabled": False,
+                "reason": "BINANCE_PUBLIC_HTTP_ERROR",
+                "http_status": e.response.status_code}
     except (httpx.HTTPError, ValueError, TypeError, KeyError) as e:
         return {"public_api": "UNAVAILABLE", "xrp_usdt": "UNVERIFIED",
-                "api_credentials": "NOT_CONNECTED", "orders_enabled": False,
+                "api_credentials": "NOT_CHECKED", "orders_enabled": False,
                 "reason": type(e).__name__}
