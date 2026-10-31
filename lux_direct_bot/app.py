@@ -16,6 +16,7 @@ from lite import LITE_HTML
 from connect import CONNECT_HTML
 from exchange_diagnostics import get_binance_public_status
 from binance_account import read_account_snapshot
+from binance_preflight import snapshot_read_only
 
 MODE = "DRY_RUN"  # Code-level interlock: this build can NEVER transmit exchange orders.
 WEBHOOK_SECRET = os.environ.get("WEBHOOK_SECRET", "")
@@ -311,6 +312,15 @@ def binance_account(request: Request, response: Response):
     response.headers["Cache-Control"] = "no-store"
     response.headers["Referrer-Policy"] = "no-referrer"
     return read_account_snapshot()
+
+
+@app.get("/binance/preflight")
+def binance_preflight(request: Request, response: Response):
+    """Private, authenticated signed GET inventory only; cannot authorize trading."""
+    admin_auth(request)
+    response.headers["Cache-Control"] = "private, no-store"
+    response.headers["Referrer-Policy"] = "no-referrer"
+    return snapshot_read_only()
 
 
 @app.post("/admin/selftest")
