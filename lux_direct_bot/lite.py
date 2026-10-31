@@ -6,7 +6,7 @@ LITE_HTML = r"""<!doctype html>
 <style>
 :root{color-scheme:dark;font-family:system-ui,-apple-system,Segoe UI,sans-serif}
 *{box-sizing:border-box}body{margin:0;background:#0b1018;color:#e9f1fd}
-main{margin:6vh auto;padding:20px;max-width:620px}
+main{margin:6vh auto;padding:20px;max-width:1100px}
 section{background:#131e2d;border:1px solid #28394d;border-radius:16px;padding:25px;margin-top:17px}
 h1{font-size:22px;margin:0}h2{font-size:15px;color:#9dafc2;margin:6px 0 0;font-weight:500}
 p{line-height:1.5;color:#a6b7c9;font-size:13px}#mode{display:inline-block;color:#f7d695;font-size:12px;background:#302819;padding:7px 12px;border-radius:999px;margin-top:14px;font-weight:800}
@@ -37,8 +37,9 @@ th{color:#a9bad0;font-weight:600}
 <p class="reference-note" id="latestLevels">LuxAlgo reference entry / SL1 / TP1: not supplied.</p></section>
 <section><small>Recent signals</small><p class="reference-note">Read only · entry is chart reference, not Binance fill · unverified prices display —</p>
 <div class="records"><table aria-label="Recent LuxAlgo alerts, not executed exchange trades">
-<thead><tr><th>Time (IST)</th><th>Coin</th><th>Signal</th><th>Entry ref.</th><th>SL1</th><th>TP1</th><th>Status</th></tr></thead><tbody id="recentRows"></tbody></table></div>
+<thead><tr><th>Time (IST)</th><th>Received symbol</th><th>Original BUY / SELL</th><th>Entry price (signal)</th><th>Unrealized P&amp;L</th><th>SL1</th><th>TP1</th><th>Status</th></tr></thead><tbody id="recentRows"></tbody></table></div>
 <p class="reference-note" id="historyInfo">Unlock to view signal history.</p></section>
+<section><small>Binance positions · read only</small><p class="reference-note">Actual exchange entry and unrealized P&amp;L (USDT). These positions are not attributed to received signals.</p><div class="records"><table><thead><tr><th>Symbol</th><th>Position side</th><th>Amount</th><th>Entry price (fill)</th><th>Mark price</th><th>Unrealized P&amp;L (USDT)</th></tr></thead><tbody id="positionRows"></tbody></table></div><p id="positionInfo">Unlock to read positions.</p></section>
 <div class="footer">No extra indicators · No independent AI trading decisions · Live order pathway locked</div>
 </main><script>
 (function(){
@@ -46,17 +47,32 @@ th{color:#a9bad0;font-weight:600}
 var secret=''; var $=function(id){return document.getElementById(id);};
 function write(id,value){$(id).textContent=value;}
 async function checkBinanceReadOnly(){
+  var currentSecret=secret;
+  $('positionRows').replaceChildren();
+  write('positionInfo','Checking exchange positions…');
   try{
     var account=await call('/binance/account');
+    if(!secret || secret!==currentSecret)return;
     if(account.status==='CONNECTED_READ_ONLY'&&Array.isArray(account.positions)){
+      for(var p of account.positions){
+        var tr=document.createElement('tr');
+        for(var value of [p.symbol,p.position_side,p.amount,p.entry_price,p.mark_price,p.unrealized_pnl]){
+          var td=document.createElement('td');td.textContent=fmtPrice(value);tr.appendChild(td);
+        }
+        $('positionRows').appendChild(tr);
+      }
+      write('positionInfo',account.positions.length?'Exchange snapshot: '+new Date().toLocaleTimeString('en-IN',{timeZone:'Asia/Kolkata'})+' IST · Refreshes every 15 seconds.':'No open exchange positions · Unrealized P&L: N/A.');
       write('binanceSummary','Binance USD-M: CONNECTED READ-ONLY · Available USDT: '+
         String(account.usdt_available??'unavailable')+' · Open positions: '+
         String(account.positions.length)+' · Real-money orders OFF.');
     }else{
+      write('positionInfo','Position data unavailable · P&L: N/A.');
       write('binanceSummary','Binance USD-M: '+String(account.status||'UNVERIFIED')+
         ' · Signed account readback not verified · Orders OFF.');
     }
   }catch(err){
+    if(!secret || secret!==currentSecret)return;
+    write('positionInfo','Position data unavailable · P&L: N/A.');
     write('binanceSummary','Binance account readback unavailable · Orders OFF. '+err.message);
   }
 }
@@ -69,7 +85,7 @@ function showRecent(records){
   for(var item of limited){
     var tr=document.createElement('tr');
     var fields=[fmtTime(item.at),item.symbol,item.side,
-      fmtPrice(item.entry_reference),fmtPrice(item.stop_reference),
+      fmtPrice(item.entry_reference),"N/A — no verified bot fill",fmtPrice(item.stop_reference),
       fmtPrice(item.take_profit_reference),item.status];
     for(var v of fields){var td=document.createElement('td');td.textContent=String(v);tr.appendChild(td);}
     $('recentRows').appendChild(tr);
@@ -131,6 +147,7 @@ $('switch').addEventListener('click',async function(){
 $('lock').addEventListener('click',function(){
   secret='';$('switch').disabled=true;$('auth').style.display='block';$('lock').style.display='none';
   write('state','LOCKED');write('last','Locked');write('notice','Operator session locked.');write('summary','Private records hidden.');
+  $('positionRows').replaceChildren();write('positionInfo','Unlock to read positions.');
   $('recentRows').replaceChildren();write('historyInfo','Unlock to view signal history.');
   write('latestLevels','LuxAlgo reference entry / SL1 / TP1: private until unlocked.');
   write('binanceSummary','Binance account balance hidden until operator unlock. Real-money orders OFF.');
