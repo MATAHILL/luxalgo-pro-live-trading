@@ -19,14 +19,16 @@ pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#0b1421;border:1px so
 a{color:#7fc5ff} .status{font-size:14px;font-weight:650;margin:12px 0}
 @media(max-width:470px){main{padding:12px}section{padding:17px}button{display:block;width:100%}}
 </style></head><body><main>
-<h1>Connect TradingView to XRP BOT</h1>
-<p>Only the setup of the existing BINANCE:XRPUSDT.P · 5-minute LuxAlgo confirmation alert is covered here. This page does not place Binance orders.</p>
+<h1>Connect TradingView · LUX DIRECT BOT</h1>
+<p>Existing XRP: BINANCE:XRPUSDT.P · 5-minute LuxAlgo confirmations. Additional alerts can use the same private receiver for the authorized USDT-M Futures pairs below. No Binance orders can be placed here.</p>
 <section><h2>1. Unlock private webhook settings</h2>
 <form id="login" autocomplete="off"><input id="key" type="password" placeholder="Render ADMIN_TOKEN" aria-label="Operator access token" required>
 <button type="submit">Unlock setup</button></form>
 <p class="muted">Use your secret from Render only in this secure page. Never paste it into chat.</p><p id="authMessage" role="status">Not authenticated.</p></section>
 <section id="steps" class="hidden"><h2>2. Configure LuxAlgo in TradingView</h2>
-<ol><li>Open the TradingView 5-minute chart <strong>BINANCE:XRPUSDT.P</strong> and add your paid <strong>LuxAlgo Signals &amp; Overlays</strong>.</li>
+<p id="charts" class="status">Authorized chart list will appear after authentication.</p>
+<p>Preserve the existing XRP alert and all previous-bot alerts. Create a separately named alert for each new pair; do not edit or overwrite existing alerts.</p>
+<ol><li>Open a <strong>new separate TradingView 5-minute chart</strong> for each additional authorized symbol shown above and add one <strong>LuxAlgo Signals &amp; Overlays</strong> indicator.</li>
 <li>In the indicator settings, scroll to <strong>ANY ALERT() FUNCTION CALL CONDITIONS</strong> and enable <strong>Bullish Confirmation</strong> and <strong>Bearish Confirmation</strong> only.</li>
 <li>Paste the JSON from the button below into the <strong>indicator's Any alert() function call message</strong> field, then apply the indicator settings.</li>
 <li>Create a TradingView alert with condition <strong>LuxAlgo Signals &amp; Overlays → Any alert() function call</strong>. Choose open-ended expiration if offered.</li>
@@ -64,6 +66,8 @@ a{color:#7fc5ff} .status{font-size:14px;font-weight:650;margin:12px 0}
       config=await privateGet('/setup');
       if(!config || !config.webhook_url || !config.luxalgo_alert_message)throw new Error('Server-side webhook setup missing');
       if(config.mode!=='DRY_RUN' || config.real_money_enabled!==false)throw new Error('Unexpected order mode');
+      var allowed=Array.isArray(config.allowed_symbols)?config.allowed_symbols:[];
+      msg('charts','Authorized Binance Futures 5-minute charts: '+allowed.map(function(s){return 'BINANCE:'+s+'.P'}).join(' · ')+'.');
       msg('jsonPreview',config.luxalgo_alert_message);
       $('steps').classList.remove('hidden');
       $('verification').classList.remove('hidden');
