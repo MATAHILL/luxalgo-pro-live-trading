@@ -50,6 +50,16 @@ def initialize():
         db.execute("""CREATE TABLE IF NOT EXISTS webhook_attempts (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             at INTEGER NOT NULL, result TEXT NOT NULL, reason TEXT NOT NULL)""")
+        db.execute("""CREATE TABLE IF NOT EXISTS operator_control (
+            id INTEGER PRIMARY KEY CHECK (id = 1),
+            enabled INTEGER NOT NULL CHECK(enabled IN (0,1)))""")
+        db.execute("INSERT OR IGNORE INTO operator_control(id,enabled) VALUES(1,0)")
+
+def operator_enabled():
+    with database() as db:
+        row = db.execute("SELECT enabled FROM operator_control WHERE id=1").fetchone()
+        return bool(row and row["enabled"])
+
 
 def record_webhook_attempt(result, reason):
     """Log only a sanitized status, never payload or the webhook token."""
@@ -123,6 +133,32 @@ def terminal():
         },
     )
 
+@app.get("/operator/status")
+def operator_status(request: Request, response: Response):
+    admin_auth(request)
+    response.headers["Cache-Control"] = "no-store"
+    return {"enabled": operator_enabled(), "mode": MODE,
+            "orders_enabled": False,
+            "note": "BOT ON enables DRY_RUN intake only. Live orders are hard-disabled."}
+
+
+@app.post("/operator/switch")
+async def operator_switch(request: Request, response: Response):
+    admin_auth(request)
+    response.headers["Cache-Control"] = "no-store"
+    try:
+        payload = await request.json()
+    except (ValueError, UnicodeDecodeError):
+        raise HTTPException(422, "Expected JSON")
+    if not isinstance(payload, dict) or type(payload.get("enabled")) is not bool:
+        raise HTTPException(422, "enabled must be a boolean")
+    with database() as db:
+        db.execute("BEGIN IMMEDIATE")
+        db.execute("UPDATE operator_control SET enabled=? WHERE id=1",
+                   (int(payload["enabled"]),))
+    return {"enabled": operator_enabled(), "mode": MODE, "orders_enabled": False}
+
+
 @app.get("/health")
 def health():
     return {"service": "LUX DIRECT BOT", "mode": MODE, "live_trading": False,
@@ -140,11 +176,12 @@ async def webhook(token: str, request: Request):
     except (ValueError, UnicodeDecodeError, json.JSONDecodeError) as exc:
         record_webhook_attempt("REJECTED", reason_code(exc))
         raise HTTPException(status_code=422, detail=reason_code(exc)) from exc
+    status = "DRY_RUN" if operator_enabled() else "PAUSED"
     with database() as db:
         cur = db.execute("""INSERT OR IGNORE INTO signals
             (id,at,symbol,side,timeframe,bartime,event,status)
             VALUES(?,?,?,?,?,?,?,?)""",
-            (signal[0], int(time.time()), *signal[1:], "DRY_RUN"))
+            (signal[0], int(time.time()), *signal[1:], status))
     result = "ACCEPTED" if cur.rowcount else "DUPLICATE"
     record_webhook_attempt(result, "OK" if cur.rowcount else "ALREADY_SEEN")
     return {"result": result, "signal_id": signal[0],
@@ -260,10 +297,10 @@ def connection_status(request: Request, response: Response):
     response.headers["Cache-Control"] = "no-store"
     response.headers["Referrer-Policy"] = "no-referrer"
     with database() as db:
-        count = db.execute("SELECT COUNT(*) FROM signals WHERE status = 'DRY_RUN'").fetchone()[0]
+        count = db.execute("SELECT COUNT(*) FROM signals WHERE status IN ('DRY_RUN','PAUSED')").fetchone()[0]
         latest = db.execute(
             """SELECT at,symbol,side,timeframe,bartime,status FROM signals
-               WHERE status='DRY_RUN' ORDER BY at DESC, rowid DESC LIMIT 1"""
+               WHERE status IN ('DRY_RUN','PAUSED') ORDER BY at DESC, rowid DESC LIMIT 1"""
         ).fetchone()
     return {
         "state": "WEBHOOK_RECORDS_PRESENT" if count else "NO_WEBHOOK_RECORDS",
