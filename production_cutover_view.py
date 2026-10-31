@@ -181,115 +181,62 @@ PRODUCTION_CONTROL='''<section class="bot-control-panel" aria-label="Production 
 <button class="btn" id="productionBotOff" type="button" aria-pressed="true">■ BOT OFF</button>
 </div></section>'''
 
-PRODUCTION_ACCEPTANCE=r'''<section class="panel acceptance-audit-panel" id="btcAcceptancePanel" aria-label="BTC live acceptance test monitor read only">
-<div class="v4-head"><div><strong>BTC_USDT · ONE-CONTRACT LIVE ACCEPTANCE TEST</strong>
-<p class="light">Real exchange evidence only · No simulated fills · This panel cannot place orders</p></div>
-<button class="btn gloss-action" type="button" id="btcAcceptanceRefresh">↻ Refresh Test Status</button></div>
-<div class="acceptance-audit-summary">
-<div><span class="acceptance-audit-key">TEST ORDER</span><strong id="btcAcceptanceExecution">CHECKING BOT LEDGER…</strong></div>
-<div><span class="acceptance-audit-key">LUXALGO BTC LONG</span><strong id="btcAcceptanceSignal">CHECKING SOURCE…</strong></div>
-<div><span class="acceptance-audit-key">GATE.IO FILL</span><strong id="btcAcceptanceFill">NOT VERIFIED</strong></div>
-<div><span class="acceptance-audit-key">NATIVE SL / TP</span><strong id="btcAcceptanceProtection">NOT VERIFIED</strong></div>
+PRODUCTION_ORDERS=r'''<section class="panel production-live-orders-panel" id="productionOrdersPanel" aria-label="Current live Futures orders read only">
+<div class="v4-head"><div><strong>LIVE FUTURES ORDERS</strong>
+<p class="light">Current authenticated exchange inventory only · No historical test-order details · Read only</p></div>
+<button class="btn gloss-action" type="button" id="productionOrdersRefresh">↻ Refresh Orders</button></div>
+<div class="production-orders-grid">
+<div><span class="production-orders-key">OPEN EXCHANGE ORDERS</span><strong id="productionOpenOrders">CHECKING…</strong></div>
+<div><span class="production-orders-key">PROTECTIVE TRIGGERS</span><strong id="productionOpenTriggers">CHECKING…</strong></div>
+<div><span class="production-orders-key">OPEN POSITIONS</span><strong id="productionOpenPositions">CHECKING…</strong></div>
 </div>
-<p class="light" id="btcAcceptanceCaps">Owner limit: BTC_USDT LONG · 1 contract · margin ≤1.70 USDT · notional ≤8.30 USDT · modeled loss ≤0.10 USDT · leverage ≤5× · slippage ≤0.10%</p>
-<p class="light" id="btcAcceptanceReason" role="status" aria-live="polite">Checking genuine bot ledger, production lock state and Gate.io exchange readback.</p>
-<p class="light" id="btcAcceptanceChecked">Exchange reconciliation timestamp: not verified</p>
+<p class="light" id="productionOrdersStatus" role="status" aria-live="polite">Waiting for authenticated live exchange readback. Orders are never hidden if they exist.</p>
 </section>
 <script>(function(){'use strict';
-const status=document.getElementById('btcAcceptanceExecution'),
- signal=document.getElementById('btcAcceptanceSignal'),
- fill=document.getElementById('btcAcceptanceFill'),
- protection=document.getElementById('btcAcceptanceProtection'),
- reason=document.getElementById('btcAcceptanceReason'),
- checked=document.getElementById('btcAcceptanceChecked'),
- refresh=document.getElementById('btcAcceptanceRefresh');
-if(!status||!signal||!fill||!protection||!reason||!checked||!refresh)return;
-async function get(url,timeoutMs){
- const controller=new AbortController(), timer=setTimeout(()=>controller.abort(),timeoutMs);
- try{
-  const r=await fetch(url,{credentials:'same-origin',cache:'no-store',signal:controller.signal});
-  if(!r.ok)throw Error('Read-only server verification unavailable');
-  return await r.json();
- }finally{clearTimeout(timer);}
-}
+const orders=document.getElementById('productionOpenOrders'),
+ triggers=document.getElementById('productionOpenTriggers'),
+ positions=document.getElementById('productionOpenPositions'),
+ status=document.getElementById('productionOrdersStatus'),
+ refresh=document.getElementById('productionOrdersRefresh');
+if(!orders||!triggers||!positions||!status||!refresh)return;
+const validCount=value=>typeof value==='number'&&Number.isSafeInteger(value)&&value>=0;
 let busy=false;
 async function update(){
  if(busy)return;busy=true;refresh.disabled=true;
- // Preserve the last verified result during periodic refresh; never replace it
- // with permanent-looking spinner labels while exchange reconciliation is slow.
- if(status.textContent==='CHECKING BOT LEDGER…')status.textContent='VERIFYING BOT LEDGER…';
- if(signal.textContent==='CHECKING SOURCE…')signal.textContent='VERIFYING SIGNAL…';
- reason.textContent='Checking latest audit; exchange reconciliation may take longer.';
+ const controller=new AbortController();
+ const timer=setTimeout(()=>controller.abort(),12000);
  try{
-  // Each request is independently bounded. Audit/signal statuses update as soon
-  // as the DB audit returns, without blocking on Gate.io order readback.
-  const auditPromise=get('/terminal/acceptance-test/status',8000).catch(()=>null);
-  const exchangePromise=get('/terminal/live-execution/snapshot',12000).catch(()=>null);
-  const botPromise=get('/terminal/production-bot-control',8000).catch(()=>null);
-  const audit=await auditPromise;
-  if(!audit){
-   status.textContent='UNVERIFIED — AUDIT UNAVAILABLE';
-   signal.textContent='UNVERIFIED';
-   reason.textContent='No test-order status can be claimed until authenticated bot audit is restored.';
-   return;
-  }
-  status.textContent=audit.bot_order_recorded===false?
-   'NO BOT TEST ORDER RECORDED':'LEDGER PRESENT · VERIFY EXCHANGE';
-  signal.textContent=audit.eligible_btc_long_signal_seen===true?
-   'HISTORICAL QUALIFIED SIGNAL RECORDED':'NO QUALIFIED BTC LONG SIGNAL';
-  reason.textContent='Bot ledger and source audit updated · verifying Gate.io independently…';
-  const exchange=await exchangePromise;
-  const bot=await botPromise;
-  if(!exchange||!Array.isArray(exchange.positions)){
-   fill.textContent='UNKNOWN — EXCHANGE READBACK FAILED';
-   protection.textContent='UNKNOWN — EXCHANGE READBACK FAILED';
-   reason.textContent='Exchange not independently verified. No filled/protected order can be claimed.';
-   return;
-  }
-  if(exchange.fetched_at){
-   const d=new Date(typeof exchange.fetched_at==='number'?
-     exchange.fetched_at*1000:exchange.fetched_at);
-   checked.textContent='Gate.io readback: '+(Number.isFinite(d.getTime())?
-    d.toLocaleString('en-IN',{timeZone:'Asia/Kolkata'})+' IST':'UNVERIFIED TIMESTAMP');
-  }
-  const liveBtc=exchange.positions.filter(p=>p.contract==='BTC_USDT'&&p.side==='LONG');
-  if(liveBtc.length){
-   const p=liveBtc[0];
-   const ledgerLinked=(audit.bot_order_recorded===true &&
-     Boolean(audit.recorded_entry_order_id) &&
-     p.execution_status===audit.ledger_state &&
-     String(p.execution_status)!=='EXTERNAL_OR_UNTRACKED' &&
-     Number(p.size_contracts)===1);
-   fill.textContent=ledgerLinked?'ONE LONG CONTRACT · EXCHANGE POSITION FOUND':
-     'BTC LONG EXISTS · BOT LINK NOT VERIFIED';
-   const nativeVerified=ledgerLinked &&
-     p.protection_status==='EXCHANGE_VERIFIED' &&
-     Boolean(p.stop_order_id)&&Boolean(p.take_order_id) &&
-     p.stop_order_id===audit.recorded_stop_order_id &&
-     p.take_order_id===audit.recorded_take_order_id;
-   protection.textContent=nativeVerified?
-     'BOTH NATIVE SL/TP VERIFIED':'NOT VERIFIED — REVIEW REQUIRED';
-  }else{
-   fill.textContent=audit.bot_order_recorded?
-    'NO CURRENT BTC LONG POSITION — REVIEW LEDGER':'NO BTC LONG POSITION ON GATE.IO';
-   protection.textContent='NO CURRENT PROTECTED BTC LONG VERIFIED';
-  }
-  const locks=bot&&Array.isArray(bot.safety_gates)?
-   bot.safety_gates.join(', ').replaceAll('_',' '):'BOT STATE UNVERIFIED';
-  reason.textContent=(audit.bot_order_recorded?'Bot ledger entry exists. ':'No bot acceptance order submitted. ')+
-   'One-time test order sender is not armed. BOT state: '+locks+
-   '. Read-only monitoring only; no trade is sent from this panel.';
- }catch(e){
-  status.textContent='UNVERIFIED';
-  signal.textContent='UNVERIFIED';
-  fill.textContent='UNKNOWN';protection.textContent='UNKNOWN';
-  reason.textContent='Status refresh failed; trading execution is not confirmed.';
- }finally{busy=false;refresh.disabled=false;}
+  const response=await fetch('/terminal/live-execution/snapshot',{
+    credentials:'same-origin',cache:'no-store',signal:controller.signal
+  });
+  if(!response.ok)throw Error('Exchange readback unavailable');
+  const snapshot=await response.json();
+  const o=snapshot.exchange_open_orders,t=snapshot.exchange_open_triggers,p=snapshot.open_positions;
+  if(!Array.isArray(snapshot.positions)||!validCount(o)||!validCount(t)||
+     !validCount(p)||p!==snapshot.positions.length)
+    throw Error('Incomplete authenticated order inventory');
+  orders.textContent=o===0?'0 · EMPTY':String(o)+' · OPEN';
+  triggers.textContent=t===0?'0 · EMPTY':String(t)+' · OPEN';
+  positions.textContent=p===0?'0 · EMPTY':String(p)+' · OPEN';
+  const updated=typeof snapshot.fetched_at==='number'?
+    new Date(snapshot.fetched_at*1000):new Date(snapshot.fetched_at);
+  const timestamp=Number.isFinite(updated.getTime())?
+   updated.toLocaleString('en-IN',{timeZone:'Asia/Kolkata'})+' IST':'time unknown';
+  status.textContent=(o===0&&t===0&&p===0?
+    'Exchange confirms no open orders, protective triggers or positions.':
+    'Active exchange exposure detected. Review live positions and orders directly on Gate.io.')+
+    ' Readback: '+timestamp+'. Real-money order controls remain subject to production safety gates.';
+ }catch(error){
+  // Never show stale zeros as current when the authenticated API readback fails.
+  orders.textContent='UNVERIFIED';
+  triggers.textContent='UNVERIFIED';
+  positions.textContent='UNVERIFIED';
+  status.textContent='Unable to verify live exchange inventory. This is NOT an empty-order confirmation. Execution remains subject to safety locks.';
+ }finally{clearTimeout(timer);busy=false;refresh.disabled=false;}
 }
 refresh.addEventListener('click',update);update();
-setInterval(()=>{if(!document.hidden)update();},30000);
+setInterval(()=>{if(!document.hidden)update();},60000);
 })();</script>'''
-
 # Keep the original separate control panel above Radar, with original two-button
 # appearance and both banner/state indicators. Never route it to retired Testnet.
 PRODUCTION_BOT_SCRIPT=r'''<script>(function(){'use strict';
@@ -369,15 +316,14 @@ body.production-view .bot-control-panel{display:flex!important;justify-content:s
 body.production-view #productionBotOn{color:#eefff5;border:1px solid #6effb6;background:linear-gradient(160deg,#5ff3ae,#16aa68 48%,#086c44 50%,#20c87f 100%)}
 body.production-view #productionBotOff{color:#fff0f0;border:1px solid #ff8da3;background:linear-gradient(160deg,#ff8ba4,#de335e 48%,#921f3e 50%,#e84b72 100%)}
 body.production-view .bot-control-actions .btn:disabled{opacity:.38;cursor:not-allowed}
-body.production-view .acceptance-audit-panel{margin-top:12px;padding-bottom:12px}
-body.production-view .acceptance-audit-panel .v4-head{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}
-body.production-view .acceptance-audit-summary{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;padding:13px 18px}
-body.production-view .acceptance-audit-summary>div{padding:12px;border:1px solid #355a7b;border-radius:10px;background:rgba(13,33,56,.55);min-width:0}
-body.production-view .acceptance-audit-summary strong{display:block;font-size:13px;overflow-wrap:anywhere;margin-top:6px}
-body.production-view .acceptance-audit-key{display:block;font-size:11px;opacity:.8}
-body.production-view #btcAcceptanceReason,body.production-view #btcAcceptanceChecked,body.production-view #btcAcceptanceCaps{padding:3px 18px}
-@media(max-width:900px){body.production-view .acceptance-audit-summary{grid-template-columns:repeat(2,minmax(0,1fr))}}
-@media(max-width:550px){body.production-view .acceptance-audit-summary{grid-template-columns:1fr}}
+body.production-view .production-live-orders-panel{margin-top:12px;padding-bottom:12px}
+body.production-view .production-live-orders-panel .v4-head{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}
+body.production-view .production-orders-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;padding:13px 18px}
+body.production-view .production-orders-grid>div{padding:12px;border:1px solid #355a7b;border-radius:10px;background:rgba(13,33,56,.55);min-width:0}
+body.production-view .production-orders-grid strong{display:block;font-size:13px;overflow-wrap:anywhere;margin-top:6px}
+body.production-view .production-orders-key{display:block;font-size:11px;opacity:.8}
+body.production-view #productionOrdersStatus{padding:3px 18px}
+@media(max-width:650px){body.production-view .production-orders-grid{grid-template-columns:1fr}}
 body.production-view .production-position-cards{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;padding:12px 16px 17px}
 body.production-view .production-position-cards.one-position{grid-template-columns:minmax(0,1fr)}
 body.production-view .production-position-cards.one-position .production-position-card{max-width:980px}
@@ -425,11 +371,11 @@ def production_monitor_page(page):
     out,n=re.subn(r'<section class="bot-control-panel"[^>]*>.*?</section>',
                   lambda _:PRODUCTION_CONTROL,out,count=1,flags=re.S)
     if n!=1:raise ValueError("Missing bot control banner")
-    # Read-only acceptance status follows the original ON/OFF control panel.
-    # Never invent a BTC fill or replace the disabled order controls.
+    # Neutral live order inventory replaces the expired BTC test-order panel.
+    # This never conceals nonzero exchange orders or affects safety/audit state.
     if out.count(PRODUCTION_CONTROL)!=1:
         raise ValueError("Restored production BOT controls not unique")
-    out=out.replace(PRODUCTION_CONTROL,PRODUCTION_CONTROL+'\n'+PRODUCTION_ACCEPTANCE,1)
+    out=out.replace(PRODUCTION_CONTROL,PRODUCTION_CONTROL+'\n'+PRODUCTION_ORDERS,1)
     # Keep the Radar heading unchanged; BOT buttons are above in the old panel.
     if out.count('</body>')!=1:raise ValueError("Dashboard closing body missing")
     out=out.replace('</body>',PRODUCTION_BOT_SCRIPT+'</body>',1)
