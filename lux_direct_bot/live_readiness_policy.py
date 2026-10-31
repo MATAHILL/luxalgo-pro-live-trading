@@ -116,7 +116,9 @@ def validate_conservative_budget(
     if worst_notional<p["min_notional"] or worst_notional>p["notional_cap"]:
         return {"status":"REJECT_NO_ORDER","reason":"EXCHANGE_MINIMUM_OR_OWNER_MAXIMUM_NOTIONAL","orders_sent":0}
     # This is a software ceiling, not assumed financial authorization.
-    # Operator-requested 3% of verified Futures equity is an OUTER CEILING.\n    # Lower absolute operator limits still win; never authorizes live execution.\n    loss_cap=min(p["loss_cap"],p["equity"]*Decimal("0.03"))
+    # Operator-requested 3% of verified Futures equity is an OUTER CEILING.
+    # Lower absolute operator limits still win; never authorizes live execution.
+    loss_cap=min(p["loss_cap"],p["equity"]*Decimal("0.03"))
     if risk>loss_cap:
         return {"status":"REJECT_NO_ORDER","reason":"MODELED_LOSS_INCLUDING_FEES_EXCEEDS_BUDGET","orders_sent":0}
     return {"status":"OFFLINE_BUDGET_CHECK_PASS_NOT_ORDER_AUTHORITY",
