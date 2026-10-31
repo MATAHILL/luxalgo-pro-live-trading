@@ -34,6 +34,7 @@ a{color:#7fc5ff} .status{font-size:14px;font-weight:650;margin:12px 0}
 <li>Create a TradingView alert with condition <strong>LuxAlgo Signals &amp; Overlays → Any alert() function call</strong>. Choose open-ended expiration if offered.</li>
 <li>Under alert notifications, turn on <strong>Webhook URL</strong>, paste the private URL using the button below, and save the alert.</li>
 </ol>
+<p class="muted">Restored legacy LuxAlgo alert field format: ticker, alert, tf, bartime, entry ({close}), SL1 ({sl1}), TP1 ({tp1}), and MARKET order_type. This is signal metadata, not a Binance fill or live P&amp;L. The old bot's private token is intentionally excluded because this receiver uses a private webhook URL.</p>
 <button id="copyJson" type="button">Copy LuxAlgo message JSON</button>
 <button id="copyUrl" type="button">Copy private webhook URL</button>
 <details><summary>Preview LuxAlgo JSON template (not the private URL)</summary><pre id="jsonPreview"></pre></details>
