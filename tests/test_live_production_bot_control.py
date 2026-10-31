@@ -99,20 +99,23 @@ class ProductionBotTests(unittest.TestCase):
                 self.assertFalse(result.json["bot_on"])
                 off.assert_called_once()
 
-    def test_btc_acceptance_status_panel_is_visible_below_original_control(self):
+    def test_live_order_inventory_replaces_expired_btc_acceptance_panel(self):
         html=production_monitor_page(backend.PAGE)
-        self.assertEqual(html.count('id="btcAcceptancePanel"'),1)
-        self.assertEqual(html.count('id="btcAcceptanceRefresh"'),1)
+        self.assertEqual(html.count('id="productionOrdersPanel"'),1)
+        self.assertEqual(html.count('id="productionOrdersRefresh"'),1)
         self.assertLess(html.index('id="productionBotOff"'),
-                        html.index('id="btcAcceptancePanel"'))
-        self.assertLess(html.index('id="btcAcceptancePanel"'),
+                        html.index('id="productionOrdersPanel"'))
+        self.assertLess(html.index('id="productionOrdersPanel"'),
                         html.index('GATE.IO FUTURES RADAR <span'))
-        self.assertIn("NO BOT TEST ORDER RECORDED",html)
-        self.assertIn("EXCHANGE POSITION FOUND",html)
-        self.assertIn("NOT VERIFIED",html)
-        self.assertIn("This panel cannot place orders",html)
-        self.assertIn("'/terminal/acceptance-test/status'",html)
+        self.assertIn("OPEN EXCHANGE ORDERS",html)
+        self.assertIn("PROTECTIVE TRIGGERS",html)
+        self.assertIn("0 · EMPTY",html)
+        self.assertIn("UNVERIFIED",html)
+        self.assertIn("This is NOT an empty-order confirmation",html)
         self.assertIn("'/terminal/live-execution/snapshot'",html)
+        self.assertNotIn('id="btcAcceptancePanel"',html)
+        self.assertNotIn("BTC_USDT · ONE-CONTRACT LIVE ACCEPTANCE TEST",html)
+        self.assertNotIn("'/terminal/acceptance-test/status'",html)
         self.assertEqual(html.count('id="productionBotOn"'),1)
 
     def test_acceptance_status_endpoint_auth_and_zero_order_evidence(self):
@@ -167,18 +170,19 @@ class ProductionBotTests(unittest.TestCase):
             self.assertFalse(res.json["can_execute"])
 
 
-    def test_acceptance_panel_bounds_all_network_checks_and_updates_audit_first(self):
+    def test_live_order_inventory_is_authenticated_bounded_fail_closed(self):
         html=production_monitor_page(backend.PAGE)
         self.assertIn("AbortController()",html)
-        self.assertIn("get('/terminal/acceptance-test/status',8000)",html)
-        self.assertIn("get('/terminal/live-execution/snapshot',12000)",html)
-        self.assertIn("get('/terminal/production-bot-control',8000)",html)
-        self.assertLess(html.index('const audit=await auditPromise'),
-                        html.index('const exchange=await exchangePromise'))
-        self.assertLess(html.index('NO BOT TEST ORDER RECORDED'),
-                        html.index('const exchange=await exchangePromise'))
-        self.assertIn("Preserve the last verified result",html)
-
+        self.assertIn("credentials:'same-origin',cache:'no-store'",html)
+        self.assertIn("'/terminal/live-execution/snapshot'",html)
+        self.assertIn("setTimeout(()=>controller.abort(),12000)",html)
+        self.assertIn("snapshot.exchange_open_orders",html)
+        self.assertIn("snapshot.exchange_open_triggers",html)
+        self.assertIn("p!==snapshot.positions.length",html)
+        self.assertIn("orders.textContent='UNVERIFIED'",html)
+        self.assertIn("triggers.textContent='UNVERIFIED'",html)
+        self.assertNotIn('id="btcAcceptanceCaps"',html)
+        self.assertNotIn("fetch('/terminal/acceptance-test/status'",html)
 
     def test_ready_requires_production_safety_schema_not_only_old_testnet_tables(self):
         client=backend.app.test_client()
