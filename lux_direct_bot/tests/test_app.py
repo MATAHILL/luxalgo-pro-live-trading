@@ -37,6 +37,18 @@ def test_safe_webhooks(monkeypatch, tmp_path):
         assert dry.json()["test_records_persisted"] == 0
         assert dry.json()["exchange_orders_sent"] == 0
         assert dry.json()["actual_luxalgo_alert_verified"] is False
+        assert c.get("/operator/status").status_code == 403
+        assert c.post("/operator/switch", json={"enabled": True}).status_code == 403
+        auth = {"X-Admin-Token":"test-admin"}
+        state = c.get("/operator/status", headers=auth).json()
+        assert state["enabled"] is False
+        assert state["orders_enabled"] is False
+        assert c.post("/operator/switch", json={"enabled": "true"},headers=auth).status_code == 422
+        on = c.post("/operator/switch",json={"enabled":True},headers=auth).json()
+        assert on["enabled"] is True
+        assert on["orders_enabled"] is False
+        assert c.get("/operator/status",headers=auth).json()["enabled"] is True
+
         after_selftest = c.get("/connection/attempts", headers={"X-Admin-Token":"test-admin"}).json()
         assert after_selftest["attempts"] == []
         assert c.get("/signals", headers={"X-Admin-Token":"test-admin"}).json() == []
@@ -93,3 +105,11 @@ def test_safe_webhooks(monkeypatch, tmp_path):
         assert c.post("/webhook/test-hook", json=dict(p,bartime="2026-10-30T16:00:00Z")).status_code == 422
         assert c.post("/webhook/test-hook", json=dict(p,bartime=1793375400000)).json()["result"] == "DUPLICATE"
         assert c.get("/setup", headers={"X-Admin-Token":"test-admin"}).json()["allowed_timeframes"] == ["5"]
+        off = c.post("/operator/switch",json={"enabled":False},headers=auth).json()
+        assert off["enabled"] is False and off["orders_enabled"] is False
+        paused = dict(p, alert="Bearish Confirmation Signal", bartime=1793375580000)
+        assert c.post("/webhook/test-hook",json=paused).json()["result"] == "ACCEPTED"
+        rows = c.get("/signals",headers=auth).json()
+        assert rows[0]["status"] == "PAUSED"
+        assert c.get("/connection/status",headers=auth).json()["records"] == 3
+
