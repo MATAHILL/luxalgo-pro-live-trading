@@ -89,4 +89,15 @@ connectors cannot edit TradingView alerts.
 | Duplicate event with same symbol, side, timeframe, bar | Same event ID and one handoff |
 | Missing/malformed SL/TP | INVALID / MISSING; no exchange order |
 
-**Real-money authorization is still NONE, source lock OFF and emergency HALT ON.**
+**Owner's final continuous-trading authorization is conditional and NOT effective.**
+As of 31 October 2026 the exchange-write sender and automatic worker remain
+source-locked, the emergency HALT is active, no protected XRP acceptance fill
+has been certified, and no automatic live orders are permitted.
+
+**Owner action still required:** edit the private LuxAlgo custom alert() JSON
+within TradingView to include the documented `bartime` and
+`"order_type":"MARKET"`, then verify a genuine bullish/bearish confirmation
+gets stored with a fresh stable bar ID, valid original LuxAlgo levels,
+and no exchange order. Neither GitHub nor Render can edit the user's existing
+TradingView account alert directly; do not insert a guessed token or fabricate
+a signal. This operation must not modify original LuxAlgo calculations.
