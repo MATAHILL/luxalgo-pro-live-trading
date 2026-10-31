@@ -56,5 +56,8 @@ def test_verified_multi_symbol_webhooks_are_isolated_and_dry_run(monkeypatch, tm
         assert bad.status_code == 422
         assert bad.json()["detail"] == "SYMBOL_NOT_ALLOWED"
         assert c.get("/connection/status", headers=admin).json()["records"] == len(symbols)
-        assert c.get("/health").json()["live_trading"] is False
+        health = c.get("/health").json()
+        assert health["live_trading"] is False
+        assert health["allowed_symbols"] == sorted(symbols)
+        assert health["allowed_timeframes"] == ["5"]
         assert c.get("/operator/readiness", headers=admin).json()["live_orders_enabled"] is False
