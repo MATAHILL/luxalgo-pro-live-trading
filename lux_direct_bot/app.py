@@ -137,6 +137,7 @@ def setup(request: Request, response: Response):
             '}'
         ),
         "indicator": "LuxAlgo Signals & Overlays",
+        "selected_chart": "BINANCE:XRPUSDT.P",
         "alert_condition": "Any alert() function call",
         "enable_conditions": ["Bullish Confirmation", "Bearish Confirmation"],
         "allowed_symbols": sorted(ALLOWED_SYMBOLS),
@@ -210,6 +211,30 @@ def dry_run_signal_test(request: Request, response: Response):
     return {"result": "PASS", "checks": results, "test_records_persisted": 0,
             "actual_luxalgo_alert_verified": False,
             "exchange_orders_sent": 0, "mode": MODE}
+
+
+@app.get("/connection/status")
+def connection_status(request: Request, response: Response):
+    """Authenticated evidence of accepted webhook records, not a claim of origin."""
+    admin_auth(request)
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["Referrer-Policy"] = "no-referrer"
+    with database() as db:
+        count = db.execute("SELECT COUNT(*) FROM signals WHERE status = 'DRY_RUN'").fetchone()[0]
+        latest = db.execute(
+            """SELECT at,symbol,side,timeframe,bartime,status FROM signals
+               WHERE status='DRY_RUN' ORDER BY at DESC, rowid DESC LIMIT 1"""
+        ).fetchone()
+    return {
+        "state": "WEBHOOK_RECORDS_PRESENT" if count else "NO_WEBHOOK_RECORDS",
+        "records": count,
+        "latest": dict(latest) if latest else None,
+        "origin_independently_verified": False,
+        "tradingview_alert_confirmed": False,
+        "mode": MODE,
+        "orders_enabled": False,
+        "explanation": "Accepted webhook records do not establish that TradingView sent them.",
+    }
 
 
 @app.get("/signals")
