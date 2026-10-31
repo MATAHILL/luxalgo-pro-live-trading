@@ -11,7 +11,21 @@ def parse_luxalgo_reference_levels(payload,side):
     fields=("entry","sl","tp1")
     values=[payload.get(x) for x in fields]
     if any(x is None or str(x).strip()=="" for x in values):
-        return (None,None,None,"NOT_PROVIDED")
+        # Preserve independently valid supplied references for display.
+        # Missing protection still cannot qualify as a complete trade plan.
+        partial = []
+        for value in values:
+            if value is None or str(value).strip() == "":
+                partial.append(None)
+                continue
+            try:
+                number = Decimal(str(value))
+                if isinstance(value, bool) or not number.is_finite() or number <= 0:
+                    raise ValueError("Invalid reference price")
+                partial.append(str(number))
+            except (InvalidOperation, ValueError, TypeError):
+                return (None, None, None, "INVALID")
+        return (*partial, "NOT_PROVIDED")
     try:
         if any(isinstance(x,bool) for x in values):
             raise ValueError("Boolean is not a price")
