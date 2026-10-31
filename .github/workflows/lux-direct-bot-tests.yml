@@ -61,7 +61,7 @@ jobs:
                       assert response.headers["Cache-Control"] == "no-store"
                   if ('id="switch"' in terminal
                       and "DRY RUN" in terminal
-                      and "No orders, positions or profit figures" in terminal):
+                      and "Real-money orders remain OFF" in terminal):
                       break
               except (urllib.error.HTTPError, urllib.error.URLError, AssertionError):
                   if attempt == 11:
