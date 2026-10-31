@@ -32,6 +32,11 @@ jobs:
               data = json.load(response)
           assert data["mode"] == "DRY_RUN", data
           assert data["live_trading"] is False, data
+          assert set(data.get("allowed_symbols", [])) == {
+              "XRPUSDT", "BNBUSDT", "AINUSDT", "MAGMAUSDT",
+              "BIRBUSDT", "SANDUSDT",
+          }, data
+          assert data.get("allowed_timeframes") == ["5"], data
           request = urllib.request.Request(
               base + "/webhook/invalid",
               data=b'{"alert":"Bullish Confirmation Signal"}',
