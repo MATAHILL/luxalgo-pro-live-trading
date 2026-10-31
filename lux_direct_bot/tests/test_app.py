@@ -16,10 +16,14 @@ def test_safe_webhooks(monkeypatch, tmp_path):
         assert root.status_code == 200
         assert "text/html" in root.headers["content-type"]
         assert "LUX DIRECT BOT" in root.text
-        assert "No orders, positions or profit figures" in root.text
+        assert "Real-money orders remain OFF" in root.text
         assert "test-admin" not in root.text
         assert root.headers["cache-control"] == "no-store"
         assert c.get("/terminal").status_code == 200
+        assert 'id="binanceSummary"' in root.text
+        assert "CONNECTED READ-ONLY" in root.text
+        assert "Available USDT" in root.text
+        assert "Live orders OFF" not in root.text or "Real-money orders remain OFF" in root.text
         connect = c.get("/connect")
         assert connect.status_code == 200
         assert connect.headers["cache-control"] == "no-store"
