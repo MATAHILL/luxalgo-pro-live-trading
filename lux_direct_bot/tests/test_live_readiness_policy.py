@@ -89,3 +89,29 @@ def test_short_signal_levels_are_not_rewritten():
     x=validate_conservative_budget(**params)
     assert x["status"]=="OFFLINE_BUDGET_CHECK_PASS_NOT_ORDER_AUTHORITY"
     assert x["orders_sent"]==0
+
+
+def test_private_readiness_endpoint_denies_public_access_and_never_enables_orders(monkeypatch,tmp_path):
+    import importlib
+    from unittest.mock import patch
+    from fastapi.testclient import TestClient
+    monkeypatch.setenv("WEBHOOK_SECRET","test-webhook-ready")
+    monkeypatch.setenv("ADMIN_TOKEN","test-operator-ready")
+    monkeypatch.setenv("DB_PATH",str(tmp_path/"test-readiness.sqlite"))
+    for k,v in LIMITS.items():
+        monkeypatch.setenv(k,v)
+    import app
+    bot=importlib.reload(app)
+    with TestClient(bot.app) as c:
+        assert c.get("/operator/live-readiness").status_code==403
+        with patch.object(bot,"snapshot_read_only",return_value=ACCOUNT):
+            r=c.get("/operator/live-readiness",headers={"X-Admin-Token":"test-operator-ready"})
+        assert r.status_code==200
+        assert r.headers["cache-control"]=="private, no-store"
+        result=r.json()
+        assert result["authenticated_available_usdt"]=="400"
+        assert result["status"]=="BLOCKED_NON_EXECUTING_DIAGNOSTIC"
+        assert result["orders_enabled"] is False
+        assert result["can_trade"] is False
+        assert "PRODUCTION_ENTRY_SENDER_NOT_CERTIFIED" in result["blocked_reasons"]
+        assert c.get("/health").json()["live_trading"] is False
