@@ -26,8 +26,8 @@ th{color:#a9bad0;font-weight:600}
 </style></head><body><main>
 <h1>LUX DIRECT BOT</h1><h2>Binance USDT-M Futures · 5-minute LuxAlgo confirmations</h2>
 <div id="mode">DRY RUN · LIVE ORDERS DISABLED</div>
-<section class="warn"><strong>Real trading is not connected</strong>
-<p>No orders, positions or profit figures can be shown until exchange integration is verified. The ON/OFF button currently controls dry-run processing only.</p></section>
+<section class="warn"><strong>Real-money orders remain OFF</strong>
+<p id="binanceSummary">Binance account readback not checked yet. Sign in to view read-only balance and positions. The ON/OFF button controls dry-run signals only.</p></section>
 <section><div class="row"><div><small>Bot operator</small><div class="state" id="state">LOCKED</div></div><button id="switch" disabled>BOT OFF</button></div>
 <p id="notice">Enter the operator token below to control signal processing. No order can be sent to Binance from this build.</p>
 <p id="readiness">Live execution: LOCKED until verified TradingView delivery, Binance connection, persistent records, risk settings and protective orders.</p>
@@ -45,6 +45,21 @@ th{color:#a9bad0;font-weight:600}
 'use strict';
 var secret=''; var $=function(id){return document.getElementById(id);};
 function write(id,value){$(id).textContent=value;}
+async function checkBinanceReadOnly(){
+  try{
+    var account=await call('/binance/account');
+    if(account.status==='CONNECTED_READ_ONLY'&&Array.isArray(account.positions)){
+      write('binanceSummary','Binance USD-M: CONNECTED READ-ONLY · Available USDT: '+
+        String(account.usdt_available??'unavailable')+' · Open positions: '+
+        String(account.positions.length)+' · Real-money orders OFF.');
+    }else{
+      write('binanceSummary','Binance USD-M: '+String(account.status||'UNVERIFIED')+
+        ' · Signed account readback not verified · Orders OFF.');
+    }
+  }catch(err){
+    write('binanceSummary','Binance account readback unavailable · Orders OFF. '+err.message);
+  }
+}
 function fmtPrice(v){return v===null||v===undefined||v===''?'—':String(v);}
 function fmtTime(v){var d=new Date(Number(v)*1000);return Number.isFinite(d.getTime())?
   d.toLocaleTimeString('en-IN',{timeZone:'Asia/Kolkata',hour:'2-digit',minute:'2-digit'}):'—';}
@@ -85,6 +100,7 @@ async function refresh(){
     var op=results[0],conn=results[1],readiness=results[2];
     if(!Array.isArray(results[3]))throw new Error('Signal history unavailable');
     showRecent(results[3]);
+    await checkBinanceReadOnly();
     write('readiness',readiness.ready?'Live readiness: VERIFIED':'Live readiness: BLOCKED ('+readiness.blockers.length+' outstanding checks). BOT ON remains dry-run only.');
     write('state',op.enabled?'ON (DRY RUN)':'OFF');
     write('switch',op.enabled?'BOT OFF':'BOT ON');
@@ -117,6 +133,7 @@ $('lock').addEventListener('click',function(){
   write('state','LOCKED');write('last','Locked');write('notice','Operator session locked.');write('summary','Private records hidden.');
   $('recentRows').replaceChildren();write('historyInfo','Unlock to view signal history.');
   write('latestLevels','LuxAlgo reference entry / SL1 / TP1: private until unlocked.');
+  write('binanceSummary','Binance account balance hidden until operator unlock. Real-money orders OFF.');
 });
 setInterval(refresh,15000);
 })();
