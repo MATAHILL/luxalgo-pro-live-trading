@@ -202,8 +202,14 @@ def build_plan(signal, metadata, equity, available, positions, reserved_risk=0, 
     multiplier=dec(metadata.get("quanto_multiplier"),"contract multiplier")
     order_size_min=dec(metadata.get("order_size_min"),"minimum contract count")
     order_size_max=dec(metadata.get("order_size_max"),"maximum contract count")
-    if order_size_min != order_size_min.to_integral_value() or order_size_max != order_size_max.to_integral_value():
-        raise LiveSafetyError("Unsupported fractional contract-count semantics")
+    # Some Gate.io Futures contracts (including XRP_USDT) publish a fractional
+    # minimum. This execution sender supports WHOLE contracts only. Accept
+    # fractional exchange minimums solely when one whole contract is an exact
+    # multiple of that minimum; never round a requested fractional order up.
+    # Floor a fractional maximum so the integer sender cannot exceed it.
+    if order_size_max < 1 or Decimal("1") % order_size_min != 0:
+        raise LiveSafetyError("Whole-contract order incompatible with exchange lot limits")
+    whole_order_size_max = order_size_max.to_integral_value(rounding=ROUND_FLOOR)
     reserve=Decimal(str(reserved_risk))
     if not reserve.is_finite() or reserve<0:
         raise LiveSafetyError("Invalid reserved risk")
@@ -224,7 +230,7 @@ def build_plan(signal, metadata, equity, available, positions, reserved_risk=0, 
     unit_loss=unit_stop_loss+unit_fee_slip
     units_by_risk=(budget/unit_loss).to_integral_value(rounding=ROUND_FLOOR)
     units_by_margin=(av*lev/(e*multiplier)).to_integral_value(rounding=ROUND_FLOOR)
-    count=min(units_by_risk,units_by_margin,order_size_max)
+    count=min(units_by_risk,units_by_margin,whole_order_size_max)
     if count<order_size_min or count<1:
         raise LiveSafetyError("Insufficient margin/risk for exchange minimum lot")
     risk=count*unit_loss
