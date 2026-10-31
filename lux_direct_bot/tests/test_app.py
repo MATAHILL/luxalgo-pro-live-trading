@@ -82,8 +82,9 @@ def test_safe_webhooks(monkeypatch, tmp_path):
         assert setup.json()["real_money_enabled"] is False
         assert setup.json()["webhook_url"].endswith("/webhook/test-hook")
         assert '"bartime": {time}' in setup.json()["luxalgo_alert_message"]
-        assert '"sl1"' not in setup.json()["luxalgo_alert_message"]
-        assert '"close"' not in setup.json()["luxalgo_alert_message"]
+        assert '"entry": "{close}"' in setup.json()["luxalgo_alert_message"]
+        assert '"sl": "{sl1}"' in setup.json()["luxalgo_alert_message"]
+        assert '"tp1": "{tp1}"' in setup.json()["luxalgo_alert_message"]
         assert setup.json()["luxalgo_alert_message"].count("{default}") == 1
         assert '"ticker": "{ticker}"' in setup.json()["luxalgo_alert_message"]
         assert '"tf": "{tf}"' in setup.json()["luxalgo_alert_message"]
