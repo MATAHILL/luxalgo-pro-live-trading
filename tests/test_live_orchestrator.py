@@ -13,6 +13,23 @@ PLAN={"event_id":"tv-BTCUSDT-5m-20261028","client_text":client_text("tv-BTCUSDT-
       "sl":"79000","tp":"82000","estimated_risk_usdt":"0.2","timeframe":"5m",
       "position_mode":"single"}
 
+def mock_durable_claim(plan):
+    return dict(claimed=True,state="CLAIMED",event_id=plan["event_id"],
+        contract=plan["contract"],
+        close_client_text="t-em-"+plan["client_text"][2:25],
+        approval_reference="SIMULATED_CASE_NOT_LIVE_APPROVAL")
+
+
+def simulate_claimed_close(client,plan):
+    # Mock only: never connects to a production DB or exchange.
+    with (patch("live_emergency_one_shot_claim.consume_one_shot_recovery_claim",
+                return_value=True),
+          patch("live_emergency_one_shot_claim.finalize_one_shot_recovery_claim",
+                return_value=True)):
+        return emergency_close_once(client,plan,
+            durable_claim=mock_durable_claim(plan),open_connection=lambda:None)
+
+
 class MockLiveFlow(unittest.TestCase):
     def test_workflow_blocks_before_database_or_network(self):
         with self.assertRaisesRegex(LiveSafetyError,"SOURCE_LOCKED"):
@@ -46,14 +63,66 @@ class MockLiveFlow(unittest.TestCase):
 
     def test_emergency_close_requires_flat_plus_no_orphan_triggers(self):
         c=Mock()
-        c.request.return_value={"id":789}
-        c.snapshot.return_value={"positions":[],
+        close_readback={"id":789,"contract":"BTC_USDT",
+            "text":"t-em-"+PLAN["client_text"][2:25],"status":"finished",
+            "is_close":True,"is_reduce_only":True}
+        c.request.side_effect=[{"id":789},close_readback,
+                               {"id":789},close_readback]
+        c.snapshot.return_value={"positions":[],"orders":[],
+          "source":"GATE_IO_LIVE_FUTURES",
           "triggers":[{"initial":{"contract":"BTC_USDT"}}]}
-        result=emergency_close_once(c,PLAN)
+        result=simulate_claimed_close(c,PLAN)
         self.assertFalse(result["closed_verified"])
-        c.snapshot.return_value={"positions":[],"triggers":[]}
-        good=emergency_close_once(c,PLAN)
+        c.snapshot.return_value={"positions":[],"orders":[],
+          "source":"GATE_IO_LIVE_FUTURES","triggers":[]}
+        good=simulate_claimed_close(c,PLAN)
         self.assertTrue(good["closed_verified"])
+
+    def test_emergency_close_unverified_readback_never_claims_success(self):
+        c=Mock()
+        c.request.side_effect=[{"id":789},{"id":789,"contract":"BTC_USDT",
+            "text":"WRONG_SOURCE","status":"finished","is_close":True,
+            "is_reduce_only":True}]
+        r=simulate_claimed_close(c,PLAN)
+        self.assertFalse(r["closed_verified"])
+        self.assertTrue(r["requires_manual_exchange_review"])
+        c.snapshot.assert_not_called()
+
+    def test_valid_claim_but_not_atomically_consumed_never_posts(self):
+        c=Mock()
+        with patch("live_emergency_one_shot_claim.consume_one_shot_recovery_claim",
+                   side_effect=LiveSafetyError("DUPLICATE_CLAIM")):
+            r=emergency_close_once(c,PLAN,
+                durable_claim=mock_durable_claim(PLAN),open_connection=lambda:None)
+        self.assertFalse(r["closed_verified"])
+        self.assertEqual(r["orders_sent"],0)
+        c.request.assert_not_called()
+
+    def test_verified_exchange_flat_but_db_finalize_fails_never_certifies(self):
+        c=Mock()
+        c.request.side_effect=[{"id":789},{"id":789,"contract":"BTC_USDT",
+            "text":"t-em-"+PLAN["client_text"][2:25],
+            "status":"finished","is_close":True,"is_reduce_only":True}]
+        c.snapshot.return_value={"positions":[],"orders":[],
+            "source":"GATE_IO_LIVE_FUTURES","triggers":[]}
+        with (patch("live_emergency_one_shot_claim.consume_one_shot_recovery_claim",
+                    return_value=True),
+              patch("live_emergency_one_shot_claim.finalize_one_shot_recovery_claim",
+                    side_effect=LiveSafetyError("DB_NOT_PERSISTED"))):
+            r=emergency_close_once(c,PLAN,
+                durable_claim=mock_durable_claim(PLAN),open_connection=lambda:None)
+        self.assertFalse(r["closed_verified"])
+        self.assertTrue(r["requires_manual_exchange_review"])
+        self.assertEqual(c.request.call_count,2)
+
+    def test_emergency_close_denies_unclaimed_exchange_post(self):
+        c=Mock()
+        for claim in (None,{},dict(mock_durable_claim(PLAN),event_id="OTHER")):
+            with self.subTest(claim=claim):
+                result=emergency_close_once(c,PLAN,durable_claim=claim)
+                self.assertFalse(result["closed_verified"])
+                self.assertEqual(result["orders_sent"],0)
+        c.request.assert_not_called()
 
     def test_live_status_never_calls_unknown_positions_zero(self):
         status=status_fallback("EXCHANGE_OR_DB_UNAVAILABLE")

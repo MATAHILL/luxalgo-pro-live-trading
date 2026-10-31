@@ -145,21 +145,75 @@ def full_close_oneway_order(plan):
         order["auto_size"]="close_long" if plan["side"]=="LONG" else "close_short"
     return order
 
-def emergency_close_once(client,plan):
-    """At most one close attempt; ambiguous response requires manual exchange review."""
+def emergency_close_once(client,plan,*,durable_claim=None,open_connection=None):
+    """A close POST requires a previously persisted one-shot claim.
+
+    This helper is deliberately NOT called by the live execution exception
+    path. It does not create an approval, certify recovery or lift source locks.
+    A forged or missing claim must never reach the exchange transport.
+    """
+    if (not isinstance(durable_claim,dict) or
+        durable_claim.get("claimed") is not True or
+        durable_claim.get("state") != "CLAIMED" or
+        durable_claim.get("event_id") != plan.get("event_id") or
+        durable_claim.get("contract") != plan.get("contract") or
+        durable_claim.get("close_client_text") !=
+           "t-em-" + plan.get("client_text","")[2:25] or
+        not durable_claim.get("approval_reference") or
+        not callable(open_connection)):
+        return {"closed_verified":False,"orders_sent":0,
+                "requires_manual_exchange_review":True,
+                "reason":"DURABLE_ONE_SHOT_OWNER_APPROVED_CLAIM_REQUIRED"}
     order=full_close_oneway_order(plan)
+    from live_emergency_one_shot_claim import (
+        consume_one_shot_recovery_claim,finalize_one_shot_recovery_claim)
+    try:
+        # A persisted atomic CAS is consumed BEFORE any possible POST.
+        # A restart or duplicate worker cannot reuse the claim.
+        consume_one_shot_recovery_claim(open_connection,durable_claim)
+    except Exception:
+        return {"closed_verified":False,"orders_sent":0,
+                "requires_manual_exchange_review":True,
+                "reason":"ONE_SHOT_CLAIM_CONSUMPTION_FAILED_NO_ORDER"}
     try:
         response=client.request("POST",PREFIX+"/orders",payload=order)
-        if not isinstance(response,dict) or not (response.get("id") or response.get("id_string")):
-            raise AckUnknown("Close acknowledgment missing")
+        rawid=(response.get("id_string") or response.get("id")) if isinstance(response,dict) else None
+        close_id=str(rawid or "")
+        if not ORDER_RE.fullmatch(close_id):
+            raise AckUnknown("Close acknowledgment missing valid exchange identity")
+        # IOC ack is not evidence of a filled reduce-only close.
+        verified_order=client.request("GET",PREFIX+"/orders/"+close_id)
+        if (not isinstance(verified_order,dict) or
+            str(verified_order.get("id_string") or verified_order.get("id") or "")!=close_id or
+            verified_order.get("contract")!=plan["contract"] or
+            verified_order.get("text")!=order["text"] or
+            verified_order.get("status")!="finished" or
+            not (verified_order.get("is_close") is True or
+                 verified_order.get("close") is True) or
+            not (verified_order.get("is_reduce_only") is True or
+                 verified_order.get("reduce_only") is True)):
+            raise AckUnknown("Reduce-only close exchange order identity/readback unverified")
         snap=client.snapshot()
+        if (snap.get("source") != "GATE_IO_LIVE_FUTURES" or
+            not isinstance(snap.get("positions"),list) or
+            not isinstance(snap.get("orders"),list) or
+            not isinstance(snap.get("triggers"),list) or
+            snap["orders"]):
+            raise AckUnknown("Complete authenticated exchange close inventory unavailable")
         if any(p["contract"]==plan["contract"] for p in snap["positions"]):
             raise AckUnknown("Close not confirmed flat by exchange")
         if any((p.get("initial") or {}).get("contract")==plan["contract"]
                for p in snap["triggers"]):
             raise AckUnknown("Orphan native protective triggers remain")
-        return {"closed_verified":True,"orders_sent":1}
-    except (LiveSafetyError,AckUnknown):
+        # Exchange flatness is NOT complete until the consumed claim is
+        # durably marked verified. A failed DB write requires manual review.
+        finalize_one_shot_recovery_claim(open_connection,durable_claim)
+        return {"closed_verified":True,"orders_sent":1,
+                "close_order_id":close_id,
+                "claim_state_persisted":True,
+                "final_recovery_certified":False}
+    except Exception:
+        # Any post-submit failure is ambiguous. Never retry the same close.
         return {"closed_verified":False,"requires_manual_exchange_review":True,
                 "reason":"EMERGENCY_CLOSE_UNKNOWN_NO_RETRY"}
 
