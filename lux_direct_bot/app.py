@@ -47,6 +47,43 @@ def initialize():
             id TEXT PRIMARY KEY, at INTEGER NOT NULL, symbol TEXT NOT NULL,
             side TEXT NOT NULL, timeframe TEXT NOT NULL, bartime TEXT NOT NULL,
             event TEXT NOT NULL, status TEXT NOT NULL)""")
+        db.execute("""CREATE TABLE IF NOT EXISTS webhook_attempts (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            at INTEGER NOT NULL, result TEXT NOT NULL, reason TEXT NOT NULL)""")
+
+def record_webhook_attempt(result, reason):
+    """Log only a sanitized status, never payload or the webhook token."""
+    known = {
+        "ACCEPTED", "DUPLICATE", "REJECTED"
+    }
+    allowed_reasons = {
+        "OK", "ALREADY_SEEN", "INVALID_JSON", "EXPECTED_JSON_OBJECT",
+        "UNSUPPORTED_LUXALGO_SIGNAL", "SYMBOL_NOT_ALLOWED",
+        "TIMEFRAME_NOT_ALLOWED", "BAD_BAR_TIME"
+    }
+    if result not in known or reason not in allowed_reasons:
+        raise ValueError("Unexpected diagnostic result")
+    with database() as db:
+        db.execute(
+            "INSERT INTO webhook_attempts(at,result,reason) VALUES(?,?,?)",
+            (int(time.time()), result, reason),
+        )
+        db.execute("""DELETE FROM webhook_attempts WHERE id NOT IN (
+            SELECT id FROM webhook_attempts ORDER BY id DESC LIMIT 40
+        )""")
+
+
+def reason_code(error):
+    message = str(error)
+    return {
+        "Expected a JSON object": "EXPECTED_JSON_OBJECT",
+        "Only LuxAlgo bullish/bearish confirmation signals accepted":
+            "UNSUPPORTED_LUXALGO_SIGNAL",
+        "Symbol is not allowlisted": "SYMBOL_NOT_ALLOWED",
+        "Timeframe not allowlisted": "TIMEFRAME_NOT_ALLOWED",
+        "LuxAlgo millisecond bar time required": "BAD_BAR_TIME",
+    }.get(message, "INVALID_JSON")
+
 
 def parse_signal(payload):
     if not isinstance(payload, dict):
@@ -101,14 +138,17 @@ async def webhook(token: str, request: Request):
     try:
         signal = parse_signal(json.loads(body))
     except (ValueError, UnicodeDecodeError, json.JSONDecodeError) as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
+        record_webhook_attempt("REJECTED", reason_code(exc))
+        raise HTTPException(status_code=422, detail=reason_code(exc)) from exc
     with database() as db:
         cur = db.execute("""INSERT OR IGNORE INTO signals
             (id,at,symbol,side,timeframe,bartime,event,status)
             VALUES(?,?,?,?,?,?,?,?)""",
             (signal[0], int(time.time()), *signal[1:], "DRY_RUN"))
-    return {"result": "ACCEPTED" if cur.rowcount else "DUPLICATE",
-            "signal_id": signal[0], "side": signal[2], "mode": MODE}
+    result = "ACCEPTED" if cur.rowcount else "DUPLICATE"
+    record_webhook_attempt(result, "OK" if cur.rowcount else "ALREADY_SEEN")
+    return {"result": result, "signal_id": signal[0],
+            "side": signal[2], "mode": MODE}
 
 def admin_auth(request: Request):
     token = request.headers.get("X-Admin-Token", "")
@@ -235,6 +275,19 @@ def connection_status(request: Request, response: Response):
         "orders_enabled": False,
         "explanation": "Accepted webhook records do not establish that TradingView sent them.",
     }
+
+
+@app.get("/connection/attempts")
+def webhook_attempts(request: Request, response: Response):
+    """Recent authenticated receiver outcomes; excludes token and payload."""
+    admin_auth(request)
+    response.headers["Cache-Control"] = "no-store"
+    with database() as db:
+        rows = db.execute(
+            "SELECT at,result,reason FROM webhook_attempts ORDER BY id DESC LIMIT 20"
+        ).fetchall()
+    return {"attempts": [dict(r) for r in rows], "mode": MODE,
+            "tradingview_sender_verified": False, "orders_enabled": False}
 
 
 @app.get("/signals")
