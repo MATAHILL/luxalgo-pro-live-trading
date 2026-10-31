@@ -90,11 +90,14 @@ def test_fail_closed_and_flattened(failure):
 
 @pytest.mark.parametrize("failure",["close_fails","orphan_cancel"])
 def test_unrecoverable_failure_halts(failure):
-    ex=FakeExchange(fail=failure)
+    ex=FakeExchange(fail="bad_tp")
+    if failure=="close_fails":
+        def cannot_close(quantity, side):
+            raise RuntimeError("simulated emergency close timeout")
+        ex.emergency_reduce_only_close=cannot_close
     if failure=="orphan_cancel":
-        ex.fail="bad_tp"
         def cannot_cancel(_):
-            raise RuntimeError("cancel failed")
+            raise RuntimeError("simulated orphan cancellation failure")
         ex.cancel_algo=cannot_cancel
     with pytest.raises(EmergencyHalt,match="Emergency recovery uncertain|Orphan protection cannot"):
         simulate_protected_execution(plan(),ex)
