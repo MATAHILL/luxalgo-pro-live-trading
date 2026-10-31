@@ -5,6 +5,11 @@ on:
     paths:
       - "lux_direct_bot/**"
       - ".github/workflows/lux-direct-bot-tests.yml"
+  pull_request:
+    branches: [lux-direct-bot]
+    paths:
+      - "lux_direct_bot/**"
+      - ".github/workflows/lux-direct-bot-tests.yml"
   workflow_dispatch:
 jobs:
   test:
