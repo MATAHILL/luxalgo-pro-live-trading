@@ -23,6 +23,13 @@ class FakeHttp:
     def __exit__(self,*args): return False
     def read(self,n): return json.dumps(self.payload).encode()
 
+def mock_durable_claim(plan):
+    return dict(claimed=True,state="CLAIMED",event_id=plan["event_id"],
+        contract=plan["contract"],
+        close_client_text="t-em-"+plan["client_text"][2:25],
+        approval_reference="SIMULATED_CASE_NOT_LIVE_APPROVAL")
+
+
 class NonTradingFaultInjections(unittest.TestCase):
     def test_read_only_transport_timeout_fails(self):
         def fail(*a,**kw):raise TimeoutError("induced GET timeout")
@@ -75,7 +82,7 @@ class NonTradingFaultInjections(unittest.TestCase):
     def test_unknown_emergency_close_requires_manual_review(self):
         c=Mock()
         c.request.side_effect=AckUnknown("Simulated timeout")
-        status=emergency_close_once(c,PLAN)
+        status=emergency_close_once(c,PLAN,durable_claim=mock_durable_claim(PLAN))
         self.assertFalse(status["closed_verified"])
         self.assertTrue(status["requires_manual_exchange_review"])
         self.assertEqual(c.request.call_count,1)
