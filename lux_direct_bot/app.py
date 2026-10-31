@@ -18,12 +18,15 @@ from exchange_diagnostics import get_binance_public_status
 from binance_account import read_account_snapshot
 from binance_preflight import snapshot_read_only
 from live_readiness_policy import evaluate_readonly_binance_futures
+from durable_sqlite import open_ledger, storage_health, initialize_audit
 from signal_levels import parse_luxalgo_reference_levels
 
 MODE = "DRY_RUN"  # Code-level interlock: this build can NEVER transmit exchange orders.
 WEBHOOK_SECRET = os.environ.get("WEBHOOK_SECRET", "")
 ADMIN_TOKEN = os.environ.get("ADMIN_TOKEN", "")
 DB_PATH = os.environ.get("DB_PATH", "/tmp/lux-direct-bot.sqlite3")
+REQUIRE_PERSISTENCE = os.environ.get("DIRECT_BOT_REQUIRE_PERSISTENCE", "0") == "1"
+DISK_MOUNT = "/var/data"
 ALLOWED_SYMBOLS = {s.strip().upper() for s in os.environ.get("ALLOWED_SYMBOLS", "XRPUSDT").split(",") if s.strip()}
 ALLOWED_TIMEFRAMES = {s.strip().upper() for s in os.environ.get("ALLOWED_TIMEFRAMES", "5").split(",") if s.strip()}
 SYMBOL_MAP = json.loads(os.environ.get("SYMBOL_MAP_JSON", '{"XRPUSDT.P":"XRPUSDT"}'))
@@ -38,9 +41,7 @@ EVENTS = {
 app = FastAPI(title="LUX DIRECT BOT", docs_url=None, redoc_url=None)
 
 def database():
-    db = sqlite3.connect(DB_PATH, timeout=15)
-    db.row_factory = sqlite3.Row
-    return db
+    return open_ledger(DB_PATH,require_persistence=REQUIRE_PERSISTENCE,mount_path=DISK_MOUNT)
 
 @app.on_event("startup")
 def initialize():
@@ -48,6 +49,7 @@ def initialize():
     if WEBHOOK_SECRET and ADMIN_TOKEN and WEBHOOK_SECRET == ADMIN_TOKEN:
         raise RuntimeError("Webhook and admin secrets must differ")
     with database() as db:
+        initialize_audit(db)
         db.execute("""CREATE TABLE IF NOT EXISTS signals (
             id TEXT PRIMARY KEY, at INTEGER NOT NULL, symbol TEXT NOT NULL,
             side TEXT NOT NULL, timeframe TEXT NOT NULL, bartime TEXT NOT NULL,
@@ -191,7 +193,7 @@ def operator_readiness(request: Request, response: Response):
     blockers = []
     if not os.environ.get("BINANCE_API_KEY") or not os.environ.get("BINANCE_API_SECRET"):
         blockers.append("BINANCE_KEYS_NOT_CONFIGURED")
-    if DB_PATH.startswith("/tmp/") or DB_PATH == ":memory:":
+    if not REQUIRE_PERSISTENCE or not storage_health(DB_PATH,require_persistence=True,mount_path=DISK_MOUNT)["durable"]:
         blockers.append("PERSISTENT_SIGNAL_LEDGER_REQUIRED")
     if not os.environ.get("FUTURES_ORDER_QTY"):
         blockers.append("ORDER_QUANTITY_NOT_CONFIGURED")
@@ -341,6 +343,23 @@ def binance_preflight(request: Request, response: Response):
     return snapshot_read_only()
 
 
+@app.get("/operator/storage-readiness")
+def operator_storage_readiness(request: Request, response: Response):
+    """Authenticated storage and restart safety, no sensitive filesystem paths."""
+    admin_auth(request)
+    response.headers["Cache-Control"] = "private, no-store"
+    state=storage_health(DB_PATH,require_persistence=REQUIRE_PERSISTENCE,mount_path=DISK_MOUNT)
+    if state["durable"] and REQUIRE_PERSISTENCE:
+        with database() as db:
+            record_count=db.execute("SELECT COUNT(*) AS n FROM signals").fetchone()["n"]
+            audit_count=db.execute("SELECT COUNT(*) AS n FROM execution_audit").fetchone()["n"]
+        return {"status":"PERSISTENT_LEDGER_MOUNTED",
+                "signal_count":record_count,"audit_count":audit_count,
+                "orders_enabled":False,"can_trade":False}
+    return {"status":"NOT_DURABLE","reason":state["reason"],
+            "orders_enabled":False,"can_trade":False}
+
+
 @app.get("/operator/live-readiness")
 def operator_live_readiness(request: Request, response: Response):
     """On-demand signed GET preflight and conservative blockers. NO ORDERS."""
@@ -351,6 +370,7 @@ def operator_live_readiness(request: Request, response: Response):
               "FUTURES_MAX_LOSS_USDT","FUTURES_MAX_LEVERAGE")
     return evaluate_readonly_binance_futures(
         snapshot_read_only(), db_path=DB_PATH,
+        durable_verified=REQUIRE_PERSISTENCE and storage_health(DB_PATH,require_persistence=True,mount_path=DISK_MOUNT)["durable"],
         settings={name:os.environ.get(name) for name in relevant})
 
 
