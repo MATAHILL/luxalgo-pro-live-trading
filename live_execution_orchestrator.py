@@ -166,8 +166,22 @@ def emergency_close_once(client,plan,*,durable_claim=None):
     order=full_close_oneway_order(plan)
     try:
         response=client.request("POST",PREFIX+"/orders",payload=order)
-        if not isinstance(response,dict) or not (response.get("id") or response.get("id_string")):
-            raise AckUnknown("Close acknowledgment missing")
+        rawid=(response.get("id_string") or response.get("id")) if isinstance(response,dict) else None
+        close_id=str(rawid or "")
+        if not ORDER_RE.fullmatch(close_id):
+            raise AckUnknown("Close acknowledgment missing valid exchange identity")
+        # IOC ack is not evidence of a filled reduce-only close.
+        verified_order=client.request("GET",PREFIX+"/orders/"+close_id)
+        if (not isinstance(verified_order,dict) or
+            str(verified_order.get("id_string") or verified_order.get("id") or "")!=close_id or
+            verified_order.get("contract")!=plan["contract"] or
+            verified_order.get("text")!=order["text"] or
+            verified_order.get("status")!="finished" or
+            not (verified_order.get("is_close") is True or
+                 verified_order.get("close") is True) or
+            not (verified_order.get("is_reduce_only") is True or
+                 verified_order.get("reduce_only") is True)):
+            raise AckUnknown("Reduce-only close exchange order identity/readback unverified")
         snap=client.snapshot()
         if (snap.get("source") != "GATE_IO_LIVE_FUTURES" or
             not isinstance(snap.get("positions"),list) or
@@ -181,9 +195,11 @@ def emergency_close_once(client,plan,*,durable_claim=None):
                for p in snap["triggers"]):
             raise AckUnknown("Orphan native protective triggers remain")
         return {"closed_verified":True,"orders_sent":1,
+                "close_order_id":close_id,
                 "requires_claim_state_readback":True,
                 "final_recovery_certified":False}
-    except (LiveSafetyError,AckUnknown):
+    except Exception:
+        # Any post-submit failure is ambiguous. Never retry the same close.
         return {"closed_verified":False,"requires_manual_exchange_review":True,
                 "reason":"EMERGENCY_CLOSE_UNKNOWN_NO_RETRY"}
 
