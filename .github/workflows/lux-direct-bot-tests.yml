@@ -27,6 +27,7 @@ jobs:
       - name: Run isolated tests
         run: python -m pytest -q tests
       - name: Verify deployed service health and unauthenticated rejection
+        if: github.event_name != 'pull_request'
         run: |
           python - <<'PY'
           import json
