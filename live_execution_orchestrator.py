@@ -145,20 +145,44 @@ def full_close_oneway_order(plan):
         order["auto_size"]="close_long" if plan["side"]=="LONG" else "close_short"
     return order
 
-def emergency_close_once(client,plan):
-    """At most one close attempt; ambiguous response requires manual exchange review."""
+def emergency_close_once(client,plan,*,durable_claim=None):
+    """A close POST requires a previously persisted one-shot claim.
+
+    This helper is deliberately NOT called by the live execution exception
+    path. It does not create an approval, certify recovery or lift source locks.
+    A forged or missing claim must never reach the exchange transport.
+    """
+    if (not isinstance(durable_claim,dict) or
+        durable_claim.get("claimed") is not True or
+        durable_claim.get("state") != "CLAIMED" or
+        durable_claim.get("event_id") != plan.get("event_id") or
+        durable_claim.get("contract") != plan.get("contract") or
+        durable_claim.get("close_client_text") !=
+           "t-em-" + plan.get("client_text","")[2:25] or
+        not durable_claim.get("approval_reference")):
+        return {"closed_verified":False,"orders_sent":0,
+                "requires_manual_exchange_review":True,
+                "reason":"DURABLE_ONE_SHOT_OWNER_APPROVED_CLAIM_REQUIRED"}
     order=full_close_oneway_order(plan)
     try:
         response=client.request("POST",PREFIX+"/orders",payload=order)
         if not isinstance(response,dict) or not (response.get("id") or response.get("id_string")):
             raise AckUnknown("Close acknowledgment missing")
         snap=client.snapshot()
+        if (snap.get("source") != "GATE_IO_LIVE_FUTURES" or
+            not isinstance(snap.get("positions"),list) or
+            not isinstance(snap.get("orders"),list) or
+            not isinstance(snap.get("triggers"),list) or
+            snap["orders"]):
+            raise AckUnknown("Complete authenticated exchange close inventory unavailable")
         if any(p["contract"]==plan["contract"] for p in snap["positions"]):
             raise AckUnknown("Close not confirmed flat by exchange")
         if any((p.get("initial") or {}).get("contract")==plan["contract"]
                for p in snap["triggers"]):
             raise AckUnknown("Orphan native protective triggers remain")
-        return {"closed_verified":True,"orders_sent":1}
+        return {"closed_verified":True,"orders_sent":1,
+                "requires_claim_state_readback":True,
+                "final_recovery_certified":False}
     except (LiveSafetyError,AckUnknown):
         return {"closed_verified":False,"requires_manual_exchange_review":True,
                 "reason":"EMERGENCY_CLOSE_UNKNOWN_NO_RETRY"}
