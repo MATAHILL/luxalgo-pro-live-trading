@@ -294,15 +294,19 @@ def setup(request: Request, response: Response):
             "https://lux-direct-bot-dryrun.onrender.com/webhook/" + WEBHOOK_SECRET
             if WEBHOOK_SECRET else None
         ),
+        # Compatibility with the documented legacy LUXALGO PRO indicator
+        # message, excluding the old bot's private token. New bot authenticates
+        # using the dedicated secret in its webhook URL, not a JSON token field.
         "luxalgo_alert_message": (
             '{\n'
-            '  "alert": "{default}",\n'
             '  "ticker": "{ticker}",\n'
+            '  "alert": "{default}",\n'
             '  "tf": "{tf}",\n'
             '  "bartime": {time},\n'
             '  "entry": "{close}",\n'
             '  "sl": "{sl1}",\n'
-            '  "tp1": "{tp1}"\n'
+            '  "tp1": "{tp1}",\n'
+            '  "order_type": "MARKET"\n'
             '}'
         ),
         "indicator": "LuxAlgo Signals & Overlays",
