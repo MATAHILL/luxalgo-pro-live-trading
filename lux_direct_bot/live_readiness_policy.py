@@ -29,7 +29,7 @@ def decimal_positive(value):
     except (InvalidOperation, ValueError, TypeError, OverflowError):
         return None
 
-def evaluate_readonly_binance_futures(account, *, db_path, settings=None):
+def evaluate_readonly_binance_futures(account, *, db_path, durable_verified=False, settings=None):
     """Produce authenticated readback findings without granting live authority."""
     settings=settings or {}
     reasons=[]
@@ -46,7 +46,7 @@ def evaluate_readonly_binance_futures(account, *, db_path, settings=None):
         reasons.append("ONE_WAY_POSITION_MODE_NOT_CONFIRMED")
     if account.get("exchange_flat") is not True:
         reasons.append("FLAT_EXCHANGE_INVENTORY_NOT_VERIFIED")
-    if not isinstance(db_path,str) or not db_path.strip() or db_path==":memory:" or db_path.startswith("/tmp/"):
+    if durable_verified is not True or not isinstance(db_path,str) or not db_path.startswith("/var/data/"):
         reasons.append("DURABLE_DATABASE_NOT_CONFIGURED")
     if settings.get("FUTURES_ORDER_QTY") is None or decimal_positive(settings.get("FUTURES_ORDER_QTY")) is None:
         reasons.append("EXPLICIT_ORDER_QUANTITY_NOT_CONFIGURED")
