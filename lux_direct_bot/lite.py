@@ -25,6 +25,7 @@ small{color:#b9c6d8} .buy{color:#67e0b4}.sell{color:#ff9696}
 <p>No orders, positions or profit figures can be shown until exchange integration is verified. The ON/OFF button currently controls dry-run processing only.</p></section>
 <section><div class="row"><div><small>Bot operator</small><div class="state" id="state">LOCKED</div></div><button id="switch" disabled>BOT OFF</button></div>
 <p id="notice">Enter the operator token below to control signal processing. No order can be sent to Binance from this build.</p>
+<p id="readiness">Live execution: LOCKED until verified TradingView delivery, Binance connection, persistent records, risk settings and protective orders.</p>
 <form id="auth"><input id="token" type="password" placeholder="Render operator token" required autocomplete="off" aria-label="Operator token"><button type="submit" style="margin-top:10px">Unlock</button></form>
 <button id="lock" class="off" style="display:none;margin-top:12px">Lock terminal</button></section>
 <section><small>Most recent webhook signal</small><div class="state" id="last">Not yet verified</div><p id="summary">No authenticated signal records loaded.</p></section>
@@ -45,8 +46,9 @@ async function call(path,body){
 async function refresh(){
   if(!secret)return;
   try{
-    var results=await Promise.all([call('/operator/status'),call('/connection/status')]);
-    var op=results[0],conn=results[1];
+    var results=await Promise.all([call('/operator/status'),call('/connection/status'),call('/operator/readiness')]);
+    var op=results[0],conn=results[1],readiness=results[2];
+    write('readiness',readiness.ready?'Live readiness: VERIFIED':'Live readiness: BLOCKED ('+readiness.blockers.length+' outstanding checks). BOT ON remains dry-run only.');
     write('state',op.enabled?'ON (DRY RUN)':'OFF');
     write('switch',op.enabled?'BOT OFF':'BOT ON');
     $('switch').classList.toggle('off',op.enabled);
