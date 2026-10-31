@@ -38,7 +38,10 @@ a{color:#7fc5ff} .status{font-size:14px;font-weight:650;margin:12px 0}
 <p id="copyMessage" role="status">The webhook URL is never printed in the page or added to browser history.</p>
 <p class="muted">TradingView requires 2-factor authentication for webhooks. Its alert log can display the delivery status.</p></section>
 <section id="verification" class="hidden"><h2>3. Verify a genuine confirmation</h2>
-<p>After TradingView fires a real Bullish or Bearish Confirmation, inspect TradingView's alert log and click Check receiver below. A simulated test or an ordinary chart signal does not prove real delivery.</p>
+<p>First, test whether this browser can reach the configured private webhook URL. This is a technical route check only: no LuxAlgo event, signal record or exchange order is created.</p>
+<button id="probe" type="button">Test private webhook route</button>
+<p class="status" id="probeResult" role="status">Not tested yet.</p>
+<p>After TradingView fires a real Bullish or Bearish Confirmation, inspect TradingView's alert log and click Check receiver below. A test probe or an ordinary chart signal does not prove genuine TradingView delivery.</p>
 <button id="check" type="button">Check receiver</button>
 <p class="status" id="receiver" role="status">No verification performed yet.</p>
 <p class="muted">A recorded webhook proves receipt; sender identity still requires matching evidence in TradingView's alert log.</p>
@@ -77,6 +80,26 @@ a{color:#7fc5ff} .status{font-size:14px;font-weight:650;margin:12px 0}
   }
   $('copyJson').addEventListener('click',function(){copy('luxalgo_alert_message')});
   $('copyUrl').addEventListener('click',function(){copy('webhook_url')});
+  $('probe').addEventListener('click',async function(){
+    if(!config || !config.webhook_url){
+      msg('probeResult','Unlock setup first.');return;
+    }
+    $('probe').disabled=true;
+    try{
+      var response=await fetch(config.webhook_url,{
+        method:'POST',cache:'no-store',referrerPolicy:'no-referrer',
+        headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({_probe:'CHECK_WEBHOOK_ROUTE_V1'})
+      });
+      if(!response.ok)throw new Error('Webhook returned HTTP '+response.status);
+      var outcome=await response.json();
+      if(outcome.result!=='PROBE_OK' || outcome.orders_enabled!==false || outcome.signal_created!==false)
+        throw new Error('Unexpected diagnostic reply');
+      msg('probeResult','PASS: private webhook URL accepts a safe diagnostic request. No real signal received and no trade placed.');
+    }catch(err){
+      msg('probeResult','FAILED: '+err.message+'. Check the private URL and Render service, then retry.');
+    }finally{$('probe').disabled=false}
+  });
   $('check').addEventListener('click',async function(){
     try{
       var r=await Promise.all([privateGet('/connection/status'),privateGet('/connection/attempts')]);
