@@ -54,9 +54,14 @@ def simulate_protected_execution(plan, exchange):
     """
     if plan.symbol != "XRPUSDT" or plan.direction not in ("BUY", "SELL"):
         raise EmergencyHalt("Forbidden signal")
-    if exchange.snapshot().get("qty") != "0":
+    pre = exchange.snapshot()
+    if Decimal(str(pre.get("qty", "invalid"))) != 0:
         raise EmergencyHalt("Existing position; cannot safely enter")
-    if exchange.snapshot().get("protection_ids"):
+    if pre.get("position_side") != "BOTH":
+        raise EmergencyHalt("One-way position mode not confirmed")
+    if pre.get("open_order_ids"):
+        raise EmergencyHalt("Existing orders; cannot safely enter")
+    if pre.get("protection_ids"):
         raise EmergencyHalt("Pre-existing protective orders; cannot safely enter")
     created = []
     entry_attempted = False
@@ -66,8 +71,9 @@ def simulate_protected_execution(plan, exchange):
         read = exchange.read_entry(plan.entry["newClientOrderId"])
         require_order_filled(read, plan)
         for spec in (plan.stop, plan.take_profit):
-            exchange.create_algo(spec)
+            # Reserve id before dispatch; even a timeout may have placed the algo.
             created.append(spec["clientAlgoId"])
+            exchange.create_algo(spec)
             require_algo(exchange.read_algo(spec["clientAlgoId"]), spec)
         current = exchange.snapshot()
         expected_signed = Decimal(plan.quantity) * (1 if plan.direction == "BUY" else -1)
