@@ -59,6 +59,29 @@ jobs:
               time.sleep(5)
           else:
               raise AssertionError("Terminal not available after retries")
+          for attempt in range(12):
+              try:
+                  with urllib.request.urlopen(base + "/connect", timeout=35) as response:
+                      connect = response.read().decode("utf-8")
+                      assert response.headers["Cache-Control"] == "no-store"
+                  if ('Copy private webhook URL' in connect
+                      and "BINANCE:XRPUSDT.P" in connect
+                      and "Render ADMIN_TOKEN" in connect):
+                      break
+              except (urllib.error.HTTPError, urllib.error.URLError, AssertionError):
+                  if attempt == 11:
+                      raise
+              time.sleep(5)
+          else:
+              raise AssertionError("TradingView connection page unavailable")
+          assert "/webhook/" not in connect, "Private webhook URL must never be in HTML"
+          for restricted_path in ("/setup", "/connection/status"):
+              req = urllib.request.Request(base + restricted_path)
+              try:
+                  urllib.request.urlopen(req, timeout=30)
+                  raise AssertionError("Private connection endpoint publicly accessible")
+              except urllib.error.HTTPError as error:
+                  assert error.code == 403, error.code
           for method, url, data in [
               ("GET", "/operator/status", None),
               ("POST", "/operator/switch", b'{"enabled":true}'),
