@@ -24,6 +24,7 @@ def test_safe_webhooks(monkeypatch, tmp_path):
         assert connect.status_code == 200
         assert connect.headers["cache-control"] == "no-store"
         assert "Copy private webhook URL" in connect.text
+        assert "Test private webhook route" in connect.text
         assert 'id="key"' in connect.text
         assert "test-hook" not in connect.text
         assert "test-admin" not in connect.text
@@ -86,6 +87,21 @@ def test_safe_webhooks(monkeypatch, tmp_path):
         assert setup.json()["luxalgo_alert_message"].count("{default}") == 1
         assert '"ticker": "{ticker}"' in setup.json()["luxalgo_alert_message"]
         assert '"tf": "{tf}"' in setup.json()["luxalgo_alert_message"]
+        # Transport test uses the real protected webhook route but MUST NOT
+        # appear as a LuxAlgo signal or enable exchange execution.
+        probe = c.post("/webhook/test-hook",
+                       json={"_probe": "CHECK_WEBHOOK_ROUTE_V1"})
+        assert probe.status_code == 200
+        assert probe.json() == {"result": "PROBE_OK", "mode": "DRY_RUN",
+                                "orders_enabled": False, "signal_created": False}
+        assert c.get("/signals", headers=auth).json() == []
+        after_probe = c.get("/connection/status", headers=auth).json()
+        assert after_probe["records"] == 0
+        recorded_probe = c.get("/connection/attempts", headers=auth).json()
+        assert recorded_probe["attempts"][0]["result"] == "PROBE"
+        assert recorded_probe["attempts"][0]["reason"] == "TEST_OK"
+        assert recorded_probe["attempts"][0].keys() == {"at", "result", "reason"}
+
         monkeypatch.setattr(bot, "get_binance_public_status", lambda: {
             "public_api": "REACHABLE", "xrp_usdt": "TRADING",
             "api_credentials": "NOT_CONNECTED", "orders_enabled": False,
