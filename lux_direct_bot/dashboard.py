@@ -63,6 +63,7 @@ strong.accent{color:var(--accent)}.hidden{display:none!important}
   <p class="muted" id="setupMessage">Operator authentication required. Private webhook URL is not shown publicly.</p>
   <p class="muted" id="safeTestMessage">No simulated signal test has been run in this browser session. Real LuxAlgo alert reception remains unverified.</p>
   <p class="muted" id="connectionMessage" role="status">TradingView webhook status: no independently confirmed delivery.</p>
+  <p class="muted" id="receiverMessage" role="status">Receiver diagnostics: pending operator login.</p>
   <p class="muted" id="binanceMessage">Binance account API: not connected. No live trading.</p><div id="accountBox" class="hidden"><div class="muted" id="balanceLabel" style="margin:10px 0;font-size:13px"></div><div class="scroll"><table><thead><tr><th>Symbol</th><th>Side</th><th>Amount</th><th>Entry</th><th>Mark</th><th>Unrealized P&L</th></tr></thead><tbody id="positionRows"></tbody></table></div></div>
 </section>
 <section class="card" aria-labelledby="signalTitle">
@@ -196,6 +197,26 @@ async function loadConnection(){
     }
   }catch(e){setText('connectionMessage','Cannot verify webhook evidence: '+e.message);}
 }
+async function loadReceiverAttempts(){
+  if(!token)return;
+  try{
+    var r=await fetch('/connection/attempts',{cache:'no-store',headers:{'X-Admin-Token':token}});
+    if(!r.ok)throw new Error('HTTP '+r.status);
+    var data=await r.json(), rows=data.attempts||[];
+    if(!rows.length){
+      setText('receiverMessage','Receiver diagnostics: no authenticated webhook attempts recorded on this instance.');
+      return;
+    }
+    var counts={ACCEPTED:0,DUPLICATE:0,REJECTED:0};
+    for(var item of rows){if(Object.prototype.hasOwnProperty.call(counts,item.result)) counts[item.result]++;}
+    var recent=rows[0];
+    setText('receiverMessage','Last '+rows.length+' webhook attempts: accepted '+counts.ACCEPTED+
+      ', duplicate '+counts.DUPLICATE+', rejected '+counts.REJECTED+
+      '. Latest: '+recent.result+' ('+recent.reason+') at '+fmt(recent.at)+' IST. Sender not independently verified.');
+  }catch(error){
+    setText('receiverMessage','Receiver diagnostics unavailable: '+error.message);
+  }
+}
 function draw(records){
   $('rows').replaceChildren();
   if(!records.length){setText('message','No authenticated LuxAlgo signals recorded yet. No trade has been executed.');show('tableBox',false);setText('signals','0 received');return;}
@@ -226,14 +247,14 @@ async function signals(){
     draw(records);
   }catch(e){setText('message','Unable to load signal history: '+e.message);}
 }
-$('login').addEventListener('submit',function(e){e.preventDefault();token=$('token').value.trim();$('token').value='';show('login',false);show('lock',true);signals();loadSetup();loadConnection();});
-$('refresh').addEventListener('click',function(){health();signals();loadConnection();});
-$('lock').addEventListener('click',function(){token='';setupConfig=null;show('setupControls',false);show('accountBox',false);setText('setupTemplate','');setText('exchange','Not connected');setText('positionValue','Unavailable');setText('positionHint','Exchange connection required');setText('setupMessage','Operator authentication required. Private webhook URL is not shown publicly.');setText('connectionMessage','TradingView webhook status: locked.');setText('signals','Locked');setText('signalsHint','Private history');setText('message','Signal history locked.');$('rows').replaceChildren();show('tableBox',false);show('login',true);show('lock',false);});
+$('login').addEventListener('submit',function(e){e.preventDefault();token=$('token').value.trim();$('token').value='';show('login',false);show('lock',true);signals();loadSetup();loadConnection();loadReceiverAttempts();});
+$('refresh').addEventListener('click',function(){health();signals();loadConnection();loadReceiverAttempts();});
+$('lock').addEventListener('click',function(){token='';setupConfig=null;show('setupControls',false);show('accountBox',false);setText('setupTemplate','');setText('exchange','Not connected');setText('positionValue','Unavailable');setText('positionHint','Exchange connection required');setText('setupMessage','Operator authentication required. Private webhook URL is not shown publicly.');setText('connectionMessage','TradingView webhook status: locked.');setText('receiverMessage','Receiver diagnostics: locked.');setText('signals','Locked');setText('signalsHint','Private history');setText('message','Signal history locked.');$('rows').replaceChildren();show('tableBox',false);show('login',true);show('lock',false);});
 $('copyWebhook').addEventListener('click',function(){copySetup('webhook_url');});
 $('copyTemplate').addEventListener('click',function(){copySetup('luxalgo_alert_message');});
 $('safeTest').addEventListener('click',runSafeTest);
 $('probeBinance').addEventListener('click',diagnoseBinance);
 $('readBinance').addEventListener('click',readBinanceAccount);
-health();setInterval(function(){health();signals();loadConnection();},15000);
+health();setInterval(function(){health();signals();loadConnection();loadReceiverAttempts();},15000);
 })();
 </script></body></html>"""
