@@ -66,12 +66,12 @@ def operator_enabled():
 def record_webhook_attempt(result, reason):
     """Log only a sanitized status, never payload or the webhook token."""
     known = {
-        "ACCEPTED", "DUPLICATE", "REJECTED"
+        "ACCEPTED", "DUPLICATE", "REJECTED", "PROBE"
     }
     allowed_reasons = {
         "OK", "ALREADY_SEEN", "INVALID_JSON", "EXPECTED_JSON_OBJECT",
         "UNSUPPORTED_LUXALGO_SIGNAL", "SYMBOL_NOT_ALLOWED",
-        "TIMEFRAME_NOT_ALLOWED", "BAD_BAR_TIME"
+        "TIMEFRAME_NOT_ALLOWED", "BAD_BAR_TIME", "TEST_OK"
     }
     if result not in known or reason not in allowed_reasons:
         raise ValueError("Unexpected diagnostic result")
@@ -234,7 +234,14 @@ async def webhook(token: str, request: Request):
     if len(body) > 4096:
         raise HTTPException(status_code=413, detail="Payload exceeds 4 KB")
     try:
-        signal = parse_signal(json.loads(body))
+        payload = json.loads(body)
+        # Explicit private transport probe: validates HTTPS/token routing without
+        # saving a signal, invoking the operator switch, or placing any order.
+        if payload == {"_probe": "CHECK_WEBHOOK_ROUTE_V1"}:
+            record_webhook_attempt("PROBE", "TEST_OK")
+            return {"result": "PROBE_OK", "mode": MODE,
+                    "orders_enabled": False, "signal_created": False}
+        signal = parse_signal(payload)
     except (ValueError, UnicodeDecodeError, json.JSONDecodeError) as exc:
         record_webhook_attempt("REJECTED", reason_code(exc))
         raise HTTPException(status_code=422, detail=reason_code(exc)) from exc
