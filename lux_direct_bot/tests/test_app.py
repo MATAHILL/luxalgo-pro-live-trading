@@ -89,6 +89,22 @@ def test_safe_webhooks(monkeypatch, tmp_path):
         assert '"entry": "{close}"' in setup.json()["luxalgo_alert_message"]
         assert '"sl": "{sl1}"' in setup.json()["luxalgo_alert_message"]
         assert '"tp1": "{tp1}"' in setup.json()["luxalgo_alert_message"]
+        assert '"order_type": "MARKET"' in setup.json()["luxalgo_alert_message"]
+        assert '"token"' not in setup.json()["luxalgo_alert_message"]
+        assert setup.json()["luxalgo_alert_message"].index('"ticker"') < setup.json()["luxalgo_alert_message"].index('"alert"')
+        import json
+        # This LuxAlgo template intentionally uses unquoted {time}. Replace
+        # placeholder values to assert runtime JSON remains syntactically valid.
+        template = setup.json()["luxalgo_alert_message"]
+        for name, value in (("{ticker}", "XRPUSDT.P"), ("{default}", "Bullish Confirmation Signal"),
+                            ("{tf}", "5"), ("{close}", "1.5"), ("{sl1}", "1.4"), ("{tp1}", "1.7")):
+            template = template.replace(name, value)
+        parsed_template = json.loads(template.replace("{time}", "1793375400000"))
+        assert parsed_template["order_type"] == "MARKET"
+        assert parsed_template["entry"] == "1.5"
+        assert parsed_template["sl"] == "1.4"
+        assert parsed_template["tp1"] == "1.7"
+
         assert setup.json()["luxalgo_alert_message"].count("{default}") == 1
         assert '"ticker": "{ticker}"' in setup.json()["luxalgo_alert_message"]
         assert '"tf": "{tf}"' in setup.json()["luxalgo_alert_message"]
