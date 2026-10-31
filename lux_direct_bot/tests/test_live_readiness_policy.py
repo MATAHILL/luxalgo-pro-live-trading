@@ -36,7 +36,7 @@ def test_400_usdt_signed_balance_is_not_live_trading_permission():
     assert x["requires_new_specific_binance_trade_authorization"] is True
 
 def test_even_full_readback_with_syntactic_limits_still_fails_closed():
-    x=evaluate_readonly_binance_futures(ACCOUNT,db_path="/var/data/live.sqlite3",settings=LIMITS)
+    x=evaluate_readonly_binance_futures(ACCOUNT,db_path="/var/data/live.sqlite3",durable_verified=True,settings=LIMITS)
     assert x["status"]=="BLOCKED_NON_EXECUTING_DIAGNOSTIC"
     assert "DURABLE_DATABASE_NOT_CONFIGURED" not in x["blocked_reasons"]
     assert x["can_trade"] is False
