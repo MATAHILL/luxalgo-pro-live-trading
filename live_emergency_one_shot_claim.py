@@ -117,3 +117,54 @@ def claim_one_shot_recovery(con, *, event_id, contract, approval_reference, clos
     return {"claimed":True,"orders_sent":0,"event_id":event_id,
             "contract":contract,"close_client_text":close_text,
             "state":"CLAIMED","approval_reference":approval_reference}
+
+
+def consume_one_shot_recovery_claim(open_connection, claim):
+    """Atomically consume a claim once BEFORE any possible exchange POST.
+
+    The initial CLAIMED row is never enough by itself to dispatch. A
+    transactionally committed state transition to EXCHANGE_RESULT_UNKNOWN
+    ensures a lost acknowledgment or process restart cannot POST a retry.
+    """
+    if not isinstance(claim,dict) or claim.get("claimed") is not True:
+        raise LiveSafetyError("NO_DURABLE_CLOSE_CLAIM")
+    with open_connection() as con:
+        with con.cursor() as cur:
+            cur.execute("SELECT pg_advisory_xact_lock(%s)",(LOCK_ID,))
+            cur.execute("SELECT halted FROM luxalgo_prod_execution_control WHERE id=1 FOR UPDATE")
+            control=cur.fetchone()
+            if not control or control.get("halted") is not True:
+                raise LiveSafetyError("EMERGENCY_HALT_NOT_CONFIRMED_BEFORE_CLOSE")
+            cur.execute("""UPDATE luxalgo_prod_emergency_close_claims
+                           SET state='EXCHANGE_RESULT_UNKNOWN'
+                           WHERE event_id=%s AND contract=%s
+                             AND close_client_text=%s
+                             AND approval_reference=%s
+                             AND state='CLAIMED'
+                           RETURNING event_id""",(
+                           claim.get("event_id"),claim.get("contract"),
+                           claim.get("close_client_text"),
+                           claim.get("approval_reference")))
+            claimed=cur.fetchone()
+            if not claimed or claimed.get("event_id")!=claim.get("event_id"):
+                raise LiveSafetyError("CLOSE_CLAIM_CONSUMED_OR_INVALID_NO_RETRY")
+    return True
+
+
+def finalize_one_shot_recovery_claim(open_connection,claim):
+    """Only after exchange order readback AND flat/open-order trigger checks."""
+    with open_connection() as con:
+        with con.cursor() as cur:
+            cur.execute("SELECT pg_advisory_xact_lock(%s)",(LOCK_ID,))
+            cur.execute("""UPDATE luxalgo_prod_emergency_close_claims
+                           SET state='FLAT_READBACK_VERIFIED'
+                           WHERE event_id=%s AND contract=%s
+                             AND close_client_text=%s
+                             AND state='EXCHANGE_RESULT_UNKNOWN'
+                           RETURNING event_id""",(
+                           claim.get("event_id"),claim.get("contract"),
+                           claim.get("close_client_text")))
+            row=cur.fetchone()
+            if not row or row.get("event_id")!=claim.get("event_id"):
+                raise LiveSafetyError("CLOSE_VERIFICATION_NOT_PERSISTED")
+    return True
