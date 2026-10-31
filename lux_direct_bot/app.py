@@ -13,6 +13,7 @@ from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.responses import HTMLResponse
 from dashboard import DASHBOARD_HTML
 from lite import LITE_HTML
+from connect import CONNECT_HTML
 from exchange_diagnostics import get_binance_public_status
 from binance_account import read_account_snapshot
 
@@ -148,6 +149,25 @@ def advanced():
     )
 
 
+@app.get("/connect", response_class=HTMLResponse)
+def connect_tradingview():
+    """One-time setup page. HTML never includes any private webhook credentials."""
+    return HTMLResponse(
+        content=CONNECT_HTML,
+        headers={
+            "Cache-Control": "no-store",
+            "X-Content-Type-Options": "nosniff",
+            "Referrer-Policy": "no-referrer",
+            "X-Frame-Options": "DENY",
+            "Content-Security-Policy": (
+                "default-src 'none'; script-src 'unsafe-inline'; "
+                "style-src 'unsafe-inline'; connect-src 'self'; "
+                "form-action 'self'; base-uri 'none'; frame-ancestors 'none'"
+            ),
+        },
+    )
+
+
 @app.get("/operator/readiness")
 def operator_readiness(request: Request, response: Response):
     """Minimal visible blockers; do not disclose API key values or webhook secrets."""
@@ -252,9 +272,6 @@ def setup(request: Request, response: Response):
             '  "alert": "{default}",\n'
             '  "ticker": "{ticker}",\n'
             '  "tf": "{tf}",\n'
-            '  "close": "{close}",\n'
-            '  "sl1": "{sl1}",\n'
-            '  "tp1": "{tp1}",\n'
             '  "bartime": {time}\n'
             '}'
         ),
