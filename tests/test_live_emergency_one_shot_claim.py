@@ -1,7 +1,7 @@
 """Recovery preparation tests: no actual DB changes or Gate order submission."""
 import unittest
 from datetime import datetime, timezone, timedelta
-from unittest.mock import Mock
+from unittest.mock import Mock, MagicMock
 from live_futures_engine import LiveSafetyError
 from live_emergency_one_shot_claim import (
     evaluate_one_shot_close_candidate, claim_one_shot_recovery,
@@ -17,7 +17,8 @@ SNAPSHOT=dict(readback_utc=NOW-timedelta(seconds=5),
 
 
 def con_for_claim(*fetches):
-    con=Mock()
+    con=MagicMock()
+    con.__enter__.return_value=con
     cursor=Mock()
     cursor.fetchone.side_effect=list(fetches)
     con.cursor.return_value.__enter__=Mock(return_value=cursor)
