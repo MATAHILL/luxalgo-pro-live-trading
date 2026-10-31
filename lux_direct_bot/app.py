@@ -17,6 +17,7 @@ from connect import CONNECT_HTML
 from exchange_diagnostics import get_binance_public_status
 from binance_account import read_account_snapshot
 from binance_preflight import snapshot_read_only
+from live_readiness_policy import evaluate_readonly_binance_futures
 from signal_levels import parse_luxalgo_reference_levels
 
 MODE = "DRY_RUN"  # Code-level interlock: this build can NEVER transmit exchange orders.
@@ -338,6 +339,19 @@ def binance_preflight(request: Request, response: Response):
     response.headers["Cache-Control"] = "private, no-store"
     response.headers["Referrer-Policy"] = "no-referrer"
     return snapshot_read_only()
+
+
+@app.get("/operator/live-readiness")
+def operator_live_readiness(request: Request, response: Response):
+    """On-demand signed GET preflight and conservative blockers. NO ORDERS."""
+    admin_auth(request)
+    response.headers["Cache-Control"] = "private, no-store"
+    response.headers["Referrer-Policy"] = "no-referrer"
+    relevant=("FUTURES_ORDER_QTY","FUTURES_MAX_NOTIONAL_USDT",
+              "FUTURES_MAX_LOSS_USDT","FUTURES_MAX_LEVERAGE")
+    return evaluate_readonly_binance_futures(
+        snapshot_read_only(), db_path=DB_PATH,
+        settings={name:os.environ.get(name) for name in relevant})
 
 
 @app.post("/admin/selftest")
