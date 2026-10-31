@@ -38,10 +38,17 @@ def test_safe_webhooks(monkeypatch, tmp_path):
         assert dry.json()["exchange_orders_sent"] == 0
         assert dry.json()["actual_luxalgo_alert_verified"] is False
         assert c.get("/operator/status").status_code == 403
+        assert c.get("/operator/readiness").status_code == 403
         assert c.post("/operator/switch", json={"enabled": True}).status_code == 403
         auth = {"X-Admin-Token":"test-admin"}
         state = c.get("/operator/status", headers=auth).json()
         assert state["enabled"] is False
+        readiness = c.get("/operator/readiness",headers=auth).json()
+        assert readiness["ready"] is False
+        assert readiness["live_orders_enabled"] is False
+        assert readiness["operator_on"] is False
+        assert "LIVE_ORDER_SENDER_HARD_LOCKED" in readiness["blockers"]
+        assert "PERSISTENT_SIGNAL_LEDGER_REQUIRED" in readiness["blockers"]
         assert state["orders_enabled"] is False
         assert c.post("/operator/switch", json={"enabled": "true"},headers=auth).status_code == 422
         on = c.post("/operator/switch",json={"enabled":True},headers=auth).json()
