@@ -1,8 +1,8 @@
-"""One-screen XRP-only operator terminal, without additional trading features."""
+"""One-screen multi-coin DRY_RUN operator terminal, without additional trading features."""
 LITE_HTML = r"""<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="color-scheme" content="dark">
-<title>LUX DIRECT BOT · XRPUSDT</title>
+<title>LUX DIRECT BOT · USDT Futures confirmations</title>
 <style>
 :root{color-scheme:dark;font-family:system-ui,-apple-system,Segoe UI,sans-serif}
 *{box-sizing:border-box}body{margin:0;background:#0b1018;color:#e9f1fd}
@@ -19,7 +19,7 @@ small{color:#b9c6d8} .buy{color:#67e0b4}.sell{color:#ff9696}
 .footer{margin-top:15px;color:#748ba2;font-size:11px}
 @media(max-width:450px){main{padding:12px;margin:3vh auto}section{padding:18px}button{width:100%}}
 </style></head><body><main>
-<h1>LUX DIRECT BOT</h1><h2>BINANCE:XRPUSDT.P · 5-minute LuxAlgo confirmations</h2>
+<h1>LUX DIRECT BOT</h1><h2>Binance USDT-M Futures · 5-minute LuxAlgo confirmations</h2>
 <div id="mode">DRY RUN · LIVE ORDERS DISABLED</div>
 <section class="warn"><strong>Real trading is not connected</strong>
 <p>No orders, positions or profit figures can be shown until exchange integration is verified. The ON/OFF button currently controls dry-run processing only.</p></section>
@@ -57,7 +57,7 @@ async function refresh(){
       write('last',conn.latest.side+' · '+conn.latest.symbol);
       $('last').className='state '+(conn.latest.side==='BUY'?'buy':'sell');
       write('summary','Timeframe '+conn.latest.timeframe+'m · '+conn.latest.status+' · Received webhooks: '+conn.records+'. TradingView sender not independently verified.');
-    }else{write('last','No webhook signals received');write('summary','Waiting for an authentic LuxAlgo confirmation on XRPUSDT 5-minute.');}
+    }else{write('last','No webhook signals received');write('summary','Waiting for a genuine LuxAlgo confirmation on a configured 5-minute pair.');}
   }catch(e){write('notice','Cannot verify state: '+e.message);$('switch').disabled=true;}
 }
 $('auth').addEventListener('submit',async function(e){
