@@ -5,6 +5,11 @@ on:
     paths:
       - "lux_direct_bot/**"
       - ".github/workflows/lux-direct-bot-tests.yml"
+  pull_request:
+    branches: [lux-direct-bot]
+    paths:
+      - "lux_direct_bot/**"
+      - ".github/workflows/lux-direct-bot-tests.yml"
   workflow_dispatch:
 jobs:
   test:
@@ -22,6 +27,7 @@ jobs:
       - name: Run isolated tests
         run: python -m pytest -q tests
       - name: Verify deployed service health and unauthenticated rejection
+        if: github.event_name != 'pull_request'
         run: |
           python - <<'PY'
           import json
@@ -56,7 +62,7 @@ jobs:
                       assert response.headers["Cache-Control"] == "no-store"
                   if ('id="switch"' in terminal
                       and "DRY RUN" in terminal
-                      and "No orders, positions or profit figures" in terminal):
+                      and "Real-money orders remain OFF" in terminal):
                       break
               except (urllib.error.HTTPError, urllib.error.URLError, AssertionError):
                   if attempt == 11:

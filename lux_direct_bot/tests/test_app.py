@@ -16,10 +16,14 @@ def test_safe_webhooks(monkeypatch, tmp_path):
         assert root.status_code == 200
         assert "text/html" in root.headers["content-type"]
         assert "LUX DIRECT BOT" in root.text
-        assert "No orders, positions or profit figures" in root.text
+        assert "Real-money orders remain OFF" in root.text
         assert "test-admin" not in root.text
         assert root.headers["cache-control"] == "no-store"
         assert c.get("/terminal").status_code == 200
+        assert 'id="binanceSummary"' in root.text
+        assert "CONNECTED READ-ONLY" in root.text
+        assert "Available USDT" in root.text
+        assert "Live orders OFF" not in root.text or "Real-money orders remain OFF" in root.text
         connect = c.get("/connect")
         assert connect.status_code == 200
         assert connect.headers["cache-control"] == "no-store"
@@ -82,8 +86,9 @@ def test_safe_webhooks(monkeypatch, tmp_path):
         assert setup.json()["real_money_enabled"] is False
         assert setup.json()["webhook_url"].endswith("/webhook/test-hook")
         assert '"bartime": {time}' in setup.json()["luxalgo_alert_message"]
-        assert '"sl1"' not in setup.json()["luxalgo_alert_message"]
-        assert '"close"' not in setup.json()["luxalgo_alert_message"]
+        assert '"entry": "{close}"' in setup.json()["luxalgo_alert_message"]
+        assert '"sl": "{sl1}"' in setup.json()["luxalgo_alert_message"]
+        assert '"tp1": "{tp1}"' in setup.json()["luxalgo_alert_message"]
         assert setup.json()["luxalgo_alert_message"].count("{default}") == 1
         assert '"ticker": "{ticker}"' in setup.json()["luxalgo_alert_message"]
         assert '"tf": "{tf}"' in setup.json()["luxalgo_alert_message"]

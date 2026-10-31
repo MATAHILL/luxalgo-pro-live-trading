@@ -16,6 +16,8 @@ from lite import LITE_HTML
 from connect import CONNECT_HTML
 from exchange_diagnostics import get_binance_public_status
 from binance_account import read_account_snapshot
+from binance_preflight import snapshot_read_only
+from signal_levels import parse_luxalgo_reference_levels
 
 MODE = "DRY_RUN"  # Code-level interlock: this build can NEVER transmit exchange orders.
 WEBHOOK_SECRET = os.environ.get("WEBHOOK_SECRET", "")
@@ -48,7 +50,17 @@ def initialize():
         db.execute("""CREATE TABLE IF NOT EXISTS signals (
             id TEXT PRIMARY KEY, at INTEGER NOT NULL, symbol TEXT NOT NULL,
             side TEXT NOT NULL, timeframe TEXT NOT NULL, bartime TEXT NOT NULL,
-            event TEXT NOT NULL, status TEXT NOT NULL)""")
+            event TEXT NOT NULL, status TEXT NOT NULL,
+            entry_reference TEXT, stop_reference TEXT, take_profit_reference TEXT,
+            levels_status TEXT NOT NULL DEFAULT 'NOT_PROVIDED')""")
+        # In-place additive migration: preserves prior webhook IDs and records.
+        existing={row[1] for row in db.execute("PRAGMA table_info(signals)")}
+        for name,definition in (
+            ("entry_reference","TEXT"),("stop_reference","TEXT"),
+            ("take_profit_reference","TEXT"),
+            ("levels_status","TEXT NOT NULL DEFAULT 'NOT_PROVIDED'")):
+            if name not in existing:
+                db.execute("ALTER TABLE signals ADD COLUMN "+name+" "+definition)
         db.execute("""CREATE TABLE IF NOT EXISTS webhook_attempts (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             at INTEGER NOT NULL, result TEXT NOT NULL, reason TEXT NOT NULL)""")
@@ -115,7 +127,9 @@ def parse_signal(payload):
         raise ValueError("LuxAlgo millisecond bar time required")
     fingerprint = f"{ticker}|{event}|{tf}|{bartime}"
     signal_id = hashlib.sha256(fingerprint.encode()).hexdigest()[:28]
-    return (signal_id, symbol, EVENTS[event], tf, bartime, event)
+    entry,stop,target,level_status=parse_luxalgo_reference_levels(payload,EVENTS[event])
+    return (signal_id, symbol, EVENTS[event], tf, bartime, event,
+            entry,stop,target,level_status)
 
 @app.get("/", response_class=HTMLResponse)
 @app.get("/terminal", response_class=HTMLResponse)
@@ -250,8 +264,9 @@ async def webhook(token: str, request: Request):
     status = "DRY_RUN" if operator_enabled() else "PAUSED"
     with database() as db:
         cur = db.execute("""INSERT OR IGNORE INTO signals
-            (id,at,symbol,side,timeframe,bartime,event,status)
-            VALUES(?,?,?,?,?,?,?,?)""",
+            (id,at,symbol,side,timeframe,bartime,event,
+             entry_reference,stop_reference,take_profit_reference,levels_status,status)
+            VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""",
             (signal[0], int(time.time()), *signal[1:], status))
     result = "ACCEPTED" if cur.rowcount else "DUPLICATE"
     record_webhook_attempt(result, "OK" if cur.rowcount else "ALREADY_SEEN")
@@ -281,7 +296,10 @@ def setup(request: Request, response: Response):
             '  "alert": "{default}",\n'
             '  "ticker": "{ticker}",\n'
             '  "tf": "{tf}",\n'
-            '  "bartime": {time}\n'
+            '  "bartime": {time},\n'
+            '  "entry": "{close}",\n'
+            '  "sl": "{sl1}",\n'
+            '  "tp1": "{tp1}"\n'
             '}'
         ),
         "indicator": "LuxAlgo Signals & Overlays",
@@ -313,6 +331,15 @@ def binance_account(request: Request, response: Response):
     return read_account_snapshot()
 
 
+@app.get("/binance/preflight")
+def binance_preflight(request: Request, response: Response):
+    """Private, authenticated signed GET inventory only; cannot authorize trading."""
+    admin_auth(request)
+    response.headers["Cache-Control"] = "private, no-store"
+    response.headers["Referrer-Policy"] = "no-referrer"
+    return snapshot_read_only()
+
+
 @app.post("/admin/selftest")
 def dry_run_signal_test(request: Request, response: Response):
     """Parse, write and deduplicate realistic LuxAlgo signals, then ROLLBACK.
@@ -341,8 +368,9 @@ def dry_run_signal_test(request: Request, response: Response):
         try:
             for signal in parsed:
                 sql = """INSERT OR IGNORE INTO signals
-                    (id,at,symbol,side,timeframe,bartime,event,status)
-                    VALUES(?,?,?,?,?,?,?,?)"""
+                    (id,at,symbol,side,timeframe,bartime,event,
+             entry_reference,stop_reference,take_profit_reference,levels_status,status)
+                    VALUES(?,?,?,?,?,?,?,?,?,?,?,?)"""
                 args = (signal[0], int(time.time()), *signal[1:], "TEST_ONLY")
                 first = db.execute(sql, args).rowcount
                 duplicate = db.execute(sql, args).rowcount
@@ -370,7 +398,8 @@ def connection_status(request: Request, response: Response):
     with database() as db:
         count = db.execute("SELECT COUNT(*) FROM signals WHERE status IN ('DRY_RUN','PAUSED')").fetchone()[0]
         latest = db.execute(
-            """SELECT at,symbol,side,timeframe,bartime,status FROM signals
+            """SELECT at,symbol,side,timeframe,bartime,status,
+                      entry_reference,stop_reference,take_profit_reference,levels_status FROM signals
                WHERE status IN ('DRY_RUN','PAUSED') ORDER BY at DESC, rowid DESC LIMIT 1"""
         ).fetchone()
     return {
@@ -402,6 +431,7 @@ def webhook_attempts(request: Request, response: Response):
 def signals(request: Request):
     admin_auth(request)
     with database() as db:
-        records = db.execute("""SELECT id,at,symbol,side,timeframe,bartime,event,status
+        records = db.execute("""SELECT id,at,symbol,side,timeframe,bartime,event,status,
+                entry_reference,stop_reference,take_profit_reference,levels_status
             FROM signals ORDER BY at DESC, rowid DESC LIMIT 30""").fetchall()
     return [dict(r) for r in records]

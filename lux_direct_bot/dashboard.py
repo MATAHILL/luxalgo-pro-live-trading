@@ -137,7 +137,10 @@ async function diagnoseBinance(){
     var resp=await fetch('/binance/diagnostics',{cache:'no-store',headers:{'X-Admin-Token':token}});
     if(!resp.ok)throw new Error('HTTP '+resp.status);
     var value=await resp.json();
-    setText('binanceMessage','Binance public API: '+value.public_api+' · XRPUSDT: '+value.xrp_usdt+' · Account API: NOT CONNECTED · Orders: OFF.');
+    setText('binanceMessage','Binance public API: '+value.public_api+' · XRPUSDT: '+value.xrp_usdt+
+      ' · Account API: NOT YET CHECKED · Orders: OFF'+
+      (value.reason?' · Reason: '+value.reason:'')+
+      (value.http_status?' · Exchange HTTP '+value.http_status:'')+'.');
   }catch(error){setText('binanceMessage','Binance diagnostics unavailable: '+error.message);}
 }
 async function readBinanceAccount(){
@@ -149,7 +152,10 @@ async function readBinanceAccount(){
     if(!resp.ok)throw new Error('HTTP '+resp.status);
     var value=await resp.json();
     if(value.status!=='CONNECTED_READ_ONLY'){
-      setText('binanceMessage','Binance account: '+value.status+'. No orders can be placed. '+(value.http_status?'Exchange HTTP '+value.http_status:''));
+      setText('binanceMessage','Binance signed account: '+value.status+
+        '. No orders can be placed. '+
+        (value.http_status?'Exchange HTTP '+value.http_status:'')+
+        (value.reason?' · Reason: '+value.reason:''));
       setText('exchange','Not connected');
       setText('positionValue','Unavailable');
       return;
