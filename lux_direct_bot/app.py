@@ -17,12 +17,15 @@ from connect import CONNECT_HTML
 from exchange_diagnostics import get_binance_public_status
 from binance_account import read_account_snapshot
 from binance_preflight import snapshot_read_only
+from durable_postgres import DurablePostgres, initialize_postgres
 from signal_levels import parse_luxalgo_reference_levels
 
 MODE = "DRY_RUN"  # Code-level interlock: this build can NEVER transmit exchange orders.
 WEBHOOK_SECRET = os.environ.get("WEBHOOK_SECRET", "")
 ADMIN_TOKEN = os.environ.get("ADMIN_TOKEN", "")
 DB_PATH = os.environ.get("DB_PATH", "/tmp/lux-direct-bot.sqlite3")
+STORAGE_BACKEND = os.environ.get("DIRECT_BOT_STORAGE_BACKEND", "sqlite")
+DIRECT_DATABASE_URL = os.environ.get("DIRECT_BOT_DATABASE_URL", "")
 ALLOWED_SYMBOLS = {s.strip().upper() for s in os.environ.get("ALLOWED_SYMBOLS", "XRPUSDT").split(",") if s.strip()}
 ALLOWED_TIMEFRAMES = {s.strip().upper() for s in os.environ.get("ALLOWED_TIMEFRAMES", "5").split(",") if s.strip()}
 SYMBOL_MAP = json.loads(os.environ.get("SYMBOL_MAP_JSON", '{"XRPUSDT.P":"XRPUSDT"}'))
@@ -37,6 +40,10 @@ EVENTS = {
 app = FastAPI(title="LUX DIRECT BOT", docs_url=None, redoc_url=None)
 
 def database():
+    if STORAGE_BACKEND == "postgres":
+        return DurablePostgres(DIRECT_DATABASE_URL)
+    if STORAGE_BACKEND != "sqlite":
+        raise RuntimeError("Unknown signal store: fail closed")
     db = sqlite3.connect(DB_PATH, timeout=15)
     db.row_factory = sqlite3.Row
     return db
@@ -46,6 +53,12 @@ def initialize():
     # Unconfigured deployment is health-only. /webhook and /signals remain forbidden.
     if WEBHOOK_SECRET and ADMIN_TOKEN and WEBHOOK_SECRET == ADMIN_TOKEN:
         raise RuntimeError("Webhook and admin secrets must differ")
+    if STORAGE_BACKEND == "postgres":
+        if not DIRECT_DATABASE_URL:
+            raise RuntimeError("Dedicated new-bot PostgreSQL URL not configured")
+        with database() as db:
+            initialize_postgres(db)
+        return
     with database() as db:
         db.execute("""CREATE TABLE IF NOT EXISTS signals (
             id TEXT PRIMARY KEY, at INTEGER NOT NULL, symbol TEXT NOT NULL,
@@ -190,7 +203,7 @@ def operator_readiness(request: Request, response: Response):
     blockers = []
     if not os.environ.get("BINANCE_API_KEY") or not os.environ.get("BINANCE_API_SECRET"):
         blockers.append("BINANCE_KEYS_NOT_CONFIGURED")
-    if DB_PATH.startswith("/tmp/") or DB_PATH == ":memory:":
+    if STORAGE_BACKEND != "postgres" or not DIRECT_DATABASE_URL:
         blockers.append("PERSISTENT_SIGNAL_LEDGER_REQUIRED")
     if not os.environ.get("FUTURES_ORDER_QTY"):
         blockers.append("ORDER_QUANTITY_NOT_CONFIGURED")
@@ -363,7 +376,7 @@ def dry_run_signal_test(request: Request, response: Response):
     parsed = [parse_signal(item) for item in cases]
     results = []
     with database() as db:
-        before = db.execute("SELECT COUNT(*) FROM signals").fetchone()[0]
+        before = db.execute("SELECT COUNT(*) AS n FROM signals").fetchone()["n"]
         db.execute("SAVEPOINT dry_run_selftest")
         try:
             for signal in parsed:
@@ -381,7 +394,7 @@ def dry_run_signal_test(request: Request, response: Response):
         finally:
             db.execute("ROLLBACK TO SAVEPOINT dry_run_selftest")
             db.execute("RELEASE SAVEPOINT dry_run_selftest")
-        after = db.execute("SELECT COUNT(*) FROM signals").fetchone()[0]
+        after = db.execute("SELECT COUNT(*) AS n FROM signals").fetchone()["n"]
     if before != after:
         raise HTTPException(503, "Self-test record isolation failed")
     return {"result": "PASS", "checks": results, "test_records_persisted": 0,
@@ -396,7 +409,7 @@ def connection_status(request: Request, response: Response):
     response.headers["Cache-Control"] = "no-store"
     response.headers["Referrer-Policy"] = "no-referrer"
     with database() as db:
-        count = db.execute("SELECT COUNT(*) FROM signals WHERE status IN ('DRY_RUN','PAUSED')").fetchone()[0]
+        count = db.execute("SELECT COUNT(*) AS n FROM signals WHERE status IN ('DRY_RUN','PAUSED')").fetchone()["n"]
         latest = db.execute(
             """SELECT at,symbol,side,timeframe,bartime,status,
                       entry_reference,stop_reference,take_profit_reference,levels_status FROM signals
