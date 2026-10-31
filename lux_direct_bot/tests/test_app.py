@@ -23,6 +23,7 @@ def test_safe_webhooks(monkeypatch, tmp_path):
         assert c.get("/setup").status_code == 403
         assert c.get("/binance/diagnostics").status_code == 403
         assert c.get("/binance/account").status_code == 403
+        assert c.get("/connection/status").status_code == 403
         assert c.post("/admin/selftest").status_code == 403
         dry = c.post("/admin/selftest", headers={"X-Admin-Token": "test-admin"})
         assert dry.status_code == 200
@@ -33,10 +34,17 @@ def test_safe_webhooks(monkeypatch, tmp_path):
         assert dry.json()["exchange_orders_sent"] == 0
         assert dry.json()["actual_luxalgo_alert_verified"] is False
         assert c.get("/signals", headers={"X-Admin-Token":"test-admin"}).json() == []
+        state = c.get("/connection/status", headers={"X-Admin-Token":"test-admin"}).json()
+        assert state["state"] == "NO_WEBHOOK_RECORDS"
+        assert state["records"] == 0
+        assert state["tradingview_alert_confirmed"] is False
+        assert state["origin_independently_verified"] is False
+        assert state["orders_enabled"] is False
         setup = c.get("/setup", headers={"X-Admin-Token": "test-admin"})
         assert setup.status_code == 200
         assert setup.headers["cache-control"] == "no-store"
         assert setup.json()["mode"] == "DRY_RUN"
+        assert setup.json()["selected_chart"] == "BINANCE:XRPUSDT.P"
         assert setup.json()["real_money_enabled"] is False
         assert setup.json()["webhook_url"].endswith("/webhook/test-hook")
         assert '"bartime": {time}' in setup.json()["luxalgo_alert_message"]
@@ -60,6 +68,11 @@ def test_safe_webhooks(monkeypatch, tmp_path):
         assert c.get("/signals").status_code == 403
         rows = c.get("/signals", headers={"X-Admin-Token":"test-admin"}).json()
         assert len(rows) == 1 and rows[0]["status"] == "DRY_RUN"
+        state_after = c.get("/connection/status", headers={"X-Admin-Token":"test-admin"}).json()
+        assert state_after["state"] == "WEBHOOK_RECORDS_PRESENT"
+        assert state_after["records"] == 1
+        assert state_after["latest"]["symbol"] == "XRPUSDT"
+        assert state_after["tradingview_alert_confirmed"] is False
         q = dict(p, alert="Bearish Confirmation Signal", bartime="1793375460000")
         assert c.post("/webhook/test-hook", json=q).json()["side"] == "SELL"
         assert c.post("/webhook/test-hook", json=dict(p,ticker="ETHUSDT")).status_code == 422
