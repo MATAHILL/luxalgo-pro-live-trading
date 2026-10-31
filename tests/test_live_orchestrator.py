@@ -13,6 +13,13 @@ PLAN={"event_id":"tv-BTCUSDT-5m-20261028","client_text":client_text("tv-BTCUSDT-
       "sl":"79000","tp":"82000","estimated_risk_usdt":"0.2","timeframe":"5m",
       "position_mode":"single"}
 
+def mock_durable_claim(plan):
+    return dict(claimed=True,state="CLAIMED",event_id=plan["event_id"],
+        contract=plan["contract"],
+        close_client_text="t-em-"+plan["client_text"][2:25],
+        approval_reference="SIMULATED_CASE_NOT_LIVE_APPROVAL")
+
+
 class MockLiveFlow(unittest.TestCase):
     def test_workflow_blocks_before_database_or_network(self):
         with self.assertRaisesRegex(LiveSafetyError,"SOURCE_LOCKED"):
@@ -47,13 +54,24 @@ class MockLiveFlow(unittest.TestCase):
     def test_emergency_close_requires_flat_plus_no_orphan_triggers(self):
         c=Mock()
         c.request.return_value={"id":789}
-        c.snapshot.return_value={"positions":[],
+        c.snapshot.return_value={"positions":[],"orders":[],
+          "source":"GATE_IO_LIVE_FUTURES",
           "triggers":[{"initial":{"contract":"BTC_USDT"}}]}
-        result=emergency_close_once(c,PLAN)
+        result=emergency_close_once(c,PLAN,durable_claim=mock_durable_claim(PLAN))
         self.assertFalse(result["closed_verified"])
-        c.snapshot.return_value={"positions":[],"triggers":[]}
-        good=emergency_close_once(c,PLAN)
+        c.snapshot.return_value={"positions":[],"orders":[],
+          "source":"GATE_IO_LIVE_FUTURES","triggers":[]}
+        good=emergency_close_once(c,PLAN,durable_claim=mock_durable_claim(PLAN))
         self.assertTrue(good["closed_verified"])
+
+    def test_emergency_close_denies_unclaimed_exchange_post(self):
+        c=Mock()
+        for claim in (None,{},dict(mock_durable_claim(PLAN),event_id="OTHER")):
+            with self.subTest(claim=claim):
+                result=emergency_close_once(c,PLAN,durable_claim=claim)
+                self.assertFalse(result["closed_verified"])
+                self.assertEqual(result["orders_sent"],0)
+        c.request.assert_not_called()
 
     def test_live_status_never_calls_unknown_positions_zero(self):
         status=status_fallback("EXCHANGE_OR_DB_UNAVAILABLE")
