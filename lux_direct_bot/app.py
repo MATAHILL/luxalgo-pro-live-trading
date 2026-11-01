@@ -50,7 +50,8 @@ def _safe_exchange_configuration_flags(state):
     or TradingView payload. No monetary balances or identifiers are returned.
     """
     flags = dict(leverage_5x="UNVERIFIED", cross_margin="UNVERIFIED",
-                 one_way="UNVERIFIED", inventory_flat="UNVERIFIED")
+                 one_way="UNVERIFIED", hedge_mode="UNVERIFIED",
+                 inventory_flat="UNVERIFIED")
     if not isinstance(state, dict) or state.get("status") != "CONNECTED_READ_ONLY":
         return flags
     lev = state.get("target_leverage")
@@ -64,6 +65,7 @@ def _safe_exchange_configuration_flags(state):
     mode = state.get("position_mode")
     if mode in {"ONE_WAY", "HEDGE"}:
         flags["one_way"] = "PASS" if mode == "ONE_WAY" else "FAIL"
+        flags["hedge_mode"] = "PASS" if mode == "HEDGE" else "FAIL"
     inventory = [state.get(k) for k in (
         "positions_open", "orders_open", "protective_algos_open"
     )]
@@ -110,10 +112,10 @@ def _startup_signed_exchange_diagnostic():
         flags = _safe_exchange_configuration_flags(state)
         logging.getLogger("uvicorn.error").info(
             "DIRECT_BINANCE_SIGNED_CONFIG_AUDIT leverage_5x=%s cross_margin=%s "
-            "one_way=%s inventory_flat=%s live_order_sender=LOCKED "
+            "one_way=%s hedge_mode=%s inventory_flat=%s live_order_sender=LOCKED "
             "native_sl_tp=NOT_CERTIFIED",
             flags["leverage_5x"], flags["cross_margin"],
-            flags["one_way"], flags["inventory_flat"],
+            flags["one_way"], flags["hedge_mode"], flags["inventory_flat"],
         )
     except Exception:
         logging.getLogger("uvicorn.error").warning(
