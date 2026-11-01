@@ -17,6 +17,7 @@ from connect import CONNECT_HTML
 from exchange_diagnostics import get_binance_public_status
 from binance_account import read_account_snapshot
 from binance_preflight import snapshot_read_only
+from exchange_verification import signed_exchange_verification
 from live_readiness_policy import evaluate_readonly_binance_futures
 from durable_sqlite import open_ledger, storage_health, initialize_audit
 from signal_levels import parse_luxalgo_reference_levels
@@ -336,6 +337,15 @@ def binance_account(request: Request, response: Response):
     response.headers["Cache-Control"] = "no-store"
     response.headers["Referrer-Policy"] = "no-referrer"
     return read_account_snapshot()
+
+
+@app.get("/operator/exchange-verification")
+def operator_exchange_verification(request: Request, response: Response):
+    """Fresh authenticated signed GETs; no live order permission."""
+    admin_auth(request)
+    response.headers["Cache-Control"] = "private, no-store"
+    response.headers["Referrer-Policy"] = "no-referrer"
+    return signed_exchange_verification()
 
 
 @app.get("/binance/preflight")
