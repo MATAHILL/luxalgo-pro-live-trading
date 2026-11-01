@@ -42,8 +42,11 @@ def evaluate_readonly_binance_futures(account, *, db_path, durable_verified=Fals
     wallet=decimal_positive(account.get("wallet_usdt"))
     if available is None or wallet is None or available>wallet:
         reasons.append("POSITIVE_SIGNED_FUTURES_AVAILABLE_BALANCE_UNVERIFIED")
-    if account.get("position_mode")!="ONE_WAY":
-        reasons.append("ONE_WAY_POSITION_MODE_NOT_CONFIRMED")
+    mode=account.get("position_mode")
+    if mode not in ("ONE_WAY","HEDGE"):
+        reasons.append("SIGNED_POSITION_MODE_NOT_CONFIRMED")
+    elif mode=="HEDGE":
+        reasons.append("HEDGE_NATIVE_PROTECTION_AND_RECOVERY_NOT_CERTIFIED")
     if account.get("exchange_flat") is not True:
         reasons.append("FLAT_EXCHANGE_INVENTORY_NOT_VERIFIED")
     if durable_verified is not True or not isinstance(db_path,str) or not db_path.startswith("/var/data/"):
