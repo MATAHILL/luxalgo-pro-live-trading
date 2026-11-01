@@ -100,6 +100,7 @@ class CandidateBinanceUSDM:
         self.ledger = ledger
         self.client = client
         self.allow_writes = (allow_writes is True)
+        self._entry_claimed_in_this_attempt = False
 
     def _request(self, method, path, params):
         if method == "GET":
@@ -193,6 +194,8 @@ class CandidateBinanceUSDM:
         if (method, path) != correct.get(stage):
             raise AcceptanceBlocked("Write stage and Binance endpoint mismatch")
         self.ledger.claim(signal_id, stage)
+        if stage == "ENTRY":
+            self._entry_claimed_in_this_attempt = True
         return self._request(method, path, data)
 
     def enter_once(self, signal_id, plan):
@@ -304,11 +307,12 @@ class CandidateBinanceUSDM:
         Only attempt recovery when the durable ENTRY claim exists. A failed
         or ambiguous Binance write is never resent automatically.
         """
+        self._entry_claimed_in_this_attempt = False
         try:
             self.enter_once(signal_id, plan)
             return self.place_protection_once(signal_id, plan)
         except Exception as failure:
-            if not self.ledger.has_claim(signal_id, "ENTRY"):
+            if not self._entry_claimed_in_this_attempt:
                 raise AcceptanceBlocked("Pre-entry blocked; no orders attempted") from failure
             try:
                 self.emergency_one_shot(signal_id, plan)
