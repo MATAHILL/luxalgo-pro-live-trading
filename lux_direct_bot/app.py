@@ -60,7 +60,7 @@ def _startup_signed_exchange_diagnostic():
         # Log only allowlisted endpoint + integer error codes, never the URL,
         # exchange response message, query signature or account balances.
         permitted = {
-            "/fapi/v3/account", "/fapi/v3/positionRisk",
+            "/fapi/v3/account", "/fapi/v1/accountConfig", "/fapi/v3/positionRisk",
             "/fapi/v1/openOrders", "/fapi/v1/openAlgoOrders",
             "/fapi/v1/positionSide/dual", "/fapi/v1/symbolConfig",
         }
