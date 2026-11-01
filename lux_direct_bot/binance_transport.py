@@ -14,6 +14,8 @@ BASE_URL = "https://fapi.binance.com"
 LIVE_ORDER_TRANSMISSION = False
 ALLOWED_READS = frozenset({
     "/fapi/v3/balance",
+    "/fapi/v3/account",
+    "/fapi/v1/symbolConfig",
     "/fapi/v3/positionRisk",
     "/fapi/v1/order",
     "/fapi/v1/algoOrder",
