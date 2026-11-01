@@ -57,10 +57,26 @@ def _startup_signed_exchange_diagnostic():
                           "TYPEERROR_FAIL_CLOSED", "KEYERROR_FAIL_CLOSED",
                           "ARITHMETICERROR_FAIL_CLOSED", "OVERFLOWERROR_FAIL_CLOSED"}:
             reason = "NONE_OR_REDACTED"
+        # Log only allowlisted endpoint + integer error codes, never the URL,
+        # exchange response message, query signature or account balances.
+        permitted = {
+            "/fapi/v3/account", "/fapi/v3/positionRisk",
+            "/fapi/v1/openOrders", "/fapi/v1/openAlgoOrders",
+            "/fapi/v1/positionSide/dual", "/fapi/v1/symbolConfig",
+        }
+        path = state.get("failed_endpoint")
+        endpoint = path if path in permitted else "NONE_OR_REDACTED"
+        http_status = state.get("http_status")
+        if type(http_status) is not int or not 400 <= http_status <= 599:
+            http_status = 0
+        binance_code = state.get("binance_code")
+        if type(binance_code) is not int or not -100000 <= binance_code <= 100000:
+            binance_code = 0
         logging.getLogger("uvicorn.error").info(
-            "DIRECT_BINANCE_SIGNED_GET_AUDIT status=%s reason=%s orders_enabled=FALSE "
+            "DIRECT_BINANCE_SIGNED_GET_AUDIT status=%s reason=%s endpoint=%s "
+            "http_status=%d binance_code=%d orders_enabled=FALSE "
             "can_trade=FALSE acceptance_certified=FALSE",
-            status, reason,
+            status, reason, endpoint, http_status, binance_code,
         )
     except Exception:
         logging.getLogger("uvicorn.error").warning(
