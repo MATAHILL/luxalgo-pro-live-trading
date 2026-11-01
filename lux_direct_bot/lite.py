@@ -138,8 +138,11 @@ $('verifyExchange').addEventListener('click',async function(){
   try{
     var report=await call('/operator/exchange-verification');
     if(report.status!=='CONNECTED_READ_ONLY'){
+      var details=(report.failed_endpoint?' · Failed Binance GET: '+report.failed_endpoint:'')+
+        (Number.isInteger(report.http_status)?' · HTTP: '+report.http_status:'')+
+        (Number.isInteger(report.binance_code)?' · Binance code: '+report.binance_code:'');
       write('verifyResult','Exchange verification '+report.status+' · '+(report.reason||'incomplete')+
-      ' · Live orders remain OFF.');
+        details+' · Live orders remain OFF.');
     }else{
       write('verifyResult','Signed Binance GET response · USDT Futures margin equity: '+report.usdt_equity+
         ' · 3% modeled loss ceiling: '+report.modeled_loss_budget_3pct+

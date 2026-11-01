@@ -131,3 +131,61 @@ def test_one_shot_startup_log_never_exposes_balances_or_credentials(monkeypatch,
     assert "29.91963" not in combined
     assert "fixture-secret" not in combined
     assert "orders_enabled=FALSE" in combined
+
+
+@pytest.mark.parametrize("failed_path,code,binance_code",[
+    ("/fapi/v3/account",403,-2015),
+    ("/fapi/v1/openAlgoOrders",400,-1102),
+    ("/fapi/v1/symbolConfig",429,-1003),
+])
+def test_http_failure_identifies_endpoint_not_secrets(
+        failed_path, code, binance_code, monkeypatch, caplog):
+    import httpx
+    class Rejecting(Fake):
+        def get(self,path,params=None):
+            if path==failed_path:
+                url="https://fapi.binance.com"+path+"?timestamp=123&signature=leak-me-not"
+                request=httpx.Request("GET",url,headers={"X-MBX-APIKEY":"sensitive-key"})
+                response=httpx.Response(code,json={"code":binance_code,
+                    "msg":"Secret user account number should never be returned"},
+                    request=request)
+                response.raise_for_status()
+            return super().get(path,params)
+    result=signed_exchange_verification(Rejecting())
+    assert result["status"]=="READBACK_UNVERIFIED"
+    assert result["failed_endpoint"]==failed_path
+    assert result["http_status"]==code
+    assert result["binance_code"]==binance_code
+    assert result["orders_enabled"] is False and result["orders_sent"]==0
+    shown=str(result)
+    assert "signature" not in shown
+    assert "leak-me-not" not in shown
+    assert "sensitive-key" not in shown
+    assert "account number" not in shown
+    import app
+    # Uvicorn logger may not propagate into pytest caplog; inspect the
+    # formatting template and sanitized arguments at the logger boundary.
+    with patch.object(app,"signed_exchange_verification",return_value=result), \
+         patch.object(app.logging,"getLogger") as logger:
+        app._startup_signed_exchange_diagnostic()
+    args=logger.return_value.info.call_args.args
+    template=args[0]
+    message=template % args[1:]
+    assert "endpoint="+failed_path in message
+    assert "http_status="+str(code) in message
+    assert "binance_code="+str(binance_code) in message
+    assert "sensitive-key" not in message
+    assert "leak-me-not" not in message
+
+def test_invalid_status_body_redacted(monkeypatch):
+    import httpx
+    class Rejecting(Fake):
+        def get(self,path,params=None):
+            request=httpx.Request("GET","https://fapi.binance.com"+path+
+                "?signature=123private")
+            response=httpx.Response(400,text="private error credentials",request=request)
+            response.raise_for_status()
+    result=signed_exchange_verification(Rejecting())
+    assert result["http_status"]==400
+    assert result["binance_code"] is None
+    assert "private" not in str(result)
