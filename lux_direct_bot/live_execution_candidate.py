@@ -8,6 +8,7 @@ testing after an independent code review and explicit controlled authorization.
 from decimal import Decimal, InvalidOperation
 import os
 import sqlite3
+from contextlib import closing
 
 import httpx
 
@@ -66,15 +67,23 @@ class OneShotLedger:
             raise AcceptanceBlocked("Unique original signal ID required")
         if stage not in {"ENTRY", "STOP", "TP", "EMERGENCY", "CANCEL_STOP", "CANCEL_TP"}:
             raise AcceptanceBlocked("Unrecognized write stage")
-        with self._open() as db:
-            try:
-                db.execute("BEGIN IMMEDIATE")
-                db.execute(
-                    "INSERT INTO candidate_write_claims(signal_id,stage) VALUES (?,?)",
-                    (signal_id, stage),
-                )
-            except sqlite3.IntegrityError as exc:
-                raise AcceptanceBlocked("Write was previously claimed; never resend blindly") from exc
+        with closing(self._open()) as db:
+            with db:
+                try:
+                    db.execute("BEGIN IMMEDIATE")
+                    db.execute(
+                        "INSERT INTO candidate_write_claims(signal_id,stage) VALUES (?,?)",
+                        (signal_id, stage),
+                    )
+                except sqlite3.IntegrityError as exc:
+                    raise AcceptanceBlocked("Write previously claimed; never resend blindly") from exc
+
+    def has_claim(self, signal_id, stage):
+        with closing(self._open()) as db:
+            return db.execute(
+                "SELECT 1 FROM candidate_write_claims WHERE signal_id=? AND stage=?",
+                (signal_id, stage),
+            ).fetchone() is not None
 
 class CandidateBinanceUSDM:
     """Explicitly gated signed REST. No production entry point invokes this.
@@ -173,6 +182,16 @@ class CandidateBinanceUSDM:
         if data.get("symbol", "XRPUSDT") != "XRPUSDT":
             raise AcceptanceBlocked("Only XRPUSDT allowed")
         # A durable, atomic one-shot claim MUST be committed before HTTP.
+        correct = {
+            "ENTRY": ("POST", "/fapi/v1/order"),
+            "EMERGENCY": ("POST", "/fapi/v1/order"),
+            "STOP": ("POST", "/fapi/v1/algoOrder"),
+            "TP": ("POST", "/fapi/v1/algoOrder"),
+            "CANCEL_STOP": ("DELETE", "/fapi/v1/algoOrder"),
+            "CANCEL_TP": ("DELETE", "/fapi/v1/algoOrder"),
+        }
+        if (method, path) != correct.get(stage):
+            raise AcceptanceBlocked("Write stage and Binance endpoint mismatch")
         self.ledger.claim(signal_id, stage)
         return self._request(method, path, data)
 
@@ -248,3 +267,53 @@ class CandidateBinanceUSDM:
         if end["active_positions"] or end["open_orders"] or end["algos"]:
             raise AcceptanceBlocked("Emergency recovery incomplete; do not resume")
         return {"state": "FLAT_AND_NO_ORDERS_VERIFIED", "automatic_reentry": False}
+
+    def reconcile_after_native_exit(self, signal_id, plan):
+        """Check native exit and cancel only this signal's orphan algos.
+
+        Never assume SL or TP has fired simply because a webhook says so.
+        This method is not scheduled or connected to production in this build.
+        """
+        self.read_entry(plan)
+        before = self.snapshot()
+        owned_ids = {plan.stop["clientAlgoId"], plan.take_profit["clientAlgoId"]}
+        if before["active_positions"]:
+            signed_qty = decimal_value(plan.quantity) * (1 if plan.direction == "BUY" else -1)
+            if before["active_positions"] != [("XRPUSDT", signed_qty)]:
+                raise AcceptanceBlocked("Position mismatch; operator recovery required")
+            for spec in (plan.stop, plan.take_profit):
+                self.read_protection(spec)
+            return {"state": "STILL_PROTECTED", "automatic_reentry": False}
+        if before["open_orders"] or any(
+            row.get("clientAlgoId") not in owned_ids for row in before["algos"]
+        ):
+            raise AcceptanceBlocked("Foreign or uncertain exchange orders; halt")
+        for stage, spec in (("CANCEL_STOP", plan.stop), ("CANCEL_TP", plan.take_profit)):
+            if any(row.get("clientAlgoId") == spec["clientAlgoId"] for row in before["algos"]):
+                self._write_once(signal_id, stage, "DELETE", "/fapi/v1/algoOrder",
+                                 {"clientAlgoId": spec["clientAlgoId"]})
+        after = self.snapshot()
+        if after["active_positions"] or after["open_orders"] or after["algos"]:
+            raise AcceptanceBlocked("Orphan order cleanup not confirmed")
+        return {"state": "EXCHANGE_FLAT_OWNED_ALGOS_REMOVED",
+                "automatic_reentry": False}
+
+    def execute_once_with_emergency(self, signal_id, plan):
+        """Single controlled acceptance sequence, NOT used by production.
+
+        Only attempt recovery when the durable ENTRY claim exists. A failed
+        or ambiguous Binance write is never resent automatically.
+        """
+        try:
+            self.enter_once(signal_id, plan)
+            return self.place_protection_once(signal_id, plan)
+        except Exception as failure:
+            if not self.ledger.has_claim(signal_id, "ENTRY"):
+                raise AcceptanceBlocked("Pre-entry blocked; no orders attempted") from failure
+            try:
+                self.emergency_one_shot(signal_id, plan)
+            except Exception as recovery_failure:
+                raise AcceptanceBlocked(
+                    "EMERGENCY HALT: exchange state uncertain; manual intervention required"
+                ) from recovery_failure
+            raise AcceptanceBlocked("Protected entry failed; verified flat after emergency") from failure
