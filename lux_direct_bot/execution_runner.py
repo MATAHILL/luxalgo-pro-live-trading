@@ -17,6 +17,8 @@ def require_order_filled(row, plan):
         raise EmergencyHalt("Entry symbol mismatch")
     if row.get("side") != plan.direction:
         raise EmergencyHalt("Entry side mismatch")
+    if row.get("positionSide") != plan.entry.get("positionSide"):
+        raise EmergencyHalt("Entry positionSide mismatch")
     if row.get("status") != "FILLED":
         raise EmergencyHalt("Entry not fully filled")
     if row.get("clientOrderId") != plan.entry["newClientOrderId"]:
@@ -41,6 +43,10 @@ def require_algo(row, spec):
         raise EmergencyHalt("Conditional order not open")
     if str(row.get("closePosition")).lower() != "true":
         raise EmergencyHalt("Conditional order not close-position")
+    if "quantity" in row and str(row.get("quantity")) not in ("", "0", "0.0", "None"):
+        raise EmergencyHalt("Close-all algo unexpectedly uses quantity")
+    if str(row.get("reduceOnly", "false")).lower() == "true":
+        raise EmergencyHalt("Close-all algo unexpectedly reduceOnly")
 
 def simulate_protected_execution(plan, exchange):
     """Single isolated fixture cycle. NEVER invoked by the deployed webhook app.
@@ -54,6 +60,10 @@ def simulate_protected_execution(plan, exchange):
     """
     if plan.symbol != "XRPUSDT" or plan.direction not in ("BUY", "SELL"):
         raise EmergencyHalt("Forbidden signal")
+    if plan.entry.get("positionSide") != "BOTH" or any(
+        spec.get("positionSide") != "BOTH" for spec in (plan.stop, plan.take_profit)
+    ):
+        raise EmergencyHalt("This offline simulator certifies One-way fixtures only")
     pre = exchange.snapshot()
     if Decimal(str(pre.get("qty", "invalid"))) != 0:
         raise EmergencyHalt("Existing position; cannot safely enter")
@@ -82,8 +92,9 @@ def simulate_protected_execution(plan, exchange):
         if set(current.get("protection_ids", [])) != set(created):
             raise EmergencyHalt("Protection count or IDs mismatch")
         return {"state": "SIMULATION_ACCEPTED", "orders_sent_to_real_exchange": 0,
-                "entry_verified": True, "native_protection_verified": True,
-                "position_verified": True}
+                "entry_fixture_verified": True, "protection_fixture_verified": True,
+                "position_fixture_verified": True, "native_protection_verified": False,
+                "exchange_native_certified": False}
     except Exception as exc:
         # Cannot assume a failed/timeout entry was not filled: always reconcile.
         if entry_attempted:

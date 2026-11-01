@@ -32,6 +32,7 @@ class FakeExchange:
         signed=Decimal(spec["quantity"]) * (1 if spec["side"]=="BUY" else -1)
         self.qty=signed
         self.entry={"symbol":spec["symbol"],"side":spec["side"],"status":"FILLED",
+                    "positionSide":spec["positionSide"],
                     "clientOrderId":spec["newClientOrderId"], "executedQty":spec["quantity"]}
         if self.fail=="entry_uncertain":
             raise TimeoutError("Ack lost, entry may have filled")
@@ -74,6 +75,9 @@ def test_successful_mock_exchange_sequence(side):
     ex=FakeExchange()
     result=simulate_protected_execution(plan(side),ex)
     assert result["state"]=="SIMULATION_ACCEPTED"
+    assert result["exchange_native_certified"] is False
+    assert result["native_protection_verified"] is False
+    assert result["protection_fixture_verified"] is True
     assert result["orders_sent_to_real_exchange"]==0
     assert len(ex.protections)==2
     assert ex.closes==[]
@@ -111,3 +115,43 @@ def test_reject_existing_position_and_orders_without_any_write():
             simulate_protected_execution(plan(),ex)
         assert ex.entry=={}
         assert ex.closes==[]
+
+
+def test_hedge_mode_plan_cannot_be_mislabeled_as_oneway_acceptance():
+    spec=create_protected_plan(
+        symbol="XRPUSDT", direction="BUY", signal_id="confirmation-bar-abc123",
+        quantity="10", reference_price="2.0", stop_price="1.95",
+        take_profit_price="2.10", quantity_step=".1", price_tick=".001",
+        minimum_notional="5", maximum_notional="30", maximum_loss="1",
+        position_mode="HEDGE",
+    )
+    ex=FakeExchange()
+    with pytest.raises(EmergencyHalt,match="One-way fixtures only"):
+        simulate_protected_execution(spec,ex)
+    assert ex.entry=={} and ex.closes==[]
+
+
+@pytest.mark.parametrize("tamper",["wrong_entry_position_side","wrong_algo_position_side",
+                                  "algo_reduce_only","algo_quantity"])
+def test_readback_mismatches_trigger_emergency_fixture_close(tamper):
+    ex=FakeExchange()
+    if tamper=="wrong_entry_position_side":
+        original=ex.read_entry
+        ex.read_entry=lambda client_id: original(client_id) | {"positionSide":"LONG"}
+    else:
+        original=ex.read_algo
+        def read_tampered(client_id):
+            row=original(client_id)
+            if tamper=="wrong_algo_position_side":
+                row["positionSide"]="SHORT"
+            elif tamper=="algo_reduce_only":
+                row["reduceOnly"]=True
+            elif tamper=="algo_quantity":
+                row["quantity"]="10"
+            return row
+        ex.read_algo=read_tampered
+    with pytest.raises(EmergencyHalt,match="verified flat"):
+        simulate_protected_execution(plan(),ex)
+    assert ex.qty==0
+    assert not ex.protections
+    assert ex.closes
