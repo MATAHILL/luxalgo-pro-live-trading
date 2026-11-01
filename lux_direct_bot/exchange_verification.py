@@ -42,19 +42,27 @@ def signed_exchange_verification(client=None, symbol=TARGET_SYMBOL):
     broker = client if client is not None else BinanceReadOnly(key, secret)
     try:
         account = broker.get("/fapi/v3/account")
+        account_config = broker.get("/fapi/v1/accountConfig")
         positions = broker.get("/fapi/v3/positionRisk")
         open_orders = broker.get("/fapi/v1/openOrders")
         open_algos = broker.get("/fapi/v1/openAlgoOrders")
         mode = broker.get("/fapi/v1/positionSide/dual")
         symbol_configs = broker.get("/fapi/v1/symbolConfig", {"symbol": symbol})
-        if not isinstance(account, dict) or not all(
+        if not isinstance(account, dict) or not isinstance(account_config, dict) or not all(
             isinstance(x, list) for x in (positions, open_orders, open_algos, symbol_configs)
         ) or not isinstance(mode, dict):
             raise ValueError("INCOMPLETE_SIGNED_INVENTORY")
-        if not isinstance(account.get("multiAssetsMargin"), bool):
+        # Binance v3 account intentionally omits configuration fields.
+        # Official /fapi/v1/accountConfig owns multiAssetsMargin and canTrade.
+        if type(account_config.get("multiAssetsMargin")) is not bool:
             raise ValueError("ACCOUNT_MODE_NOT_VERIFIED")
-        if type(mode.get("dualSidePosition")) is not bool:
-            raise ValueError("POSITION_MODE_NOT_VERIFIED")
+        if type(account_config.get("canTrade")) is not bool:
+            raise ValueError("FUTURES_CAN_TRADE_FLAG_UNVERIFIED")
+        if type(mode.get("dualSidePosition")) is not bool or (
+            type(account_config.get("dualSidePosition")) is not bool
+            or account_config["dualSidePosition"] != mode["dualSidePosition"]
+        ):
+            raise ValueError("POSITION_MODE_CONFLICT_OR_UNVERIFIED")
         if any(len(x) >= 1000 for x in (positions, open_orders, open_algos)):
             raise ValueError("INVENTORY_TRUNCATION_CANNOT_BE_EXCLUDED")
         if not all(isinstance(row, dict) and isinstance(row.get("symbol"), str)
@@ -83,13 +91,15 @@ def signed_exchange_verification(client=None, symbol=TARGET_SYMBOL):
         if available > equity:
             raise ValueError("AVAILABLE_EXCEEDS_EQUITY")
         # Multi-assets portfolios must not be budgeted using a plain USDT cap.
-        if not account["multiAssetsMargin"]:
+        if not account_config["multiAssetsMargin"]:
             total = nonnegative(account.get("totalMarginBalance"), "TOTAL_MARGIN_BALANCE")
             if abs(total - equity) > Decimal("0.00000001"):
                 raise ValueError("ACCOUNT_EQUITY_INCONSISTENT")
         blockers = list(NON_EXECUTION_BARRIERS)
-        if account["multiAssetsMargin"]:
+        if account_config["multiAssetsMargin"]:
             blockers.append("MULTI_ASSETS_EQUITY_POLICY_NOT_SUPPORTED")
+        if not account_config["canTrade"]:
+            blockers.append("BINANCE_REPORTS_TRADING_NOT_ALLOWED")
         if mode["dualSidePosition"]:
             blockers.append("HEDGE_MODE_NOT_SUPPORTED_BY_EXECUTION_PLAN")
         if config["marginType"].upper() not in ("CROSSED", "CROSS"):
@@ -107,7 +117,7 @@ def signed_exchange_verification(client=None, symbol=TARGET_SYMBOL):
             usdt_equity=str(equity), equity_basis="USDT Futures marginBalance (wallet + unrealized PnL)",
             usdt_wallet=str(wallet), available_usdt=str(available),
             modeled_loss_budget_3pct=str(equity * Decimal("0.03")),
-            multi_assets_margin=account["multiAssetsMargin"],
+            multi_assets_margin=account_config["multiAssetsMargin"],
             position_mode="HEDGE" if mode["dualSidePosition"] else "ONE_WAY",
             target_margin_type=config["marginType"], target_leverage=config["leverage"],
             positions_open=position_count, orders_open=len(open_orders),
@@ -117,7 +127,7 @@ def signed_exchange_verification(client=None, symbol=TARGET_SYMBOL):
         # Safe diagnostic only: NEVER expose response text, full URL with signature,
         # request headers, API key, params, order IDs, or raw exception repr.
         permitted = {
-            "/fapi/v3/account", "/fapi/v3/positionRisk",
+            "/fapi/v3/account", "/fapi/v1/accountConfig", "/fapi/v3/positionRisk",
             "/fapi/v1/openOrders", "/fapi/v1/openAlgoOrders",
             "/fapi/v1/positionSide/dual", "/fapi/v1/symbolConfig",
         }
