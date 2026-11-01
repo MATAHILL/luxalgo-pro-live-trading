@@ -74,7 +74,7 @@ def test_budget_includes_fee_and_slippage_but_never_sends_order():
     ({"operator_max_notional":"10"},"EXCHANGE_MINIMUM_OR_OWNER_MAXIMUM_NOTIONAL"),
     ({"exchange_min_notional":"40"},"EXCHANGE_MINIMUM_OR_OWNER_MAXIMUM_NOTIONAL"),
     ({"operator_max_loss":"0.1"},"MODELED_LOSS_INCLUDING_FEES_EXCEEDS_BUDGET"),
-    ({"usdt_equity":"30"},"MODELED_LOSS_INCLUDING_FEES_EXCEEDS_BUDGET"),
+    ({"usdt_equity":"10"},"MODELED_LOSS_INCLUDING_FEES_EXCEEDS_BUDGET"),
     ({"taker_fee_rate":"NaN"},"UNVERIFIED_FEES_OR_SLIPPAGE_LIMIT"),
     ({"max_slippage_ratio":"0.003"},"UNVERIFIED_FEES_OR_SLIPPAGE_LIMIT"),
 ])
@@ -83,6 +83,32 @@ def test_malformed_and_over_budget_plans_rejected_without_orders(changes,expecte
     assert x["status"]=="REJECT_NO_ORDER"
     assert x["reason"]==expected
     assert x["orders_sent"]==0
+
+
+def test_requested_three_percent_outer_budget_remains_offline_only():
+    # Illustrative equity from a fixture, NOT a verified live Binance balance.
+    params = PLAN | {
+        "usdt_equity": "400",
+        "operator_max_loss": "20",
+        "original_stop": "1.10",
+    }
+    x = validate_conservative_budget(**params)
+    assert x["status"] == "OFFLINE_BUDGET_CHECK_PASS_NOT_ORDER_AUTHORITY"
+    assert x["loss_cap_usdt"] == "12.00"
+    assert x["orders_sent"] == 0 and x["can_trade"] is False
+
+
+def test_requested_three_percent_limit_vetoes_over_budget_signal():
+    params = PLAN | {
+        "usdt_equity": "400",
+        "operator_max_loss": "20",
+        "original_stop": "0.50",
+    }
+    x = validate_conservative_budget(**params)
+    assert x["status"] == "REJECT_NO_ORDER"
+    assert x["reason"] == "MODELED_LOSS_INCLUDING_FEES_EXCEEDS_BUDGET"
+    assert x["orders_sent"] == 0
+
 
 def test_short_signal_levels_are_not_rewritten():
     params=PLAN|{"side":"SELL","original_stop":"2.05","original_tp":"1.90"}
