@@ -7,13 +7,13 @@ from fastapi.testclient import TestClient
 from exchange_verification import signed_exchange_verification
 
 ACCOUNT={
-    "multiAssetsMargin": False,
     "totalMarginBalance": "400.00",
     "assets":[{"asset":"USDT","walletBalance":"400.00",
                "marginBalance":"400.00","availableBalance":"400.00"}],
 }
 ANSWERS={
     "/fapi/v3/account": ACCOUNT,
+    "/fapi/v1/accountConfig": {"multiAssetsMargin":False, "dualSidePosition":False, "canTrade":True},
     "/fapi/v3/positionRisk": [],
     "/fapi/v1/openOrders": [],
     "/fapi/v1/openAlgoOrders": [],
@@ -52,7 +52,7 @@ def test_full_signed_get_fixture_and_equity_not_wallet_deposit():
 
 def test_usdt_equity_includes_unrealized_loss():
     c=Fake({"/fapi/v3/account":{
-        "multiAssetsMargin":False,"totalMarginBalance":"395",
+        "totalMarginBalance":"395",
         "assets":[{"asset":"USDT","walletBalance":"400","marginBalance":"395","availableBalance":"350"}]
     }})
     r=signed_exchange_verification(c)
@@ -61,13 +61,15 @@ def test_usdt_equity_includes_unrealized_loss():
     assert r["usdt_wallet"]=="400"
 
 @pytest.mark.parametrize("changes,reason",[
-    ({"/fapi/v1/positionSide/dual":{"dualSidePosition":True}},"HEDGE_MODE_NOT_SUPPORTED_BY_EXECUTION_PLAN"),
+    ({"/fapi/v1/accountConfig":{"multiAssetsMargin":False,"dualSidePosition":True,"canTrade":True},
+      "/fapi/v1/positionSide/dual":{"dualSidePosition":True}},"HEDGE_MODE_NOT_SUPPORTED_BY_EXECUTION_PLAN"),
     ({"/fapi/v1/symbolConfig":[{"symbol":"XRPUSDT","marginType":"ISOLATED","leverage":5}]},"TARGET_SYMBOL_NOT_CROSS_MARGIN"),
     ({"/fapi/v1/symbolConfig":[{"symbol":"XRPUSDT","marginType":"CROSSED","leverage":20}]},"TARGET_SYMBOL_NOT_SET_TO_5X"),
     ({"/fapi/v3/positionRisk":[{"symbol":"XRPUSDT","positionAmt":"10"}]},"EXCHANGE_NOT_FLAT_EXISTING_POSITIONS_OR_ORDERS"),
     ({"/fapi/v1/openOrders":[{"symbol":"ETHUSDT","orderId":12}]},"EXCHANGE_NOT_FLAT_EXISTING_POSITIONS_OR_ORDERS"),
     ({"/fapi/v1/openAlgoOrders":[{"symbol":"BNBUSDT","algoId":9}]},"EXCHANGE_NOT_FLAT_EXISTING_POSITIONS_OR_ORDERS"),
-    ({"/fapi/v3/account":ACCOUNT | {"multiAssetsMargin":True}},"MULTI_ASSETS_EQUITY_POLICY_NOT_SUPPORTED"),
+    ({"/fapi/v1/accountConfig":{"multiAssetsMargin":True,"dualSidePosition":False,"canTrade":True}},"MULTI_ASSETS_EQUITY_POLICY_NOT_SUPPORTED"),
+    ({"/fapi/v1/accountConfig":{"multiAssetsMargin":False,"dualSidePosition":False,"canTrade":False}},"BINANCE_REPORTS_TRADING_NOT_ALLOWED"),
 ])
 def test_unfavorable_exchange_state_never_claimed_ready(changes,reason):
     r=signed_exchange_verification(Fake(changes))
@@ -81,6 +83,8 @@ def test_unfavorable_exchange_state_never_claimed_ready(changes,reason):
     {"/fapi/v3/account":ACCOUNT | {"assets":[{"asset":"USDT","walletBalance":"0","marginBalance":"NaN","availableBalance":"0"}]}},
     {"/fapi/v1/symbolConfig":[]},
     {"/fapi/v1/positionSide/dual":{"dualSidePosition":"false"}},
+    {"/fapi/v1/accountConfig":{"multiAssetsMargin":False,"dualSidePosition":"false","canTrade":True}},
+    {"/fapi/v1/accountConfig":{"dualSidePosition":False,"canTrade":True}},
     {"/fapi/v3/positionRisk":[{"symbol":"XRPUSDT"}]},
     {"/fapi/v1/openAlgoOrders":None},
     {"/fapi/v1/openOrders":[{}]},
@@ -189,3 +193,12 @@ def test_invalid_status_body_redacted(monkeypatch):
     assert result["http_status"]==400
     assert result["binance_code"] is None
     assert "private" not in str(result)
+
+
+def test_account_v3_does_not_need_deprecated_configuration_field():
+    # Binance's official v3 account response excludes multiAssetsMargin.
+    assert "multiAssetsMargin" not in ACCOUNT
+    state=signed_exchange_verification(Fake())
+    assert state["status"]=="CONNECTED_READ_ONLY"
+    assert state["multi_assets_margin"] is False
+    assert state["can_trade"] is False
