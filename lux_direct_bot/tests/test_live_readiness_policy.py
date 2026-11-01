@@ -46,7 +46,7 @@ def test_even_full_readback_with_syntactic_limits_still_fails_closed():
     ({"account_snapshot_complete":False},"FULL_EXCHANGE_ORDER_AND_POSITION_READBACK_REQUIRED"),
     ({"available_usdt":"0"},"POSITIVE_SIGNED_FUTURES_AVAILABLE_BALANCE_UNVERIFIED"),
     ({"available_usdt":"NaN"},"POSITIVE_SIGNED_FUTURES_AVAILABLE_BALANCE_UNVERIFIED"),
-    ({"position_mode":"HEDGE"},"ONE_WAY_POSITION_MODE_NOT_CONFIRMED"),
+    ({"position_mode":"HEDGE"},"HEDGE_NATIVE_PROTECTION_AND_RECOVERY_NOT_CERTIFIED"),
     ({"exchange_flat":False},"FLAT_EXCHANGE_INVENTORY_NOT_VERIFIED"),
 ])
 def test_funding_or_unknown_exchange_state_never_arms_bot(changes,reason):
@@ -141,3 +141,13 @@ def test_private_readiness_endpoint_denies_public_access_and_never_enables_order
         assert result["can_trade"] is False
         assert "PRODUCTION_ENTRY_SENDER_NOT_CERTIFIED" in result["blocked_reasons"]
         assert c.get("/health").json()["live_trading"] is False
+
+
+def test_hedge_mode_is_accepted_as_account_setting_but_cannot_arm_orders():
+    snapshot=ACCOUNT | {"position_mode":"HEDGE"}
+    report=evaluate_readonly_binance_futures(
+        snapshot,db_path="/var/data/direct.sqlite3",durable_verified=True,settings=LIMITS)
+    assert "ONE_WAY_POSITION_MODE_NOT_CONFIRMED" not in report["blocked_reasons"]
+    assert "HEDGE_NATIVE_PROTECTION_AND_RECOVERY_NOT_CERTIFIED" in report["blocked_reasons"]
+    assert "PRODUCTION_ENTRY_SENDER_NOT_CERTIFIED" in report["blocked_reasons"]
+    assert report["orders_enabled"] is False and report["can_trade"] is False

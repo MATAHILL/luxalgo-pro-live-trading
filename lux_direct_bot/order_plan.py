@@ -37,15 +37,17 @@ class ProtectedPlan:
 def create_protected_plan(
     *, symbol, direction, signal_id, quantity, reference_price,
     stop_price, take_profit_price, quantity_step, price_tick,
-    minimum_notional, maximum_notional, maximum_loss
+    minimum_notional, maximum_notional, maximum_loss, position_mode="ONE_WAY"
 ):
     """Fail closed unless all broker restrictions and user-set limits are supplied.
 
     Prices and sizing are caller-supplied; this code does not infer or alter
-    the LuxAlgo BUY/SELL direction. One-way position mode only.
+    the LuxAlgo BUY/SELL direction. One-way or explicitly verified Hedge mode.
     """
     if symbol != "XRPUSDT" or direction not in ("BUY", "SELL"):
         raise ExecutionBlocked("Only XRPUSDT BUY/SELL permitted")
+    if position_mode not in ("ONE_WAY", "HEDGE"):
+        raise ExecutionBlocked("Signed Binance position mode must be ONE_WAY or HEDGE")
     if not isinstance(signal_id, str) or len(signal_id) < 12:
         raise ExecutionBlocked("Unique signal id required")
     qty = positive_decimal(quantity, "quantity")
@@ -70,15 +72,22 @@ def create_protected_plan(
     if modeled_loss > max_loss:
         raise ExecutionBlocked("Stop-loss budget exceeded")
     opposite = "SELL" if direction == "BUY" else "BUY"
+    # In Hedge mode positionSide is mandatory: BUY enters LONG, SELL enters SHORT.
+    # STOP_MARKET / TAKE_PROFIT_MARKET closePosition=true uses the SAME
+    # positionSide as the entry, but the OPPOSITE side for closing.
+    # Never send reduceOnly or quantity alongside closePosition=true.
+    position_side = "BOTH" if position_mode == "ONE_WAY" else (
+        "LONG" if direction == "BUY" else "SHORT"
+    )
     id_suffix = hashlib.sha256(signal_id.encode("utf-8")).hexdigest()[:20]
     entry = {
         "symbol": symbol, "side": direction, "type": "MARKET",
-        "quantity": str(qty), "positionSide": "BOTH",
+        "quantity": str(qty), "positionSide": position_side,
         "newClientOrderId": "luxent-" + id_suffix,
     }
     conditional = {
         "algoType": "CONDITIONAL", "symbol": symbol, "side": opposite,
-        "positionSide": "BOTH", "closePosition": "true",
+        "positionSide": position_side, "closePosition": "true",
         "workingType": "MARK_PRICE",
     }
     sl = dict(conditional, type="STOP_MARKET", triggerPrice=str(stop),

@@ -101,7 +101,9 @@ def signed_exchange_verification(client=None, symbol=TARGET_SYMBOL):
         if not account_config["canTrade"]:
             blockers.append("BINANCE_REPORTS_TRADING_NOT_ALLOWED")
         if mode["dualSidePosition"]:
-            blockers.append("HEDGE_MODE_NOT_SUPPORTED_BY_EXECUTION_PLAN")
+            # Hedge mode is valid for the offline BUY/LONG and SELL/SHORT plan.
+            # Live protection, recovery and filled-order readback remain blocked.
+            blockers.append("HEDGE_NATIVE_PROTECTION_AND_RECOVERY_NOT_CERTIFIED")
         if config["marginType"].upper() not in ("CROSSED", "CROSS"):
             blockers.append("TARGET_SYMBOL_NOT_CROSS_MARGIN")
         if config["leverage"] != 5:

@@ -1,6 +1,6 @@
 """Offline sizing fixtures never reach the exchange or modify the deployed bot."""
 import pytest
-from offline_sizing import plan_offline_300_cross, OfflineSizingBlocked
+from offline_sizing import plan_offline_300_cross, plan_offline_300_cross_hedge, OfflineSizingBlocked
 
 ACCOUNT = {
     "status": "CONNECTED_READ_ONLY",
@@ -70,3 +70,16 @@ def test_original_bearish_confirmation_keeps_side_and_prices():
     assert p["original_sl"] == "2.050"
     assert p["original_tp"] == "1.900"
     assert p["can_trade"] is False
+
+
+def test_signed_hedge_account_offline_300_usdt_risk_and_5x_cross_only():
+    data=PLAN | {"verified_account":ACCOUNT | {"position_mode":"HEDGE"}}
+    r=plan_offline_300_cross_hedge(**data)
+    assert r["position_mode"]=="HEDGE"
+    assert r["leverage"]=="5" and r["margin_type"]=="cross"
+    assert r["original_entry"]=="2" and r["original_sl"]=="1.950"
+    assert r["orders_sent"]==0 and r["can_trade"] is False
+    with pytest.raises(OfflineSizingBlocked):
+        plan_offline_300_cross_hedge(**PLAN)
+    with pytest.raises(OfflineSizingBlocked):
+        plan_offline_300_cross_hedge(**(data | {"verified_symbol":SYMBOL | {"leverage":"20"}}))
