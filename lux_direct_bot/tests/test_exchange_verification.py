@@ -151,8 +151,7 @@ def test_http_failure_identifies_endpoint_not_secrets(
                     request=request)
                 response.raise_for_status()
             return super().get(path,params)
-    with caplog.at_level("INFO",logger="uvicorn.error"):
-        result=signed_exchange_verification(Rejecting())
+    result=signed_exchange_verification(Rejecting())
     assert result["status"]=="READBACK_UNVERIFIED"
     assert result["failed_endpoint"]==failed_path
     assert result["http_status"]==code
@@ -164,14 +163,19 @@ def test_http_failure_identifies_endpoint_not_secrets(
     assert "sensitive-key" not in shown
     assert "account number" not in shown
     import app
-    with patch.object(app,"signed_exchange_verification",return_value=result):
+    # Uvicorn logger may not propagate into pytest caplog; inspect the
+    # formatting template and sanitized arguments at the logger boundary.
+    with patch.object(app,"signed_exchange_verification",return_value=result), \
+         patch.object(app.logging,"getLogger") as logger:
         app._startup_signed_exchange_diagnostic()
-    messages="\n".join(z.message for z in caplog.records)
-    assert "endpoint="+failed_path in messages
-    assert "http_status="+str(code) in messages
-    assert "binance_code="+str(binance_code) in messages
-    assert "sensitive-key" not in messages
-    assert "leak-me-not" not in messages
+    args=logger.return_value.info.call_args.args
+    template=args[0]
+    message=template % args[1:]
+    assert "endpoint="+failed_path in message
+    assert "http_status="+str(code) in message
+    assert "binance_code="+str(binance_code) in message
+    assert "sensitive-key" not in message
+    assert "leak-me-not" not in message
 
 def test_invalid_status_body_redacted(monkeypatch):
     import httpx
