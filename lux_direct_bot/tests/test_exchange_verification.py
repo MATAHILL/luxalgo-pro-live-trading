@@ -62,7 +62,7 @@ def test_usdt_equity_includes_unrealized_loss():
 
 @pytest.mark.parametrize("changes,reason",[
     ({"/fapi/v1/accountConfig":{"multiAssetsMargin":False,"dualSidePosition":True,"canTrade":True},
-      "/fapi/v1/positionSide/dual":{"dualSidePosition":True}},"HEDGE_MODE_NOT_SUPPORTED_BY_EXECUTION_PLAN"),
+      "/fapi/v1/positionSide/dual":{"dualSidePosition":True}},"HEDGE_NATIVE_PROTECTION_AND_RECOVERY_NOT_CERTIFIED"),
     ({"/fapi/v1/symbolConfig":[{"symbol":"XRPUSDT","marginType":"ISOLATED","leverage":5}]},"TARGET_SYMBOL_NOT_CROSS_MARGIN"),
     ({"/fapi/v1/symbolConfig":[{"symbol":"XRPUSDT","marginType":"CROSSED","leverage":20}]},"TARGET_SYMBOL_NOT_SET_TO_5X"),
     ({"/fapi/v3/positionRisk":[{"symbol":"XRPUSDT","positionAmt":"10"}]},"EXCHANGE_NOT_FLAT_EXISTING_POSITIONS_OR_ORDERS"),
@@ -209,11 +209,11 @@ def test_private_signed_configuration_flags_read_actual_snapshot():
     flags=app._safe_exchange_configuration_flags(signed_exchange_verification(Fake()))
     assert flags=={
         "leverage_5x":"PASS", "cross_margin":"PASS",
-        "one_way":"PASS", "inventory_flat":"PASS",
+        "one_way":"PASS", "hedge_mode":"FAIL", "inventory_flat":"PASS",
     }
     assert app._safe_exchange_configuration_flags({"status":"READBACK_UNVERIFIED"})=={
         "leverage_5x":"UNVERIFIED", "cross_margin":"UNVERIFIED",
-        "one_way":"UNVERIFIED", "inventory_flat":"UNVERIFIED",
+        "one_way":"UNVERIFIED", "hedge_mode":"UNVERIFIED", "inventory_flat":"UNVERIFIED",
     }
 
 def test_signed_configuration_flags_fail_closed_for_conflicts():
@@ -230,7 +230,7 @@ def test_signed_configuration_flags_fail_closed_for_conflicts():
     flags=app._safe_exchange_configuration_flags(state)
     assert flags=={
         "leverage_5x":"FAIL", "cross_margin":"FAIL",
-        "one_way":"FAIL", "inventory_flat":"FAIL",
+        "one_way":"FAIL", "hedge_mode":"PASS", "inventory_flat":"FAIL",
     }
     assert state["orders_enabled"] is False and state["can_trade"] is False
 
@@ -248,7 +248,26 @@ def test_sanitized_startup_config_audit_never_discloses_balance_key_or_order_ids
     ]
     messages="\n".join(outputs)
     assert "DIRECT_BINANCE_SIGNED_CONFIG_AUDIT leverage_5x=PASS cross_margin=PASS" in messages
-    assert "one_way=PASS inventory_flat=PASS" in messages
+    assert "one_way=PASS hedge_mode=FAIL inventory_flat=PASS" in messages
     assert "live_order_sender=LOCKED" in messages
     for secret in ("SENSITIVE-EQUITY","SENSITIVE-SECRET","SENSITIVE-ORDER"):
         assert secret not in messages
+
+
+def test_signed_hedge_mode_recognized_without_fake_live_order_certification():
+    import app
+    changes={
+        "/fapi/v1/accountConfig":{
+            "multiAssetsMargin":False,"dualSidePosition":True,"canTrade":True
+        },
+        "/fapi/v1/positionSide/dual":{"dualSidePosition":True},
+    }
+    status=signed_exchange_verification(Fake(changes))
+    assert status["status"]=="CONNECTED_READ_ONLY"
+    assert status["position_mode"]=="HEDGE"
+    assert status["target_margin_type"]=="CROSSED"
+    assert "HEDGE_NATIVE_PROTECTION_AND_RECOVERY_NOT_CERTIFIED" in status["blocked_reasons"]
+    assert status["can_trade"] is False and status["orders_enabled"] is False
+    flags=app._safe_exchange_configuration_flags(status)
+    assert flags["hedge_mode"]=="PASS" and flags["one_way"]=="FAIL"
+    assert flags["inventory_flat"]=="PASS"
