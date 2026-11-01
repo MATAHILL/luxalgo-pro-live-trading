@@ -53,14 +53,20 @@ def plan_offline_300_cross(
         raise OfflineSizingBlocked("SIGNED_CROSS_5X_AND_SYMBOL_METADATA_REQUIRED")
     equity = d(futures_equity_usdt, "FUTURES_EQUITY")
     available = d(available_usdt, "AVAILABLE_BALANCE")
+    if (d(verified_account.get("futures_equity_usdt"), "SIGNED_EQUITY") != equity
+            or d(verified_account.get("available_usdt"), "SIGNED_AVAILABLE") != available):
+        raise OfflineSizingBlocked("BALANCE_INPUT_DOES_NOT_MATCH_SIGNED_SNAPSHOT")
     entry = d(signal_entry, "ORIGINAL_ENTRY")
     stop = d(signal_sl, "ORIGINAL_STOP")
     tp = d(signal_tp, "ORIGINAL_TP")
     step = d(qty_step, "QUANTITY_STEP")
     tick = d(price_tick, "PRICE_TICK")
     minimum = d(min_exchange_notional, "MINIMUM_NOTIONAL")
-    fee = Decimal(str(taker_fee_rate))
-    slip = Decimal(str(max_slippage_ratio))
+    try:
+        fee = Decimal(str(taker_fee_rate))
+        slip = Decimal(str(max_slippage_ratio))
+    except (InvalidOperation, TypeError, ValueError):
+        raise OfflineSizingBlocked("FEES_OR_SLIPPAGE_UNVERIFIED")
     if not (fee.is_finite() and Decimal(0) <= fee <= Decimal("0.01")
             and slip.is_finite() and Decimal(0) <= slip <= Decimal("0.001")):
         raise OfflineSizingBlocked("FEES_OR_SLIPPAGE_UNVERIFIED")
