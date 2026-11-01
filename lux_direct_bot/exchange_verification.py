@@ -113,6 +113,30 @@ def signed_exchange_verification(client=None, symbol=TARGET_SYMBOL):
             positions_open=position_count, orders_open=len(open_orders),
             protective_algos_open=len(open_algos), account_snapshot_complete=True,
             blocked_reasons=blockers)
+    except httpx.HTTPStatusError as error:
+        # Safe diagnostic only: NEVER expose response text, full URL with signature,
+        # request headers, API key, params, order IDs, or raw exception repr.
+        permitted = {
+            "/fapi/v3/account", "/fapi/v3/positionRisk",
+            "/fapi/v1/openOrders", "/fapi/v1/openAlgoOrders",
+            "/fapi/v1/positionSide/dual", "/fapi/v1/symbolConfig",
+        }
+        path = error.request.url.path
+        endpoint = path if path in permitted else "UNKNOWN_SIGNED_GET"
+        code = error.response.status_code
+        code = code if isinstance(code, int) and 400 <= code <= 599 else 0
+        binance_code = None
+        try:
+            data = error.response.json()
+            value = data.get("code") if isinstance(data, dict) else None
+            if type(value) is int and -100000 <= value <= 100000:
+                binance_code = value
+        except (ValueError, TypeError):
+            pass
+        return dict(safe, status="READBACK_UNVERIFIED",
+                    reason="HTTPSTATUSERROR_FAIL_CLOSED",
+                    failed_endpoint=endpoint, http_status=code,
+                    binance_code=binance_code)
     except (httpx.HTTPError, BinanceTransportBlocked, ValueError, TypeError,
             KeyError, ArithmeticError, OverflowError) as error:
         # Never return secrets, request signatures, exchange order IDs, or raw errors.
