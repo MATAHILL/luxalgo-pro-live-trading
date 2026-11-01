@@ -4,6 +4,8 @@ Production execution is intentionally locked until external Binance acceptance t
 import hashlib
 import hmac
 import json
+import logging
+import threading
 import os
 import re
 import sqlite3
@@ -41,6 +43,32 @@ EVENTS = {
 }
 app = FastAPI(title="LUX DIRECT BOT", docs_url=None, redoc_url=None)
 
+def _startup_signed_exchange_diagnostic():
+    """Best-effort signed GET. Print ONLY allowlisted status fields, never balances or keys."""
+    try:
+        state = signed_exchange_verification()
+        status = state.get("status")
+        if status not in {"NOT_CONFIGURED", "CONNECTED_READ_ONLY", "READBACK_UNVERIFIED", "BLOCKED"}:
+            status = "UNRECOGNIZED_RESPONSE"
+        reason = state.get("reason")
+        if reason not in {"BINANCE_API_KEYS_NOT_AVAILABLE", "EXECUTION_PLAN_SUPPORTS_XRPUSDT_ONLY",
+                          "HTTPSTATUSERROR_FAIL_CLOSED", "HTTPERROR_FAIL_CLOSED",
+                          "VALUEERROR_FAIL_CLOSED", "BINANCETRANSPORTBLOCKED_FAIL_CLOSED",
+                          "TYPEERROR_FAIL_CLOSED", "KEYERROR_FAIL_CLOSED",
+                          "ARITHMETICERROR_FAIL_CLOSED", "OVERFLOWERROR_FAIL_CLOSED"}:
+            reason = "NONE_OR_REDACTED"
+        logging.getLogger("uvicorn.error").info(
+            "DIRECT_BINANCE_SIGNED_GET_AUDIT status=%s reason=%s orders_enabled=FALSE "
+            "can_trade=FALSE acceptance_certified=FALSE",
+            status, reason,
+        )
+    except Exception:
+        logging.getLogger("uvicorn.error").warning(
+            "DIRECT_BINANCE_SIGNED_GET_AUDIT status=READBACK_UNVERIFIED "
+            "reason=UNEXPECTED_ERROR_REDACTED orders_enabled=FALSE can_trade=FALSE"
+        )
+
+
 def database():
     return open_ledger(DB_PATH,require_persistence=REQUIRE_PERSISTENCE,mount_path=DISK_MOUNT)
 
@@ -72,6 +100,8 @@ def initialize():
             id INTEGER PRIMARY KEY CHECK (id = 1),
             enabled INTEGER NOT NULL CHECK(enabled IN (0,1)))""")
         db.execute("INSERT OR IGNORE INTO operator_control(id,enabled) VALUES(1,0)")
+    if os.environ.get("DIRECT_BOT_VERIFY_EXCHANGE_ON_START", "0") == "1":
+        threading.Thread(target=_startup_signed_exchange_diagnostic, daemon=True).start()
 
 def operator_enabled():
     with database() as db:
