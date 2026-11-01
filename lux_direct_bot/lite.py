@@ -28,6 +28,8 @@ th{color:#a9bad0;font-weight:600}
 <div id="mode">DRY RUN · LIVE ORDERS DISABLED</div>
 <section class="warn"><strong>Real-money orders remain OFF</strong>
 <p id="binanceSummary">Binance account readback not checked yet. Sign in to view read-only balance and positions. The ON/OFF button controls dry-run signals only.</p></section>
+<section><div class="row"><div><small>Authenticated Binance inspection</small><div class="state">Exchange verification</div></div><button id="verifyExchange" disabled>Verify read-only</button></div>
+<p id="verifyResult">Authenticate the operator to inspect a fresh Binance signed-GET snapshot. This does not submit orders or change margin settings.</p></section>
 <section><div class="row"><div><small>Bot operator</small><div class="state" id="state">LOCKED</div></div><button id="switch" disabled>BOT OFF</button></div>
 <p id="notice">Enter the operator token below to control signal processing. No order can be sent to Binance from this build.</p>
 <p id="readiness">Live execution: LOCKED until verified TradingView delivery, Binance connection, persistent records, risk settings and protective orders.</p>
@@ -129,9 +131,33 @@ async function refresh(){
     }else{write('last','No webhook signals received');write('summary','Waiting for a genuine LuxAlgo confirmation on a configured 5-minute pair.');}
   }catch(e){write('notice','Cannot verify state: '+e.message);$('switch').disabled=true;}
 }
+$('verifyExchange').addEventListener('click',async function(){
+  if(!secret)return;
+  $('verifyExchange').disabled=true;
+  write('verifyResult','Reading Binance signed account equity, position mode, existing orders and XRPUSDT Cross/5x configuration...');
+  try{
+    var report=await call('/operator/exchange-verification');
+    if(report.status!=='CONNECTED_READ_ONLY'){
+      write('verifyResult','Exchange verification '+report.status+' · '+(report.reason||'incomplete')+
+      ' · Live orders remain OFF.');
+    }else{
+      write('verifyResult','Signed Binance GET response · USDT Futures margin equity: '+report.usdt_equity+
+        ' · 3% modeled loss ceiling: '+report.modeled_loss_budget_3pct+
+        ' USDT · Available: '+report.available_usdt+
+        ' · Position mode: '+report.position_mode+
+        ' · XRPUSDT: '+report.target_margin_type+' '+report.target_leverage+'x'+
+        ' · Open positions: '+report.positions_open+
+        ' · Open orders: '+report.orders_open+
+        ' · Open algo protection: '+report.protective_algos_open+
+        ' · Mandatory certification blockers: '+report.blocked_reasons.join(', ')+
+        '. Source is a read-only authenticated exchange API response; actual trade acceptance remains unverified.');
+    }
+  }catch(e){write('verifyResult','Exchange verification failed: '+e.message+' · No orders sent.');}
+  finally{if(secret)$('verifyExchange').disabled=false;}
+});
 $('auth').addEventListener('submit',async function(e){
   e.preventDefault();secret=$('token').value.trim();$('token').value='';
-  try{await call('/operator/status');$('auth').style.display='none';$('lock').style.display='block';write('notice','Authorized. Bot switch is DRY RUN ONLY.');await refresh();}
+  try{await call('/operator/status');$('auth').style.display='none';$('lock').style.display='block';write('notice','Authorized. Bot switch is DRY RUN ONLY.');$('verifyExchange').disabled=false;await refresh();}
   catch(e){secret='';write('notice',e.message);}
 });
 $('switch').addEventListener('click',async function(){
@@ -145,7 +171,8 @@ $('switch').addEventListener('click',async function(){
   await refresh();
 });
 $('lock').addEventListener('click',function(){
-  secret='';$('switch').disabled=true;$('auth').style.display='block';$('lock').style.display='none';
+  secret='';$('switch').disabled=true;$('verifyExchange').disabled=true;$('auth').style.display='block';$('lock').style.display='none';
+  write('verifyResult','Operator access locked. No private balance data displayed.');
   write('state','LOCKED');write('last','Locked');write('notice','Operator session locked.');write('summary','Private records hidden.');
   $('positionRows').replaceChildren();write('positionInfo','Unlock to read positions.');
   $('recentRows').replaceChildren();write('historyInfo','Unlock to view signal history.');
