@@ -111,3 +111,23 @@ def test_private_readback_cannot_be_queried_unauthenticated(monkeypatch,tmp_path
         assert result.status_code==200
         assert result.headers["Cache-Control"]=="private, no-store"
         assert result.json()["orders_enabled"] is False
+
+
+def test_one_shot_startup_log_never_exposes_balances_or_credentials(monkeypatch,caplog):
+    import app
+    bot=importlib.reload(app)
+    fake={
+        "status":"CONNECTED_READ_ONLY", "usdt_equity":"997.321",
+        "modeled_loss_budget_3pct":"29.91963",
+        "api_secret":"fixture-secret-not-real", "orders_enabled":False,
+    }
+    import logging
+    with patch.object(bot,"signed_exchange_verification",return_value=fake):
+        with caplog.at_level(logging.INFO,logger="uvicorn.error"):
+            bot._startup_signed_exchange_diagnostic()
+    combined="\n".join(x.message for x in caplog.records)
+    assert "DIRECT_BINANCE_SIGNED_GET_AUDIT status=CONNECTED_READ_ONLY" in combined
+    assert "997.321" not in combined
+    assert "29.91963" not in combined
+    assert "fixture-secret" not in combined
+    assert "orders_enabled=FALSE" in combined
