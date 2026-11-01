@@ -43,6 +43,35 @@ EVENTS = {
 }
 app = FastAPI(title="LUX DIRECT BOT", docs_url=None, redoc_url=None)
 
+def _safe_exchange_configuration_flags(state):
+    """Allowlisted flags only; absence or failed auth is UNKNOWN, not PASS.
+
+    Input must be the *fresh signed Binance result*, never an operator setting
+    or TradingView payload. No monetary balances or identifiers are returned.
+    """
+    flags = dict(leverage_5x="UNVERIFIED", cross_margin="UNVERIFIED",
+                 one_way="UNVERIFIED", inventory_flat="UNVERIFIED")
+    if not isinstance(state, dict) or state.get("status") != "CONNECTED_READ_ONLY":
+        return flags
+    lev = state.get("target_leverage")
+    if type(lev) is int:
+        flags["leverage_5x"] = "PASS" if lev == 5 else "FAIL"
+    margin = state.get("target_margin_type")
+    if isinstance(margin, str):
+        flags["cross_margin"] = (
+            "PASS" if margin.upper() in {"CROSSED", "CROSS"} else "FAIL"
+        )
+    mode = state.get("position_mode")
+    if mode in {"ONE_WAY", "HEDGE"}:
+        flags["one_way"] = "PASS" if mode == "ONE_WAY" else "FAIL"
+    inventory = [state.get(k) for k in (
+        "positions_open", "orders_open", "protective_algos_open"
+    )]
+    if all(type(v) is int and v >= 0 for v in inventory):
+        flags["inventory_flat"] = "PASS" if all(v == 0 for v in inventory) else "FAIL"
+    return flags
+
+
 def _startup_signed_exchange_diagnostic():
     """Best-effort signed GET. Print ONLY allowlisted status fields, never balances or keys."""
     try:
@@ -77,6 +106,14 @@ def _startup_signed_exchange_diagnostic():
             "http_status=%d binance_code=%d orders_enabled=FALSE "
             "can_trade=FALSE acceptance_certified=FALSE",
             status, reason, endpoint, http_status, binance_code,
+        )
+        flags = _safe_exchange_configuration_flags(state)
+        logging.getLogger("uvicorn.error").info(
+            "DIRECT_BINANCE_SIGNED_CONFIG_AUDIT leverage_5x=%s cross_margin=%s "
+            "one_way=%s inventory_flat=%s live_order_sender=LOCKED "
+            "native_sl_tp=NOT_CERTIFIED",
+            flags["leverage_5x"], flags["cross_margin"],
+            flags["one_way"], flags["inventory_flat"],
         )
     except Exception:
         logging.getLogger("uvicorn.error").warning(

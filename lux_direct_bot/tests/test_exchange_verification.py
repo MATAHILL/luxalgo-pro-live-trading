@@ -172,7 +172,7 @@ def test_http_failure_identifies_endpoint_not_secrets(
     with patch.object(app,"signed_exchange_verification",return_value=result), \
          patch.object(app.logging,"getLogger") as logger:
         app._startup_signed_exchange_diagnostic()
-    args=logger.return_value.info.call_args.args
+    args=logger.return_value.info.call_args_list[0].args
     template=args[0]
     message=template % args[1:]
     assert "endpoint="+failed_path in message
@@ -202,3 +202,53 @@ def test_account_v3_does_not_need_deprecated_configuration_field():
     assert state["status"]=="CONNECTED_READ_ONLY"
     assert state["multi_assets_margin"] is False
     assert state["can_trade"] is False
+
+
+def test_private_signed_configuration_flags_read_actual_snapshot():
+    import app
+    flags=app._safe_exchange_configuration_flags(signed_exchange_verification(Fake()))
+    assert flags=={
+        "leverage_5x":"PASS", "cross_margin":"PASS",
+        "one_way":"PASS", "inventory_flat":"PASS",
+    }
+    assert app._safe_exchange_configuration_flags({"status":"READBACK_UNVERIFIED"})=={
+        "leverage_5x":"UNVERIFIED", "cross_margin":"UNVERIFIED",
+        "one_way":"UNVERIFIED", "inventory_flat":"UNVERIFIED",
+    }
+
+def test_signed_configuration_flags_fail_closed_for_conflicts():
+    import app
+    state=signed_exchange_verification(Fake({
+        "/fapi/v1/symbolConfig":[
+            {"symbol":"XRPUSDT","marginType":"ISOLATED","leverage":20}
+        ],
+        "/fapi/v1/accountConfig":{
+            "multiAssetsMargin":False,"dualSidePosition":True,"canTrade":True},
+        "/fapi/v1/positionSide/dual":{"dualSidePosition":True},
+        "/fapi/v3/positionRisk":[{"symbol":"XRPUSDT","positionAmt":"2"}]
+    }))
+    flags=app._safe_exchange_configuration_flags(state)
+    assert flags=={
+        "leverage_5x":"FAIL", "cross_margin":"FAIL",
+        "one_way":"FAIL", "inventory_flat":"FAIL",
+    }
+    assert state["orders_enabled"] is False and state["can_trade"] is False
+
+def test_sanitized_startup_config_audit_never_discloses_balance_key_or_order_ids():
+    import app
+    state=signed_exchange_verification(Fake())
+    state["usdt_equity"]="SENSITIVE-EQUITY"
+    state["api_secret"]="SENSITIVE-SECRET"
+    state["exchange_order_id"]="SENSITIVE-ORDER"
+    with patch.object(app,"signed_exchange_verification",return_value=state), \
+         patch.object(app.logging,"getLogger") as logger:
+        app._startup_signed_exchange_diagnostic()
+    outputs=[
+        args.args[0] % args.args[1:] for args in logger.return_value.info.call_args_list
+    ]
+    messages="\n".join(outputs)
+    assert "DIRECT_BINANCE_SIGNED_CONFIG_AUDIT leverage_5x=PASS cross_margin=PASS" in messages
+    assert "one_way=PASS inventory_flat=PASS" in messages
+    assert "live_order_sender=LOCKED" in messages
+    for secret in ("SENSITIVE-EQUITY","SENSITIVE-SECRET","SENSITIVE-ORDER"):
+        assert secret not in messages
