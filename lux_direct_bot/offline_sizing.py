@@ -26,6 +26,7 @@ def plan_offline_300_cross(
     futures_equity_usdt, available_usdt, qty_step, price_tick,
     min_exchange_notional, taker_fee_rate, max_slippage_ratio,
     verified_account, verified_symbol, operator_absolute_loss_cap=None,
+    position_mode="ONE_WAY",
 ):
     """Never adjust signal prices; only round DOWN the proposed quantity.
 
@@ -34,16 +35,18 @@ def plan_offline_300_cross(
     """
     if side not in ("BUY", "SELL") or not isinstance(symbol, str):
         raise OfflineSizingBlocked("INVALID_ORIGINAL_LUXALGO_DIRECTION_OR_SYMBOL")
+    if position_mode not in ("ONE_WAY", "HEDGE"):
+        raise OfflineSizingBlocked("UNSUPPORTED_BINANCE_POSITION_MODE")
     if not isinstance(verified_account, dict) or (
         verified_account.get("status") != "CONNECTED_READ_ONLY"
         or verified_account.get("account_snapshot_complete") is not True
-        or verified_account.get("position_mode") != "ONE_WAY"
+        or verified_account.get("position_mode") != position_mode
         or verified_account.get("exchange_flat") is not True
         or verified_account.get("open_positions") != 0
         or verified_account.get("open_orders") != 0
         or verified_account.get("open_conditional_orders") != 0
     ):
-        raise OfflineSizingBlocked("SIGNED_COMPLETE_FLAT_ONE_WAY_SNAPSHOT_REQUIRED")
+        raise OfflineSizingBlocked("SIGNED_COMPLETE_FLAT_MATCHING_POSITION_MODE_SNAPSHOT_REQUIRED")
     if not isinstance(verified_symbol, dict) or (
         verified_symbol.get("symbol") != symbol
         or verified_symbol.get("margin_type") != "cross"
@@ -105,9 +108,20 @@ def plan_offline_300_cross(
         "nominal_notional_usdt": str(quantity * entry),
         "worst_notional_usdt": assessed["worst_notional_usdt"],
         "planned_margin_usdt": str(planned_margin),
-        "leverage": "5", "margin_type": "cross",
+        "leverage": "5", "margin_type": "cross", "position_mode": position_mode,
         "max_modeled_loss_usdt": str(cap),
         "modeled_loss_usdt": assessed["modeled_loss_usdt"],
         "balance_basis": "authenticated Binance USD-M Futures equity input, not wallet deposit",
         "orders_enabled": False, "orders_sent": 0, "can_trade": False,
     }
+
+
+def plan_offline_300_cross_hedge(**kwargs):
+    """Explicit Hedge-mode, 5x Cross, no-order wrapper.
+
+    Requires a fresh signed HEDGE snapshot supplied by the caller. This does
+    not configure Binance or imply automatic execution certification.
+    """
+    if "position_mode" in kwargs:
+        raise OfflineSizingBlocked("POSITION_MODE_IS_FIXED_TO_HEDGE")
+    return plan_offline_300_cross(position_mode="HEDGE", **kwargs)
