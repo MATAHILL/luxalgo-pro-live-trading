@@ -17,7 +17,8 @@ from live_futures_engine import (
 from live_execution_coordinator import install,control,halt,read_rows,risk_reserve
 
 def persist_state(open_connection, event_id, state, *, entry_order_id=None,
-                  stop_order_id=None, take_order_id=None, detail=None):
+                  stop_order_id=None, take_order_id=None, detail=None,
+                  acceptance_approval_id=None, acceptance_plan=None):
     """Compare-and-set milestones; late workers cannot overwrite HALT/closure.
 
     No generic route to CLOSED_VERIFIED: closure needs separate exchange proof.
@@ -46,9 +47,22 @@ def persist_state(open_connection, event_id, state, *, entry_order_id=None,
                 # Serialize the dispatch claim with operator OFF/HALT and
                 # reservations. A check in a previous transaction is stale.
                 from live_execution_coordinator import LOCK_ID
-                from production_bot_control import require_operator_on
                 cur.execute('SELECT pg_advisory_xact_lock(%s)', (LOCK_ID,))
-                require_operator_on(con)
+                if acceptance_approval_id is None:
+                    from production_bot_control import require_operator_on
+                    require_operator_on(con)
+                else:
+                    # Acceptance has its own exact-event authority. Recheck it
+                    # in the dispatch transaction, not just before reservation.
+                    if not EXCHANGE_WRITE_RELEASE or AUTOMATIC_WORKER_RELEASE:
+                        raise LiveSafetyError('Acceptance dispatch release gates rejected')
+                    if (not isinstance(acceptance_plan, dict) or
+                        acceptance_plan.get('event_id') != event_id):
+                        raise LiveSafetyError('Acceptance dispatch event mismatch')
+                    if control(con)['halted'] is not False:
+                        raise LiveSafetyError('Acceptance emergency HALT active at dispatch')
+                    from acceptance_authorization import require_approval
+                    require_approval(con, acceptance_approval_id, acceptance_plan)
             cur.execute("""UPDATE luxalgo_prod_execution_ledger
                            SET state=%s,
                                entry_order_id=COALESCE(%s,entry_order_id),
@@ -309,7 +323,12 @@ def execute_confirmed_signal(open_connection,plan,client=None,*,acceptance_appro
             require_approval(con,acceptance_approval_id,plan)
             if control(con)['halted'] is not False:
                 raise LiveSafetyError('Acceptance emergency HALT active before dispatch')
-    persist_state(open_connection,event,"SENDING")
+    if acceptance_approval_id is None:
+        persist_state(open_connection,event,"SENDING")
+    else:
+        persist_state(open_connection,event,"SENDING",
+                      acceptance_approval_id=acceptance_approval_id,
+                      acceptance_plan=plan)
     # From this point on, a lost response can still mean an accepted order.
     # Therefore never retry POST after an ambiguous outcome.
     try:

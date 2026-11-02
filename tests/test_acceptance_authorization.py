@@ -72,6 +72,22 @@ class AuthorizationTests(unittest.TestCase):
         self.assertIn('FOR UPDATE',sql)
         self.assertIn('claimed_at IS NULL',sql)
 
+    def test_expiry_clock_is_read_after_waiting_for_row_lock(self):
+        con=connection(claimed=True)
+        acquired=[]
+        cur=con.cursor.return_value.__enter__.return_value
+        cur.execute.side_effect=lambda *args: acquired.append(True)
+        class Clock(datetime):
+            @classmethod
+            def now(cls,tz=None):
+                self.assertTrue(acquired, 'Clock sampled before acquiring row lock')
+                return cls.fromtimestamp((NOW+timedelta(minutes=2)).timestamp(),timezone.utc)
+        for field in ('starts_at','expires_at'):
+            cur.fetchone.return_value[field]=Clock.fromtimestamp(
+                cur.fetchone.return_value[field].timestamp(),timezone.utc)
+        with patch.object(auth,'datetime',Clock), self.assertRaisesRegex(LiveSafetyError,'outside its window'):
+            auth.require_approval(con,'operator-example',PLAN)
+
     def test_source_lock_remains_enforced(self):
         client=Mock()
         with self.assertRaisesRegex(LiveSafetyError,'SOURCE_LOCKED'):
@@ -94,17 +110,52 @@ class AuthorizationTests(unittest.TestCase):
                                ('evaluate_protection',{'verified':True,'stop_order_id':'200','take_order_id':'300'})]:
                 stack.enter_context(patch.object(orch,name,return_value=value))
             for name in ('install','verify_execution_preflight','assert_existing_protected_exposure',
-                         'risk_reserve','persist_state','require_linked_trigger_acknowledgments'):
+                         'risk_reserve','require_linked_trigger_acknowledgments'):
                 stack.enter_context(patch.object(orch,name))
             approval=stack.enter_context(patch.object(auth,'require_approval'))
             operator=stack.enter_context(patch('production_bot_control.require_operator_on'))
             result=orch.execute_confirmed_signal(lambda:con,PLAN,client,acceptance_approval_id='operator-example')
             self.assertEqual(result['state'],'PROTECTED')
-            self.assertEqual(approval.call_count,2)
+            self.assertEqual(approval.call_count,3)
             self.assertTrue(approval.call_args_list[0].kwargs['claim'])
             operator.assert_not_called()
             client.submit_entry.assert_called_once_with(PLAN)
             self.assertEqual(client.submit_trigger.call_count,2)
+
+    def test_dispatch_rechecks_real_approval_under_shared_lock(self):
+        con=connection(claimed=True)
+        real_require=auth.require_approval
+        with (patch.object(orch,'EXCHANGE_WRITE_RELEASE',True),
+              patch.object(orch,'AUTOMATIC_WORKER_RELEASE',False),
+              patch.object(orch,'control',return_value={'halted':False}),
+              patch.object(auth,'require_approval',side_effect=lambda *a,**k: real_require(*a,**k,now=NOW)),
+              patch('production_bot_control.require_operator_on',side_effect=AssertionError('Production certification used'))):
+            self.assertEqual(orch.persist_state(lambda:con,PLAN['event_id'],'SENDING',
+                acceptance_approval_id='operator-example',acceptance_plan=PLAN),'SENDING')
+        calls=con.cursor.return_value.__enter__.return_value.execute.call_args_list
+        sql=[c.args[0] for c in calls]
+        self.assertIn('pg_advisory_xact_lock',sql[0])
+        self.assertIn('FOR UPDATE',sql[1])
+        self.assertIn('luxalgo_prod_execution_ledger',sql[2])
+
+    def test_dispatch_rejects_changed_authority_without_journal_write(self):
+        cases=[('halt',{'halted':True}),('revoked',{}),('expired',{}),
+               ('wrong_event',{}),('source_locked',{}),('automation_on',{})]
+        for case,options in cases:
+            with self.subTest(case=case):
+                con=connection(claimed=True,revoked=case=='revoked')
+                plan=dict(PLAN,event_id='other') if case=='wrong_event' else PLAN
+                real_require=auth.require_approval
+                clock=NOW+timedelta(minutes=2) if case=='expired' else NOW
+                with (patch.object(orch,'EXCHANGE_WRITE_RELEASE',case!='source_locked'),
+                      patch.object(orch,'AUTOMATIC_WORKER_RELEASE',case=='automation_on'),
+                      patch.object(orch,'control',return_value={'halted':options.get('halted',False)}),
+                      patch.object(auth,'require_approval',side_effect=lambda *a,**k: real_require(*a,**k,now=clock)),
+                      self.assertRaises(LiveSafetyError)):
+                    orch.persist_state(lambda:con,PLAN['event_id'],'SENDING',
+                        acceptance_approval_id='operator-example',acceptance_plan=plan)
+                sql=' '.join(c.args[0] for c in con.cursor.return_value.__enter__.return_value.execute.call_args_list)
+                self.assertNotIn('UPDATE luxalgo_prod_execution_ledger',sql)
 
 
 if __name__=='__main__':

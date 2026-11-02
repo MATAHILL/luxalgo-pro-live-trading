@@ -90,13 +90,15 @@ def require_approval(con, approval_id, plan, *, claim=False, now=None):
     A second read immediately before POST rechecks expiration and revocation.
     Claimed approvals never revert, including after timeouts or failed entries.
     """
-    now = now or datetime.now(timezone.utc)
     with con.cursor() as cur:
         cur.execute('''SELECT * FROM luxalgo_acceptance_authorizations
                        WHERE approval_id=%s FOR UPDATE''', (approval_id,))
         row = cur.fetchone()
         if row is None or row['revoked'] is not False:
             raise LiveSafetyError('Acceptance approval missing or revoked')
+        # Row-lock contention can outlast the approval window. Sample the
+        # clock after acquiring the lock so a stale timestamp cannot dispatch.
+        now = now or datetime.now(timezone.utc)
         digest = validate_scope(plan, row['starts_at'], row['expires_at'], now)
         if row['event_id'] != plan['event_id'] or row['plan_digest'] != digest:
             raise LiveSafetyError('Acceptance plan differs from operator approval')

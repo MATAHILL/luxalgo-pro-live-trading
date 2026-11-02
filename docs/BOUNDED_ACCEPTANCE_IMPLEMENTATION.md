@@ -20,6 +20,18 @@ the plan digest and emergency HALT. An attempt is never automatically rearmed.
 The existing exchange preflight, atomic risk reservation, fill readback,
 SL/TP readback and post-acknowledgment failure handling remain in use.
 
+The SENDING journal transition rechecks acceptance authority under the shared
+transaction lock instead of accidentally requiring production certification.
+Normal production dispatch still requires operator ON. Acceptance dispatch
+checks the exact event, source release, continuous-worker lock, emergency HALT,
+and the already-consumed approval before updating the journal. Approval expiry
+is evaluated after its row lock is acquired, so contention cannot reuse a stale
+clock reading. The lifecycle regression test exercises the real journal writer.
+
+These are offline code corrections, not exchange execution evidence. The
+authorization tests use simulated connections; real PostgreSQL validation and
+all release requirements below remain outstanding.
+
 ## Remaining release work
 
 - Integrate an authenticated operator review UI/CLI that obtains a current
