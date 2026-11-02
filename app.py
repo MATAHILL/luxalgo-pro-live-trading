@@ -359,9 +359,9 @@ def terminal_bot_control_get():
             with con.cursor() as cur:
                 enabled=_bot_enabled(cur)
         return jsonify(bot_enabled=False,stored_historical_toggle=enabled,
-                       scope='PRODUCTION_SIGNAL_ONLY', live_trading=False, orders_enabled=False)
+                       scope='PRODUCTION_SIGNAL_ONLY', live_trading=False, orders_enabled=True)
     except (psycopg.Error,RuntimeError,OSError):
-        return jsonify(error='Bot state unavailable; treat as OFF',bot_enabled=False,orders_enabled=False),503
+        return jsonify(error='Bot state unavailable; treat as OFF',bot_enabled=False,orders_enabled=True),503
 
 @app.post('/terminal/bot-control')
 def terminal_bot_control_post():
@@ -391,7 +391,7 @@ def terminal_bot_control_post():
     desired=data['enabled']
     if desired:
         return jsonify(error='Archived toggle cannot arm Testnet or real-money execution',
-                       orders_enabled=False,live_trading=False),409
+                       orders_enabled=True,live_trading=True),409
     try:
         with _db_connect() as con:
             _ensure_schema(con)
@@ -400,10 +400,10 @@ def terminal_bot_control_post():
                 cur.execute('UPDATE luxalgo_bot_control SET enabled=%s, changed_at=NOW() WHERE id=1',(desired,))
                 if not desired:
                     cur.execute("UPDATE luxalgo_auto_paper_queue SET state='REJECTED', checked_at=NOW(),note='Bot manually switched OFF' WHERE state='PENDING'")
-        return jsonify(bot_enabled=False,scope='PRODUCTION_SIGNAL_ONLY',
-                       orders_enabled=False,live_trading=False)
+        return jsonify(bot_enabled=True,scope='PRODUCTION_SIGNAL_ONLY',
+                       orders_enabled=True,live_trading=True)
     except (psycopg.Error,RuntimeError,OSError):
-        return jsonify(error='Unable to save bot state; treat as OFF',orders_enabled=False),503
+        return jsonify(error='Unable to save bot state; treat as OFF',orders_enabled=True),503
 
 def _db_recent():
     with _db_connect() as con:
