@@ -40,8 +40,11 @@ def evaluate_readonly_binance_futures(account, *, db_path, durable_verified=Fals
         reasons.append("FULL_EXCHANGE_ORDER_AND_POSITION_READBACK_REQUIRED")
     available=decimal_positive(account.get("available_usdt"))
     wallet=decimal_positive(account.get("wallet_usdt"))
-    if available is None or wallet is None or available>wallet:
+    equity=decimal_positive(account.get("futures_equity_usdt"))
+    if available is None or wallet is None:
         reasons.append("POSITIVE_SIGNED_FUTURES_AVAILABLE_BALANCE_UNVERIFIED")
+    if equity is None or (available is not None and available>equity):
+        reasons.append("SIGNED_USDT_FUTURES_MARGIN_EQUITY_UNVERIFIED")
     mode=account.get("position_mode")
     if mode not in ("ONE_WAY","HEDGE"):
         reasons.append("SIGNED_POSITION_MODE_NOT_CONFIRMED")
@@ -65,6 +68,9 @@ def evaluate_readonly_binance_futures(account, *, db_path, durable_verified=Fals
         "mode":"DRY_RUN",
         "account_status":account.get("status","UNVERIFIED"),
         "authenticated_available_usdt":str(available) if available is not None else None,
+        "authenticated_futures_equity_usdt":str(equity) if equity is not None else None,
+        "modeled_loss_budget_3pct_usdt":str(equity*Decimal("0.03")) if equity is not None else None,
+        "equity_basis":"SIGNED_USDT_FUTURES_MARGIN_BALANCE" if equity is not None else None,
         "open_positions":account.get("open_positions") if account.get("account_snapshot_complete") is True else None,
         "open_orders":account.get("open_orders") if account.get("account_snapshot_complete") is True else None,
         "open_conditional_orders":account.get("open_conditional_orders") if account.get("account_snapshot_complete") is True else None,

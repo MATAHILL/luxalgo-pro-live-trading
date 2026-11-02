@@ -11,6 +11,8 @@ class FakeBinance:
         self.calls=[]
         self.answers={
             "/fapi/v3/balance":[{"asset":"USDT","balance":"120","availableBalance":"98"}],
+            "/fapi/v3/account":{"assets":[{"asset":"USDT","walletBalance":"120",
+                 "availableBalance":"98","marginBalance":"118"}]},
             "/fapi/v3/positionRisk":[{"symbol":"BNBUSDT","positionAmt":"0"},
                                      {"symbol":"BIRBUSDT","positionAmt":"0"}],
             "/fapi/v1/openOrders":[],
@@ -41,6 +43,8 @@ def test_all_5_signed_gets_required_and_no_order_dispatch(monkeypatch):
     assert r["position_mode"]=="ONE_WAY"
     assert r["open_positions"]==r["open_orders"]==r["open_conditional_orders"]==0
     assert r["available_usdt"]=="98"
+    assert r["futures_equity_usdt"]=="118"
+    assert r["equity_basis"]=="SIGNED_USDT_FUTURES_MARGIN_BALANCE"
     assert r["orders_enabled"] is False and r["can_trade"] is False
     assert r["acceptance_certified"] is False
     assert c.calls==list(c.answers)
@@ -69,6 +73,11 @@ def test_missing_any_response_or_bad_type_fails_closed(monkeypatch):
         {"/fapi/v1/openAlgoOrders":None},
         {"/fapi/v1/positionSide/dual":{"dualSidePosition":"false"}},
         {"/fapi/v3/balance":[]},
+        {"/fapi/v3/account":{"assets":[]}},
+        {"/fapi/v3/account":{"assets":[{"asset":"USDT","walletBalance":"120",
+            "availableBalance":"98","marginBalance":"NaN"}]}},
+        {"/fapi/v3/account":{"assets":[{"asset":"USDT","walletBalance":"119",
+            "availableBalance":"98","marginBalance":"118"}]}},
         {"/fapi/v3/balance":[{"asset":"USDT","balance":"NaN","availableBalance":"100"}]},
         {"/fapi/v3/positionRisk":[{"symbol":"BNBUSDT"}]},
         {"/fapi/v3/positionRisk":[{"symbol":"BNBUSDT","positionAmt":"nan"}]},

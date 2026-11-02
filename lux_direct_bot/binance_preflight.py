@@ -37,11 +37,12 @@ def snapshot_read_only(client=None):
     c=client if client is not None else BinanceReadOnly(key,secret)
     try:
         balance=c.get("/fapi/v3/balance")
+        account=c.get("/fapi/v3/account")
         positions=c.get("/fapi/v3/positionRisk")
         open_orders=c.get("/fapi/v1/openOrders")
         open_algos=c.get("/fapi/v1/openAlgoOrders")
         mode=c.get("/fapi/v1/positionSide/dual")
-        if not all(isinstance(x,list) for x in (balance,positions,open_orders,open_algos)):
+        if not isinstance(account,dict) or not all(isinstance(x,list) for x in (balance,positions,open_orders,open_algos)):
             raise ValueError("INCOMPLETE_ACCOUNT_INVENTORY")
         if len(positions)>1000 or len(open_orders)>=1000 or len(open_algos)>=1000:
             raise ValueError("PAGINATION_OR_INVENTORY_LIMIT_UNVERIFIED")
@@ -52,6 +53,22 @@ def snapshot_read_only(client=None):
             raise ValueError("USDT_BALANCE_UNVERIFIED")
         available=_nonnegative(balances[0].get("availableBalance"),"available")
         wallet=_nonnegative(balances[0].get("balance"),"wallet")
+        # The wallet/deposit figure is NOT Futures equity. Verify signed
+        # marginBalance, which includes unrealized P&L, against the balance GET.
+        assets=account.get("assets")
+        if not isinstance(assets,list):
+            raise ValueError("SIGNED_ACCOUNT_ASSETS_UNVERIFIED")
+        rows=[x for x in assets if isinstance(x,dict) and x.get("asset")=="USDT"]
+        if len(rows)!=1:
+            raise ValueError("SIGNED_USDT_EQUITY_UNVERIFIED")
+        equity=_nonnegative(rows[0].get("marginBalance"),"futures equity")
+        signed_wallet=_nonnegative(rows[0].get("walletBalance"),"account wallet")
+        signed_available=_nonnegative(rows[0].get("availableBalance"),"account available")
+        tolerance=Decimal("0.00000001")
+        if (abs(signed_wallet-wallet)>tolerance
+                or abs(signed_available-available)>tolerance
+                or available>equity):
+            raise ValueError("SIGNED_FUTURES_BALANCES_DISAGREE")
         active_positions=0
         for p in positions:
             if not isinstance(p,dict) or not isinstance(p.get("symbol"),str):
@@ -69,6 +86,8 @@ def snapshot_read_only(client=None):
             position_mode="HEDGE" if mode["dualSidePosition"] else "ONE_WAY",
             account_snapshot_complete=True,exchange_flat=flat,
             wallet_usdt=str(wallet),available_usdt=str(available),
+            futures_equity_usdt=str(equity),
+            equity_basis="SIGNED_USDT_FUTURES_MARGIN_BALANCE",
             open_positions=active_positions,
             open_orders=len(open_orders),open_conditional_orders=len(open_algos),
             reason="ACCEPTANCE_NOT_CERTIFIED_NO_LIVE_ORDERS")

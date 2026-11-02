@@ -7,6 +7,7 @@ ACCOUNT={
     "account_snapshot_complete":True,
     "position_mode":"ONE_WAY","exchange_flat":True,
     "wallet_usdt":"400","available_usdt":"400",
+    "futures_equity_usdt":"400",
     "open_positions":0,"open_orders":0,"open_conditional_orders":0,
     "can_trade":False,
 }
@@ -27,6 +28,8 @@ PLAN=dict(
 def test_400_usdt_signed_balance_is_not_live_trading_permission():
     x=evaluate_readonly_binance_futures(ACCOUNT,db_path="/tmp/lux-direct-bot.sqlite3",settings=LIMITS)
     assert x["authenticated_available_usdt"]=="400"
+    assert x["authenticated_futures_equity_usdt"]=="400"
+    assert x["modeled_loss_budget_3pct_usdt"]=="12.00"
     assert x["status"]=="BLOCKED_NON_EXECUTING_DIAGNOSTIC"
     assert x["can_trade"] is False and x["orders_enabled"] is False
     assert x["funding_unblocks_live_execution"] is False
@@ -46,6 +49,8 @@ def test_even_full_readback_with_syntactic_limits_still_fails_closed():
     ({"account_snapshot_complete":False},"FULL_EXCHANGE_ORDER_AND_POSITION_READBACK_REQUIRED"),
     ({"available_usdt":"0"},"POSITIVE_SIGNED_FUTURES_AVAILABLE_BALANCE_UNVERIFIED"),
     ({"available_usdt":"NaN"},"POSITIVE_SIGNED_FUTURES_AVAILABLE_BALANCE_UNVERIFIED"),
+    ({"futures_equity_usdt":"NaN"},"SIGNED_USDT_FUTURES_MARGIN_EQUITY_UNVERIFIED"),
+    ({"futures_equity_usdt":"200"},"SIGNED_USDT_FUTURES_MARGIN_EQUITY_UNVERIFIED"),
     ({"position_mode":"HEDGE"},"HEDGE_NATIVE_PROTECTION_AND_RECOVERY_NOT_CERTIFIED"),
     ({"exchange_flat":False},"FLAT_EXCHANGE_INVENTORY_NOT_VERIFIED"),
 ])
