@@ -307,6 +307,39 @@ def operator_status(request: Request, response: Response):
             "note": "BOT ON enables DRY_RUN intake only. Live orders are hard-disabled."}
 
 
+@app.get("/operator/execution-audit")
+def operator_execution_audit(request: Request, response: Response):
+    """Truthful code-path audit, not a live-exchange certification.
+
+    This report explicitly separates authenticated read-only Binance access
+    and the operator's DRY_RUN intake switch from live order transmission.
+    It cannot enable orders and never exposes credentials or account data.
+    """
+    admin_auth(request)
+    response.headers["Cache-Control"] = "private, no-store"
+    response.headers["Referrer-Policy"] = "no-referrer"
+    from binance_transport import LIVE_ORDER_TRANSMISSION
+
+    sender = ("HARD_LOCKED" if LIVE_ORDER_TRANSMISSION is False
+              else "UNSAFE_CODE_FLAG_REQUIRES_REVIEW")
+    return {
+        "mode": MODE,
+        "operator_intake_enabled": operator_enabled(),
+        "webhook_receiver": "INTAKE_AND_DEDUPLICATION_ONLY",
+        "tradingview_origin_certified": False,
+        "binance_authentication": "CHECK_PRIVATE_SIGNED_GET_SEPARATELY",
+        "entry_sender": sender,
+        "production_execution_worker": "NOT_CONNECTED",
+        "native_sl_tp": "NOT_EXCHANGE_CERTIFIED",
+        "automatic_emergency_recovery": "NOT_PRODUCTION_CERTIFIED",
+        "exchange_position_ownership": "NOT_PRODUCTION_CERTIFIED",
+        "acceptance_certified": False,
+        "orders_enabled": False,
+        "can_trade": False,
+        "real_money_orders_sent_by_this_endpoint": 0,
+    }
+
+
 @app.post("/operator/switch")
 async def operator_switch(request: Request, response: Response):
     admin_auth(request)
@@ -327,7 +360,9 @@ async def operator_switch(request: Request, response: Response):
 @app.get("/health")
 def health():
     return {"service": "LUX DIRECT BOT", "mode": MODE, "live_trading": False,
-            "exchange": "Binance Futures (NOT CONNECTED)", "stage": "WEBHOOK_TEST",
+            "exchange": "BINANCE_USDT_M",
+            "exchange_authentication": "NOT_CHECKED_BY_PUBLIC_HEALTH",
+            "stage": "WEBHOOK_TEST",
             "allowed_symbols": sorted(ALLOWED_SYMBOLS),
             "allowed_timeframes": sorted(ALLOWED_TIMEFRAMES)}
 
@@ -360,7 +395,16 @@ async def webhook(token: str, request: Request):
     result = "ACCEPTED" if cur.rowcount else "DUPLICATE"
     record_webhook_attempt(result, "OK" if cur.rowcount else "ALREADY_SEEN")
     return {"result": result, "signal_id": signal[0],
-            "side": signal[2], "mode": MODE}
+            "side": signal[2], "mode": MODE,
+            "levels_status": signal[9],
+            "tradingview_sender_verified": False,
+            "trade_candidate": False,
+            "orders_enabled": False,
+            "execution_blocked_reason": (
+                "LIVE_ORDER_EXECUTION_NOT_CERTIFIED"
+                if signal[9] == "VALID"
+                else "ORIGINAL_ENTRY_SL_TP_UNVERIFIED"
+            )}
 
 def admin_auth(request: Request):
     token = request.headers.get("X-Admin-Token", "")
