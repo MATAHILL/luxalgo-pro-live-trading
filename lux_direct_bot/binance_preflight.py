@@ -38,6 +38,7 @@ def snapshot_read_only(client=None):
     try:
         balance=c.get("/fapi/v3/balance")
         account=c.get("/fapi/v3/account")
+        config=c.get("/fapi/v1/accountConfig")
         positions=c.get("/fapi/v3/positionRisk")
         open_orders=c.get("/fapi/v1/openOrders")
         open_algos=c.get("/fapi/v1/openAlgoOrders")
@@ -48,6 +49,13 @@ def snapshot_read_only(client=None):
             raise ValueError("PAGINATION_OR_INVENTORY_LIMIT_UNVERIFIED")
         if not isinstance(mode,dict) or type(mode.get("dualSidePosition")) is not bool:
             raise ValueError("POSITION_MODE_UNVERIFIED")
+        if not isinstance(config,dict) or any(
+            type(config.get(k)) is not bool
+            for k in ("dualSidePosition","canTrade","multiAssetsMargin")
+        ):
+            raise ValueError("ACCOUNT_CONFIGURATION_UNVERIFIED")
+        if config["dualSidePosition"] != mode["dualSidePosition"]:
+            raise ValueError("CONFLICTING_SIGNED_POSITION_MODE")
         balances=[x for x in balance if isinstance(x,dict) and x.get("asset")=="USDT"]
         if len(balances)!=1:
             raise ValueError("USDT_BALANCE_UNVERIFIED")
@@ -88,6 +96,9 @@ def snapshot_read_only(client=None):
             wallet_usdt=str(wallet),available_usdt=str(available),
             futures_equity_usdt=str(equity),
             equity_basis="SIGNED_USDT_FUTURES_MARGIN_BALANCE",
+            multi_assets_margin=config["multiAssetsMargin"],
+            exchange_reports_can_trade=config["canTrade"],
+            risk_budget_supported=(config["multiAssetsMargin"] is False),
             open_positions=active_positions,
             open_orders=len(open_orders),open_conditional_orders=len(open_algos),
             reason="ACCEPTANCE_NOT_CERTIFIED_NO_LIVE_ORDERS")

@@ -13,6 +13,8 @@ class FakeBinance:
             "/fapi/v3/balance":[{"asset":"USDT","balance":"120","availableBalance":"98"}],
             "/fapi/v3/account":{"assets":[{"asset":"USDT","walletBalance":"120",
                  "availableBalance":"98","marginBalance":"118"}]},
+            "/fapi/v1/accountConfig":{"multiAssetsMargin":False,
+                "canTrade":True,"dualSidePosition":False},
             "/fapi/v3/positionRisk":[{"symbol":"BNBUSDT","positionAmt":"0"},
                                      {"symbol":"BIRBUSDT","positionAmt":"0"}],
             "/fapi/v1/openOrders":[],
@@ -45,6 +47,9 @@ def test_all_5_signed_gets_required_and_no_order_dispatch(monkeypatch):
     assert r["available_usdt"]=="98"
     assert r["futures_equity_usdt"]=="118"
     assert r["equity_basis"]=="SIGNED_USDT_FUTURES_MARGIN_BALANCE"
+    assert r["risk_budget_supported"] is True
+    assert r["multi_assets_margin"] is False
+    assert r["exchange_reports_can_trade"] is True
     assert r["orders_enabled"] is False and r["can_trade"] is False
     assert r["acceptance_certified"] is False
     assert c.calls==list(c.answers)
@@ -74,6 +79,11 @@ def test_missing_any_response_or_bad_type_fails_closed(monkeypatch):
         {"/fapi/v1/positionSide/dual":{"dualSidePosition":"false"}},
         {"/fapi/v3/balance":[]},
         {"/fapi/v3/account":{"assets":[]}},
+        {"/fapi/v1/accountConfig":None},
+        {"/fapi/v1/accountConfig":{"multiAssetsMargin":"false","canTrade":True,
+            "dualSidePosition":False}},
+        {"/fapi/v1/accountConfig":{"multiAssetsMargin":False,"canTrade":True,
+            "dualSidePosition":True}},
         {"/fapi/v3/account":{"assets":[{"asset":"USDT","walletBalance":"120",
             "availableBalance":"98","marginBalance":"NaN"}]}},
         {"/fapi/v3/account":{"assets":[{"asset":"USDT","walletBalance":"119",
@@ -107,3 +117,22 @@ def test_auth_required_for_private_binance_readback(monkeypatch,tmp_path):
         assert r.status_code==200
         assert r.headers["cache-control"]=="private, no-store"
         assert r.json()["orders_enabled"] is False
+
+def test_signed_multi_asset_and_disabled_exchange_permissions_stay_blocked(monkeypatch):
+    monkeypatch.setenv("BINANCE_API_KEY","fake")
+    monkeypatch.setenv("BINANCE_API_SECRET","fake")
+    multi=snapshot_read_only(FakeBinance(**{
+        "/fapi/v1/accountConfig":{"multiAssetsMargin":True,
+             "canTrade":True,"dualSidePosition":False}
+    }))
+    assert multi["status"]=="CONNECTED_READ_ONLY"
+    assert multi["multi_assets_margin"] is True
+    assert multi["risk_budget_supported"] is False
+    assert multi["orders_enabled"] is False
+    halted=snapshot_read_only(FakeBinance(**{
+        "/fapi/v1/accountConfig":{"multiAssetsMargin":False,
+             "canTrade":False,"dualSidePosition":False}
+    }))
+    assert halted["status"]=="CONNECTED_READ_ONLY"
+    assert halted["exchange_reports_can_trade"] is False
+    assert halted["can_trade"] is False

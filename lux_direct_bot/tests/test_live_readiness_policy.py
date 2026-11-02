@@ -8,6 +8,7 @@ ACCOUNT={
     "position_mode":"ONE_WAY","exchange_flat":True,
     "wallet_usdt":"400","available_usdt":"400",
     "futures_equity_usdt":"400",
+    "multi_assets_margin":False,"exchange_reports_can_trade":True,
     "open_positions":0,"open_orders":0,"open_conditional_orders":0,
     "can_trade":False,
 }
@@ -30,6 +31,7 @@ def test_400_usdt_signed_balance_is_not_live_trading_permission():
     assert x["authenticated_available_usdt"]=="400"
     assert x["authenticated_futures_equity_usdt"]=="400"
     assert x["modeled_loss_budget_3pct_usdt"]=="12.00"
+    assert x["risk_budget_supported"] is True
     assert x["status"]=="BLOCKED_NON_EXECUTING_DIAGNOSTIC"
     assert x["can_trade"] is False and x["orders_enabled"] is False
     assert x["funding_unblocks_live_execution"] is False
@@ -53,6 +55,8 @@ def test_even_full_readback_with_syntactic_limits_still_fails_closed():
     ({"futures_equity_usdt":"200"},"SIGNED_USDT_FUTURES_MARGIN_EQUITY_UNVERIFIED"),
     ({"position_mode":"HEDGE"},"HEDGE_NATIVE_PROTECTION_AND_RECOVERY_NOT_CERTIFIED"),
     ({"exchange_flat":False},"FLAT_EXCHANGE_INVENTORY_NOT_VERIFIED"),
+    ({"multi_assets_margin":True},"SIGNED_SINGLE_ASSET_MARGIN_MODE_REQUIRED"),
+    ({"exchange_reports_can_trade":False},"BINANCE_FUTURES_TRADING_PERMISSION_UNVERIFIED_OR_DISABLED"),
 ])
 def test_funding_or_unknown_exchange_state_never_arms_bot(changes,reason):
     x=evaluate_readonly_binance_futures(ACCOUNT|changes,db_path="/tmp/app.sqlite",settings=LIMITS)
@@ -156,3 +160,12 @@ def test_hedge_mode_is_accepted_as_account_setting_but_cannot_arm_orders():
     assert "HEDGE_NATIVE_PROTECTION_AND_RECOVERY_NOT_CERTIFIED" in report["blocked_reasons"]
     assert "PRODUCTION_ENTRY_SENDER_NOT_CERTIFIED" in report["blocked_reasons"]
     assert report["orders_enabled"] is False and report["can_trade"] is False
+
+def test_multiasset_does_not_publish_a_usdt_only_risk_budget():
+    report=evaluate_readonly_binance_futures(
+        ACCOUNT | {"multi_assets_margin":True},
+        db_path="/var/data/direct.sqlite3",durable_verified=True,settings=LIMITS)
+    assert report["risk_budget_supported"] is False
+    assert report["modeled_loss_budget_3pct_usdt"] is None
+    assert "SIGNED_SINGLE_ASSET_MARGIN_MODE_REQUIRED" in report["blocked_reasons"]
+    assert report["can_trade"] is False

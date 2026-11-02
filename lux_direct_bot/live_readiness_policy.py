@@ -45,6 +45,11 @@ def evaluate_readonly_binance_futures(account, *, db_path, durable_verified=Fals
         reasons.append("POSITIVE_SIGNED_FUTURES_AVAILABLE_BALANCE_UNVERIFIED")
     if equity is None or (available is not None and available>equity):
         reasons.append("SIGNED_USDT_FUTURES_MARGIN_EQUITY_UNVERIFIED")
+    multi_asset_mode=account.get("multi_assets_margin")
+    if multi_asset_mode is not False:
+        reasons.append("SIGNED_SINGLE_ASSET_MARGIN_MODE_REQUIRED")
+    if account.get("exchange_reports_can_trade") is not True:
+        reasons.append("BINANCE_FUTURES_TRADING_PERMISSION_UNVERIFIED_OR_DISABLED")
     mode=account.get("position_mode")
     if mode not in ("ONE_WAY","HEDGE"):
         reasons.append("SIGNED_POSITION_MODE_NOT_CONFIRMED")
@@ -69,7 +74,11 @@ def evaluate_readonly_binance_futures(account, *, db_path, durable_verified=Fals
         "account_status":account.get("status","UNVERIFIED"),
         "authenticated_available_usdt":str(available) if available is not None else None,
         "authenticated_futures_equity_usdt":str(equity) if equity is not None else None,
-        "modeled_loss_budget_3pct_usdt":str(equity*Decimal("0.03")) if equity is not None else None,
+        "modeled_loss_budget_3pct_usdt":(
+            str(equity*Decimal("0.03"))
+            if equity is not None and multi_asset_mode is False else None
+        ),
+        "risk_budget_supported":multi_asset_mode is False,
         "equity_basis":"SIGNED_USDT_FUTURES_MARGIN_BALANCE" if equity is not None else None,
         "open_positions":account.get("open_positions") if account.get("account_snapshot_complete") is True else None,
         "open_orders":account.get("open_orders") if account.get("account_snapshot_complete") is True else None,
