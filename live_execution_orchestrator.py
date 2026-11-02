@@ -17,7 +17,8 @@ from live_futures_engine import (
 from live_execution_coordinator import install,control,halt,read_rows,risk_reserve
 
 def persist_state(open_connection, event_id, state, *, entry_order_id=None,
-                  stop_order_id=None, take_order_id=None, detail=None):
+                  stop_order_id=None, take_order_id=None, detail=None,
+                  acceptance_approval_id=None, acceptance_plan=None):
     """Compare-and-set milestones; late workers cannot overwrite HALT/closure.
 
     No generic route to CLOSED_VERIFIED: closure needs separate exchange proof.
@@ -46,9 +47,22 @@ def persist_state(open_connection, event_id, state, *, entry_order_id=None,
                 # Serialize the dispatch claim with operator OFF/HALT and
                 # reservations. A check in a previous transaction is stale.
                 from live_execution_coordinator import LOCK_ID
-                from production_bot_control import require_operator_on
                 cur.execute('SELECT pg_advisory_xact_lock(%s)', (LOCK_ID,))
-                require_operator_on(con)
+                if acceptance_approval_id is None:
+                    from production_bot_control import require_operator_on
+                    require_operator_on(con)
+                else:
+                    # Acceptance has its own exact-event authority. Recheck it
+                    # in the dispatch transaction, not just before reservation.
+                    if not EXCHANGE_WRITE_RELEASE or AUTOMATIC_WORKER_RELEASE:
+                        raise LiveSafetyError('Acceptance dispatch release gates rejected')
+                    if (not isinstance(acceptance_plan, dict) or
+                        acceptance_plan.get('event_id') != event_id):
+                        raise LiveSafetyError('Acceptance dispatch event mismatch')
+                    if control(con)['halted'] is not False:
+                        raise LiveSafetyError('Acceptance emergency HALT active at dispatch')
+                    from acceptance_authorization import require_approval
+                    require_approval(con, acceptance_approval_id, acceptance_plan)
             cur.execute("""UPDATE luxalgo_prod_execution_ledger
                            SET state=%s,
                                entry_order_id=COALESCE(%s,entry_order_id),
@@ -257,7 +271,7 @@ def assert_existing_protected_exposure(rows,snapshot):
             "unknown_orders":0,"unknown_triggers":0}
 
 
-def execute_confirmed_signal(open_connection,plan,client=None):
+def execute_confirmed_signal(open_connection,plan,client=None,*,acceptance_approval_id=None):
     """Serialized journal-to-exchange flow. NOT callable under current source lock.
 
     Deliberately refuses to run if exchange-write source constant is false.
@@ -265,28 +279,56 @@ def execute_confirmed_signal(open_connection,plan,client=None):
     """
     if not EXCHANGE_WRITE_RELEASE:
         raise LiveSafetyError("SOURCE_LOCKED: live order dispatch not released")
+    if acceptance_approval_id is not None and AUTOMATIC_WORKER_RELEASE:
+        raise LiveSafetyError('Acceptance requires continuous automation to remain locked')
     client=client or GateLiveClient()
     with open_connection() as con:
         install(con)
+        if acceptance_approval_id is not None:
+            from live_execution_coordinator import LOCK_ID
+            # Serialize inventory checks and reservation with every risk writer.
+            con.execute('SELECT pg_advisory_xact_lock(%s)', (LOCK_ID,))
         if control(con)["halted"]:
             raise LiveSafetyError("Production emergency halt active")
-        from production_bot_control import require_operator_on
-        require_operator_on(con)
+        if acceptance_approval_id is None:
+            from production_bot_control import require_operator_on
+            require_operator_on(con)
+        else:
+            # A reviewed one-shot acceptance does not require a certificate
+            # from an earlier trade. All source/env/HALT/risk gates still apply.
+            from acceptance_authorization import require_approval
+            require_approval(con,acceptance_approval_id,plan,claim=True)
         # A fresh account snapshot must have no untracked orders before sending.
         snap=client.snapshot()
         metadata=client.request('GET',PREFIX+'/contracts/'+plan['contract'])
         verify_execution_preflight(plan,metadata,snap)
         existing=read_rows(con)
         assert_existing_protected_exposure(existing,snap)
+        if acceptance_approval_id is not None and (
+            snap['positions'] or snap['orders'] or snap['triggers'] or
+            any(row['state']!='CLOSED_VERIFIED' for row in existing)
+        ):
+            raise LiveSafetyError('Acceptance requires a flat reconciled account')
         verified_equity,_=verified_account_equity(snap["account"])
         risk_reserve(con,plan,snap["positions"],verified_equity)
     event=plan["event_id"]
     entry_verified=False
     # Re-read operator intent after reservation and before exchange POST.
     with open_connection() as con:
-        from production_bot_control import require_operator_on
-        require_operator_on(con)
-    persist_state(open_connection,event,"SENDING")
+        if acceptance_approval_id is None:
+            from production_bot_control import require_operator_on
+            require_operator_on(con)
+        else:
+            from acceptance_authorization import require_approval
+            require_approval(con,acceptance_approval_id,plan)
+            if control(con)['halted'] is not False:
+                raise LiveSafetyError('Acceptance emergency HALT active before dispatch')
+    if acceptance_approval_id is None:
+        persist_state(open_connection,event,"SENDING")
+    else:
+        persist_state(open_connection,event,"SENDING",
+                      acceptance_approval_id=acceptance_approval_id,
+                      acceptance_plan=plan)
     # From this point on, a lost response can still mean an accepted order.
     # Therefore never retry POST after an ambiguous outcome.
     try:
@@ -411,4 +453,5 @@ def restart_reconcile(open_connection,client=None):
             or result['untracked_open_triggers']):
         return {"status":"HALTED_REVIEW_REQUIRED","orders_resubmitted":0,"readback":result}
     return {"status":"RECONCILED_READ_ONLY","orders_resubmitted":0,"readback":result}
+
 
