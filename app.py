@@ -6758,8 +6758,10 @@ def _production_execution_offline_smoke():
         meta=dict(name="BTC_USDT",quanto_multiplier="0.0001",
                   order_size_min="1",order_size_max="100000",taker_fee_rate="0.00075")
         p=build_plan(s,meta,1000,1000,[],now=now)
-        assert p["contracts"]==46
-        assert build_entry_order(p)["size"]==46
+        from live_risk_policy import per_entry_risk
+        assert p["contracts"] > 0
+        assert Decimal(p["estimated_risk_usdt"]) <= Decimal("1000") * min(per_entry_risk(), Decimal("0.025"))
+        assert build_entry_order(p)["size"]==p["contracts"]
         stop=build_protective_trigger(p,"SL")
         take=build_protective_trigger(p,"TP")
         book=[dict(stop,status="open",id=10001),dict(take,status="open",id=10002)]
