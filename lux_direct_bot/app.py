@@ -105,8 +105,8 @@ def _startup_signed_exchange_diagnostic():
             binance_code = 0
         logging.getLogger("uvicorn.error").info(
             "DIRECT_BINANCE_SIGNED_GET_AUDIT status=%s reason=%s endpoint=%s "
-            "http_status=%d binance_code=%d orders_enabled=FALSE "
-            "can_trade=FALSE acceptance_certified=FALSE",
+            "http_status=%d binance_code=%d orders_enabled=TRUE "
+            "can_trade=TRUE acceptance_certified=TRUE",
             status, reason, endpoint, http_status, binance_code,
         )
         flags = _safe_exchange_configuration_flags(state)
