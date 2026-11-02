@@ -3,6 +3,7 @@ WORKDIR /app
 COPY requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt
 COPY app.py dashboard.py lite.py connect.py exchange_diagnostics.py binance_account.py binance_preflight.py signal_levels.py live_readiness_policy.py durable_sqlite.py order_plan.py execution_runner.py binance_transport.py exchange_verification.py offline_sizing.py live_execution_candidate.py verify_signal_backup.py ./
+COPY Dockerfile ./Dockerfile
 COPY tests ./tests
 RUN python -m pytest -q tests
 ENV PORT=10000
