@@ -16,6 +16,7 @@ from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation, ROUND_FLOOR
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
+from live_risk_policy import per_entry_risk
 
 HOST = "https://api.gateio.ws"
 PREFIX = "/api/v4/futures/usdt"
@@ -23,7 +24,6 @@ PREFIX = "/api/v4/futures/usdt"
 # This is NOT an environment variable and MUST stay False until verification.
 EXCHANGE_WRITE_RELEASE = False
 MAX_POSITIONS = 5
-PER_ENTRY_RISK = Decimal("0.005")
 MAX_AGGREGATE_RISK = Decimal("0.025")
 MAX_LEVERAGE = Decimal("5")
 MAX_SIGNAL_AGE_SECONDS = 60
@@ -164,7 +164,7 @@ def active_positions(positions):
     return out
 
 def build_plan(signal, metadata, equity, available, positions, reserved_risk=0, now=None):
-    """Contract-count plan, conservative 0.5% per entry / 2.5% aggregate.
+    """Contract-count plan with configured per-entry / preserved 2.5% aggregate cap.
 
     No paper base-unit sizing is ever converted directly into a Gate order.
     Fail closed if contract units, increments, leverage or account state unclear.
@@ -213,7 +213,7 @@ def build_plan(signal, metadata, equity, available, positions, reserved_risk=0, 
     reserve=Decimal(str(reserved_risk))
     if not reserve.is_finite() or reserve<0:
         raise LiveSafetyError("Invalid reserved risk")
-    budget=min(eq*PER_ENTRY_RISK,eq*MAX_AGGREGATE_RISK-reserve)
+    budget=min(eq*per_entry_risk(),eq*MAX_AGGREGATE_RISK-reserve)
     if budget<=0:
         raise LiveSafetyError("Aggregate risk exhausted")
     # Model stop-distance loss PLUS two taker fees and two 0.1% slippage
@@ -229,12 +229,13 @@ def build_plan(signal, metadata, equity, available, positions, reserved_risk=0, 
     unit_fee_slip=(e*multiplier)*(2*fee+2*slip)
     unit_loss=unit_stop_loss+unit_fee_slip
     units_by_risk=(budget/unit_loss).to_integral_value(rounding=ROUND_FLOOR)
-    units_by_margin=(av*lev/(e*multiplier)).to_integral_value(rounding=ROUND_FLOOR)
+    unit_margin=(e*multiplier)*(1+slip)*(Decimal(1)/lev+fee)
+    units_by_margin=(av/unit_margin).to_integral_value(rounding=ROUND_FLOOR)
     count=min(units_by_risk,units_by_margin,whole_order_size_max)
     if count<order_size_min or count<1:
         raise LiveSafetyError("Insufficient margin/risk for exchange minimum lot")
     risk=count*unit_loss
-    if risk>eq*PER_ENTRY_RISK or risk+reserve>eq*MAX_AGGREGATE_RISK:
+    if risk>eq*per_entry_risk() or risk+reserve>eq*MAX_AGGREGATE_RISK:
         raise LiveSafetyError("Risk cap crossed")
     return dict(event_id=event,client_text=text,contract=contract,side=side,timeframe=tf,
                 received_epoch=int(signal['received_epoch']),
@@ -315,7 +316,7 @@ def verify_execution_preflight(plan, metadata, snapshot, now=None):
         raise LiveSafetyError('Insufficient fresh margin including entry fee and slippage')
     reserved=dec(plan.get('estimated_risk_usdt'),'modeled risk')
     fresh_risk=quantity*multiplier*(abs(entry-sl)+max(entry,mark)*(2*fee+2*slip))
-    if reserved>equity*PER_ENTRY_RISK or fresh_risk>min(reserved,equity*PER_ENTRY_RISK):
+    if reserved>equity*per_entry_risk() or fresh_risk>min(reserved,equity*per_entry_risk()):
         raise LiveSafetyError('Fresh equity no longer supports modeled risk')
     return {'verified':True,'orders_sent':0,'actual_leverage':str(actual)}
 

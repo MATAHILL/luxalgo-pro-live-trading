@@ -6707,7 +6707,9 @@ def _production_operator_bootstrap():
             status=state(con)
         print('LIVE_BOT_SERVER_STATE_' + ('ON' if status['bot_on'] else 'OFF') +
               ' source_locked=' + str('SOURCE_LOCKED' in status['safety_gates']) +
-              ' halt=' + str(status['halt_active']),flush=True)
+              ' halt=' + str(status['halt_active']) +
+              ' per_trade_risk_percent=' + status['risk_policy']['per_trade_risk_percent'] +
+              ' aggregate_risk_percent=' + status['risk_policy']['aggregate_risk_percent'],flush=True)
     except (psycopg.Error,RuntimeError,OSError,ValueError,TypeError,KeyError) as exc:
         app.logger.warning('LIVE_BOT_SERVER_STATE_UNAVAILABLE error=%s',
                            type(exc).__name__)

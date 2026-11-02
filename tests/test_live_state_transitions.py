@@ -1,7 +1,7 @@
 """Offline journal compare-and-set contract tests; no exchange operations."""
 import unittest
 from contextlib import nullcontext
-from unittest.mock import MagicMock, Mock
+from unittest.mock import MagicMock, Mock, patch
 from live_execution_orchestrator import persist_state, require_full_entry_readback, require_linked_trigger_acknowledgments
 from live_futures_engine import LiveSafetyError, AckUnknown
 
@@ -21,12 +21,23 @@ class JournalTransitions(unittest.TestCase):
             ('PROTECTION_PENDING','ENTRY_CONFIRMED',{}),
             ('PROTECTED','PROTECTION_PENDING',{'stop_order_id':'124','take_order_id':'125'}),
         ):
-            with self.subTest(state=state):
+            with self.subTest(state=state), patch('production_bot_control.require_operator_on', return_value=True):
                 connect,cur=self.connection()
                 self.assertEqual(persist_state(connect,'event123',state,**kwargs),state)
                 sql,params=cur.execute.call_args.args
                 self.assertIn('WHERE event_id=%s AND state=%s',sql)
                 self.assertEqual(params[6],previous)
+
+    def test_dispatch_claim_rechecks_operator_under_same_transaction_lock(self):
+        connect, cur = self.connection()
+        def stopped(con):
+            self.assertIn('pg_advisory_xact_lock', cur.execute.call_args.args[0])
+            raise RuntimeError('OPERATOR_OFF')
+        with patch('production_bot_control.require_operator_on', side_effect=stopped):
+            with self.assertRaisesRegex(RuntimeError, 'OPERATOR_OFF'):
+                persist_state(connect, 'event123', 'SENDING')
+        self.assertFalse(any('UPDATE luxalgo_prod_execution_ledger' in str(c)
+                             for c in cur.execute.call_args_list))
 
     def test_stale_worker_rejected_instead_of_overwriting_halt(self):
         connect,cur=self.connection(affected=0)

@@ -7,10 +7,12 @@ from __future__ import annotations
 from decimal import Decimal, InvalidOperation
 from datetime import datetime, timezone
 from live_futures_engine import (
-    MIGRATION_SQL, LiveSafetyError, MAX_POSITIONS, PER_ENTRY_RISK, MAX_AGGREGATE_RISK,
+    MIGRATION_SQL, LiveSafetyError, MAX_POSITIONS, MAX_AGGREGATE_RISK,
     GateLiveClient, build_plan, evaluate_protection, reconcile_ledger, active_positions,
     verify_ledger_position,
 )
+
+from live_risk_policy import per_entry_risk
 
 LOCK_ID = 805513217
 
@@ -93,8 +95,8 @@ def risk_reserve(con,plan,exchange_positions,account_equity):
             any(not amount.is_finite() or amount<=0 for amount in reserved)):
             raise LiveSafetyError("Invalid reserved risk or account equity")
         used=sum(reserved,Decimal("0"))
-        if incremental>equity*PER_ENTRY_RISK:
-            raise LiveSafetyError("Atomic per-entry 0.5% risk cap")
+        if incremental>equity*per_entry_risk():
+            raise LiveSafetyError("Atomic per-entry " + format((per_entry_risk()*100).normalize(), 'f') + "% risk cap")
         if used+incremental>equity*MAX_AGGREGATE_RISK:
             raise LiveSafetyError("Atomic account-wide risk cap")
         cur.execute("""INSERT INTO luxalgo_prod_execution_ledger(

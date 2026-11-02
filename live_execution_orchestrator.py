@@ -42,6 +42,13 @@ def persist_state(open_connection, event_id, state, *, entry_order_id=None,
         raise LiveSafetyError('Protected journal requires two distinct native order IDs')
     with open_connection() as con:
         with con.cursor() as cur:
+            if state == 'SENDING':
+                # Serialize the dispatch claim with operator OFF/HALT and
+                # reservations. A check in a previous transaction is stale.
+                from live_execution_coordinator import LOCK_ID
+                from production_bot_control import require_operator_on
+                cur.execute('SELECT pg_advisory_xact_lock(%s)', (LOCK_ID,))
+                require_operator_on(con)
             cur.execute("""UPDATE luxalgo_prod_execution_ledger
                            SET state=%s,
                                entry_order_id=COALESCE(%s,entry_order_id),
