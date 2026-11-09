@@ -37,7 +37,7 @@ app = Flask(__name__)
 _password_for_cookie = os.getenv('TERMINAL_PASSWORD', '')
 app.secret_key = hmac.new(_password_for_cookie.encode('utf-8'), b'luxalgo-pro/session/v1', hashlib.sha256).digest()
 app.config.update(SESSION_COOKIE_SECURE=True, SESSION_COOKIE_HTTPONLY=True,
-                  SESSION_COOKIE_SAMESITE='Strict', PERMANENT_SESSION_LIFETIME=28800,
+                  SESSION_COOKIE_SAMESITE='Lax', PERMANENT_SESSION_LIFETIME=28800,
                   MAX_CONTENT_LENGTH=400000)
 _login_failures = {}
 _login_lock = Lock()
