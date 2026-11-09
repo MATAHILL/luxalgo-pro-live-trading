@@ -2801,10 +2801,10 @@ def webhook():
         return jsonify(error='JSON object required', format_error=reason, orders_placed=0), 400
     if not authorized(data):
         return jsonify(error='Unauthorized'), 401
-    symbol = str(data.get('symbol', data.get('ticker', ''))).upper().removeprefix('BINANCE:').removesuffix('.P')
+    from live_signal_identity import normalize_luxalgo_side, normalize_luxalgo_symbol
+    symbol = normalize_luxalgo_symbol(data.get('symbol', data.get('ticker', ''))) or ''
     side = str(data.get('side', data.get('alert', ''))).strip().upper()
     tf = str(data.get('tf', '')).strip().lower()
-    from live_signal_identity import normalize_luxalgo_side
     canonical_side=normalize_luxalgo_side(side)
     allowed = {side: canonical_side} if canonical_side else {}
     if (not re.fullmatch(r'[A-Z0-9]{3,25}USDT', symbol)
