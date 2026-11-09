@@ -82,8 +82,10 @@ class NonTradingFaultInjections(unittest.TestCase):
     def test_unknown_emergency_close_requires_manual_review(self):
         c=Mock()
         c.request.side_effect=AckUnknown("Simulated timeout")
-        with patch("live_emergency_one_shot_claim.consume_one_shot_recovery_claim",
-                   return_value=True):
+        with (patch("live_execution_orchestrator.require_safe_emergency_close_inventory",
+                    return_value={"verified": True}),
+              patch("live_emergency_one_shot_claim.consume_one_shot_recovery_claim",
+                    return_value=True)):
             status=emergency_close_once(c,PLAN,
                 durable_claim=mock_durable_claim(PLAN),open_connection=lambda:None)
         self.assertFalse(status["closed_verified"])
