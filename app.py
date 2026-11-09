@@ -2372,7 +2372,7 @@ def terminal_live_unlock_readiness():
         from live_futures_engine import (
             GateLiveClient, LiveSafetyError, EXCHANGE_WRITE_RELEASE)
         from live_execution_orchestrator import AUTOMATIC_WORKER_RELEASE
-        from live_unlock_preflight import assess_unlock_readiness
+        from live_unlock_preflight import assess_unlock_readiness, diagnose_signal_feed
         with _db_connect() as con:
             current = state(con)
             with con.cursor() as cur:
@@ -2380,6 +2380,15 @@ def terminal_live_unlock_readiness():
                                FROM luxalgo_prod_execution_ledger
                                WHERE state <> 'CLOSED_VERIFIED'""")
                 count = cur.fetchone()
+                cur.execute("""SELECT MAX(received_at) AS latest_received_at,
+                      MAX(received_at) FILTER (WHERE source_bar_id IS NOT NULL
+                          AND level_status='VALID' AND order_type='MARKET'
+                          AND timeframe IN ('5m','15m')) AS last_qualified_at,
+                      COUNT(*) FILTER (WHERE source_bar_id IS NOT NULL
+                          AND level_status='VALID' AND order_type='MARKET'
+                          AND timeframe IN ('5m','15m'))::int AS eligible_count
+                      FROM luxalgo_live_signal_handoff""")
+                feed = cur.fetchone()
             if count is None:
                 raise RuntimeError('Production execution ledger unavailable')
         try:
@@ -2393,6 +2402,10 @@ def terminal_live_unlock_readiness():
             current, snapshot, sender_released=EXCHANGE_WRITE_RELEASE,
             worker_released=AUTOMATIC_WORKER_RELEASE,
             unresolved_ledger_rows=count['unresolved'])
+        report['signal_feed'] = diagnose_signal_feed(
+            latest_received_at=feed.get('latest_received_at') if isinstance(feed,dict) else None,
+            last_qualified_at=feed.get('last_qualified_at') if isinstance(feed,dict) else None,
+            eligible_count=feed.get('eligible_count') if isinstance(feed,dict) else None)
         report['exchange_snapshot_available'] = exchange_available
         report['exchange_fetched_at'] = snapshot.get('fetched_at') if snapshot else None
         response = jsonify(report)
