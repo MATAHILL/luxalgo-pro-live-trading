@@ -25,6 +25,19 @@ class BrowserLiveActivationTests(unittest.TestCase):
             self.assertEqual(login.status_code,200)
             self.assertIn(b"LUXALGO PRO",login.data)
 
+    def test_login_cookie_survives_cross_site_top_level_navigation(self):
+        c=backend.app.test_client()
+        with patch.dict(os.environ,{"TERMINAL_PASSWORD":"x"*30,"TERMINAL_USER":"admin"}):
+            r=c.post("/login",data={
+                "username":"admin","password":"x"*30,
+                "next":"/live-activation"})
+        self.assertEqual(r.status_code,303)
+        self.assertEqual(r.headers["Location"],"/live-activation")
+        cookie=r.headers["Set-Cookie"]
+        self.assertIn("SameSite=Lax",cookie)
+        self.assertIn("Secure",cookie)
+        self.assertIn("HttpOnly",cookie)
+
     def test_existing_json_clients_get_401_not_html(self):
         c=backend.app.test_client()
         with patch.dict(os.environ,{"TERMINAL_PASSWORD":"x"*30,"TERMINAL_USER":"admin"}):
