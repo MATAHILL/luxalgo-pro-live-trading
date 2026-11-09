@@ -2061,6 +2061,12 @@ def _terminal_guard():
     if len(os.getenv('TERMINAL_PASSWORD', '')) < 24:
         return Response('Private terminal unavailable. Set a password of at least 24 characters in Render.',status=503)
     if request.path.startswith('/terminal/'):
+        # Real browser navigations should display the sign-in form, not raw
+        # JSON. JavaScript/API clients still receive a proper 401 response.
+        if (request.method == 'GET' and
+                request.accept_mimetypes['text/html'] >
+                    request.accept_mimetypes['application/json']):
+            return redirect(url_for('terminal_login', next=request.path),code=303)
         return jsonify(error='Session expired; sign in again',login_url='/login'),401
     return redirect(url_for('terminal_login', next=request.path),code=303)
 
@@ -2096,6 +2102,81 @@ def terminal_login():
     session.clear();session.permanent=True
     session['authenticated']=True;session['user']=name;session['csrf_token']=secrets.token_urlsafe(32)
     return redirect(_safe_next(request.form.get('next','/')),code=303)
+
+
+# Human-facing activation status: authentication and READ-ONLY diagnostics.
+# The protected /terminal/live-execution/unlock-readiness endpoint remains JSON.
+ACTIVATION_PAGE = '''<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LUXALGO PRO · Live Activation</title>
+<style>
+body{background:#081522;color:#ecf6ff;font:16px system-ui,Arial,sans-serif;margin:0;padding:28px}
+main{max-width:720px;margin:28px auto;background:#142b40;padding:28px;border:1px solid #355875;border-radius:16px}
+h1{margin:0 0 12px;font-size:25px}h2{font-size:18px;margin-top:25px}
+p{color:#bcd2e4;line-height:1.55}.status{color:#ffcc80;font-weight:700}
+table{width:100%;border-collapse:collapse;margin:15px 0}
+th,td{text-align:left;border-bottom:1px solid #33516b;padding:12px 6px;overflow-wrap:anywhere}
+th{color:#acc9df;font-weight:500;width:42%}
+a{color:#94d9ff}nav{display:flex;flex-wrap:wrap;gap:16px;margin-top:20px}
+.small{font-size:13px}
+</style></head><body><main>
+<h1>LUXALGO PRO · Live Activation</h1>
+<p>This is your authenticated live-readiness page. It does not send orders, change exchange settings, or lift any safety locks.</p>
+<p class="status">{{ summary }}</p>
+<table>
+<tr><th>Exchange</th><td>Gate.io USDT Futures</td></tr>
+<tr><th>Operator requested ON</th><td>{{ operator_on }}</td></tr>
+<tr><th>Orders enabled</th><td>{{ orders_enabled }}</td></tr>
+<tr><th>Live certification</th><td>{{ certified }}</td></tr>
+<tr><th>Emergency HALT</th><td>{{ halted }}</td></tr>
+<tr><th>Safety gates</th><td>{{ gates }}</td></tr>
+<tr><th>Last stored LuxAlgo signal (UTC)</th><td>{{ last_signal }}</td></tr>
+</table>
+<h2>What next?</h2>
+<p>Live trading requires a confirmed, protected acceptance order and verified recovery behavior before the operator can enable automated execution. A successful sign-in does not enable real-money orders.</p>
+<nav><a href="/">Open trading dashboard</a>
+<a href="/terminal/live-execution/unlock-readiness">View detailed readiness data</a></nav>
+<p class="small">If this page works but direct readiness links do not, use the links above in the same browser. Cookies must be enabled for this site.</p>
+</main></body></html>'''
+
+
+@app.get('/live-activation')
+def terminal_live_activation_page():
+    """Browser-friendly login destination with fail-closed live-readiness status."""
+    if not _terminal_permitted():
+        return redirect(url_for('terminal_login', next='/live-activation'),code=303)
+    summary='Live activation blocked until independent verification'
+    operator_on=orders_enabled=certified='OFF / NOT VERIFIED'
+    halted='UNVERIFIED'
+    gates='STATE_UNAVAILABLE'
+    last_signal='UNAVAILABLE'
+    try:
+        from production_bot_control import state
+        with _db_connect() as con:
+            status=state(con)
+            with con.cursor() as cur:
+                cur.execute('SELECT MAX(received_at) AS latest FROM luxalgo_live_signal_handoff')
+                row=cur.fetchone()
+        operator_on='YES' if status.get('operator_requested_on') is True else 'NO'
+        orders_enabled='YES' if status.get('orders_enabled') is True else 'NO'
+        certified='YES' if status.get('certified') is True else 'NO'
+        halted='YES' if status.get('halt_active') is True else 'NO'
+        gates=', '.join(str(g) for g in status.get('safety_gates',[])) or 'NONE'
+        last_signal=(row['latest'].isoformat()
+                     if row and row.get('latest') else 'NO SIGNALS RECORDED')
+        if status.get('orders_enabled') is True:
+            summary='Operator reports orders enabled; verify exchange protections'
+    except (psycopg.Error,RuntimeError,OSError,ValueError,TypeError,KeyError):
+        app.logger.warning('Live activation page unable to verify control status')
+        summary='Activation status unavailable; treat live trading as OFF'
+    response=Response(render_template_string(
+        ACTIVATION_PAGE, summary=summary, operator_on=operator_on,
+        orders_enabled=orders_enabled, certified=certified, halted=halted,
+        gates=gates,last_signal=last_signal),mimetype='text/html')
+    response.headers['Cache-Control']='private, no-store'
+    response.headers['X-Frame-Options']='DENY'
+    response.headers['X-Content-Type-Options']='nosniff'
+    return response
 
 
 def _csrf_valid():
