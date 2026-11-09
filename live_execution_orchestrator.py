@@ -152,6 +152,59 @@ def full_close_oneway_order(plan):
         order["auto_size"]="close_long" if plan["side"]=="LONG" else "close_short"
     return order
 
+def require_safe_emergency_close_inventory(client, plan, now_epoch=None):
+    """Fresh authenticated GET evidence required BEFORE consuming a close claim.
+
+    A one-shot emergency close is dangerous if the exchange position has
+    changed since the caller prepared its plan. Never close on stale, missing,
+    hedge-mode-mismatched or multi-position exposure. No exchange writes.
+    """
+    if not isinstance(plan, dict) or plan.get("side") not in ("LONG", "SHORT"):
+        raise LiveSafetyError("Missing exact emergency close plan")
+    expected_qty = dec(plan.get("contracts"), "emergency contracts")
+    if expected_qty != expected_qty.to_integral_value():
+        raise LiveSafetyError("Non-integer emergency position contracts")
+    mode = plan.get("position_mode")
+    if mode not in ("single", "dual"):
+        raise LiveSafetyError("Unverified emergency account mode")
+    snap = client.snapshot()  # authenticated Gate.io GET only
+    if not isinstance(snap,dict) or snap.get("source")!="GATE_IO_LIVE_FUTURES":
+        raise LiveSafetyError("Unverified emergency exchange source")
+    raw_timestamp=snap.get("fetched_at")
+    now_epoch=time.time() if now_epoch is None else now_epoch
+    if isinstance(raw_timestamp,bool) or isinstance(now_epoch,bool):
+        raise LiveSafetyError("Invalid exchange inventory timestamp")
+    try:
+        age=Decimal(str(now_epoch))-Decimal(str(raw_timestamp))
+    except (InvalidOperation,ValueError,TypeError):
+        raise LiveSafetyError("Missing exchange inventory timestamp") from None
+    if not age.is_finite() or not 0<=age<=30:
+        raise LiveSafetyError("Stale or future exchange inventory")
+    account=snap.get("account")
+    if not isinstance(account,dict) or account.get("position_mode")!=mode:
+        raise LiveSafetyError("Emergency account mode mismatch")
+    positions=snap.get("positions")
+    orders=snap.get("orders")
+    triggers=snap.get("triggers")
+    if not all(isinstance(x,list) for x in (positions,orders,triggers)):
+        raise LiveSafetyError("Incomplete emergency exchange inventory")
+    if len(positions)!=1 or orders or triggers:
+        raise LiveSafetyError("Emergency closing requires one isolated unprotected position")
+    position=positions[0]
+    if not isinstance(position,dict) or position.get("contract")!=plan.get("contract"):
+        raise LiveSafetyError("Emergency close contract mismatch")
+    try:
+        actual=Decimal(str(position.get("size")))
+    except (InvalidOperation,ValueError,TypeError):
+        raise LiveSafetyError("Unverified emergency exchange position size") from None
+    signed=expected_qty if plan["side"]=="LONG" else -expected_qty
+    if not actual.is_finite() or actual!=signed:
+        raise LiveSafetyError("Emergency close size/direction mismatch")
+    return {"verified":True,"orders_sent":0,
+            "contract":plan["contract"],"position_mode":mode,
+            "signed_contracts":str(signed)}
+
+
 def emergency_close_once(client,plan,*,durable_claim=None,open_connection=None):
     """A close POST requires a previously persisted one-shot claim.
 
@@ -171,6 +224,14 @@ def emergency_close_once(client,plan,*,durable_claim=None,open_connection=None):
         return {"closed_verified":False,"orders_sent":0,
                 "requires_manual_exchange_review":True,
                 "reason":"DURABLE_ONE_SHOT_OWNER_APPROVED_CLAIM_REQUIRED"}
+    # Check the exact current exchange position before atomically consuming
+    # the one-use authorization. Never send a blind reduce-only close.
+    try:
+        require_safe_emergency_close_inventory(client,plan)
+    except (LiveSafetyError,ValueError,TypeError,KeyError,OverflowError):
+        return {"closed_verified":False,"orders_sent":0,
+                "requires_manual_exchange_review":True,
+                "reason":"FRESH_EXCHANGE_CLOSE_PREFLIGHT_FAILED_NO_ORDER"}
     order=full_close_oneway_order(plan)
     from live_emergency_one_shot_claim import (
         consume_one_shot_recovery_claim,finalize_one_shot_recovery_claim)
