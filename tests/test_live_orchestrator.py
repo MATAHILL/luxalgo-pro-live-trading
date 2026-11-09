@@ -22,7 +22,9 @@ def mock_durable_claim(plan):
 
 def simulate_claimed_close(client,plan):
     # Mock only: never connects to a production DB or exchange.
-    with (patch("live_emergency_one_shot_claim.consume_one_shot_recovery_claim",
+    with (patch("live_execution_orchestrator.require_safe_emergency_close_inventory",
+                return_value={"verified": True}),
+          patch("live_emergency_one_shot_claim.consume_one_shot_recovery_claim",
                 return_value=True),
           patch("live_emergency_one_shot_claim.finalize_one_shot_recovery_claim",
                 return_value=True)):
@@ -105,7 +107,9 @@ class MockLiveFlow(unittest.TestCase):
             "status":"finished","is_close":True,"is_reduce_only":True}]
         c.snapshot.return_value={"positions":[],"orders":[],
             "source":"GATE_IO_LIVE_FUTURES","triggers":[]}
-        with (patch("live_emergency_one_shot_claim.consume_one_shot_recovery_claim",
+        with (patch("live_execution_orchestrator.require_safe_emergency_close_inventory",
+                    return_value={"verified": True}),
+              patch("live_emergency_one_shot_claim.consume_one_shot_recovery_claim",
                     return_value=True),
               patch("live_emergency_one_shot_claim.finalize_one_shot_recovery_claim",
                     side_effect=LiveSafetyError("DB_NOT_PERSISTED"))):
