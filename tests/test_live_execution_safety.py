@@ -26,10 +26,12 @@ def planned(signal=None,positions=None,metadata=None):
 class LiveFuturesSafetyTests(unittest.TestCase):
     def test_entry_payload_and_risk_budgets(self):
         plan=planned()
-        self.assertEqual(plan["contracts"],46) # 5 USDT / (0.08 stop + 0.012 fees + 0.016 modeled slip)
-        self.assertEqual(Decimal(plan["estimated_risk_usdt"]),Decimal("4.96800"))
+        # The owner's 300-USDT notional / 60-USDT margin ceilings bind
+        # before the account's 0.5% modeled stop-loss risk allowance.
+        self.assertEqual(plan["contracts"],37)
+        self.assertEqual(Decimal(plan["estimated_risk_usdt"]),Decimal("3.99600"))
         order=build_entry_order(plan)
-        self.assertEqual(order["size"],46)
+        self.assertEqual(order["size"],37)
         self.assertEqual(order["price"],"0")
         self.assertEqual(order["tif"],"ioc")
         self.assertEqual(order["text"],client_text(BASE["event_id"]))
@@ -39,7 +41,7 @@ class LiveFuturesSafetyTests(unittest.TestCase):
     def test_short_and_directional_triggers(self):
         x=dict(BASE,side="SHORT",sl="80800",tp="78400")
         plan=planned(x)
-        self.assertEqual(build_entry_order(plan)["size"],-46)
+        self.assertEqual(build_entry_order(plan)["size"],-37)
         self.assertEqual(build_protective_trigger(plan,"SL")["trigger"]["rule"],1)
         self.assertEqual(build_protective_trigger(plan,"TP")["trigger"]["rule"],2)
         self.assertTrue(build_protective_trigger(plan,"SL")["initial"]["reduce_only"])
