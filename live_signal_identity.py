@@ -35,6 +35,25 @@ def luxalgo_bar_identity(timeframe, received_at, bartime):
     return f"TVBAR_{timeframe}_{ms//period_ms:011d}"
 
 
+def normalize_luxalgo_symbol(value):
+    """Allow listed TradingView exchange prefixes, never arbitrary ticker sources.
+
+    Gate.io Futures and Binance perpetual symbols may appear as
+    GATEIO:XRPUSDT.P or BINANCE:XRPUSDT.P. Only the normalized USDT
+    contract name reaches the Gate.io contract metadata/readback path.
+    """
+    if not isinstance(value, str):
+        return None
+    raw=value.strip().upper()
+    if ":" in raw:
+        source, raw = raw.split(":", 1)
+        if source not in ("GATEIO", "BINANCE"):
+            return None
+    if raw.endswith(".P"):
+        raw=raw[:-2]
+    return raw if re.fullmatch(r"[A-Z0-9]{3,25}USDT", raw) else None
+
+
 def normalize_luxalgo_side(value):
     """Strict LuxAlgo confirmation labels only; never trade TP/SL/exit alerts."""
     if not isinstance(value,str):
