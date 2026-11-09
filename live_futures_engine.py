@@ -26,6 +26,10 @@ EXCHANGE_WRITE_RELEASE = False
 MAX_POSITIONS = 5
 MAX_AGGREGATE_RISK = Decimal("0.025")
 MAX_LEVERAGE = Decimal("5")
+# Owner's requested maximum trade exposure, independently of the risk model.
+# Caps only; they never force an order or override the 0.5% equity risk limit.
+MAX_POSITION_NOTIONAL_USDT = Decimal("300")
+MAX_POSITION_INITIAL_MARGIN_USDT = Decimal("60")
 MAX_SIGNAL_AGE_SECONDS = 60
 CONTRACT_RE = re.compile(r"^[A-Z0-9]{2,28}_USDT$")
 ORDER_RE = re.compile(r"^[1-9][0-9]{0,19}$")
@@ -231,12 +235,20 @@ def build_plan(signal, metadata, equity, available, positions, reserved_risk=0, 
     units_by_risk=(budget/unit_loss).to_integral_value(rounding=ROUND_FLOOR)
     unit_margin=(e*multiplier)*(1+slip)*(Decimal(1)/lev+fee)
     units_by_margin=(av/unit_margin).to_integral_value(rounding=ROUND_FLOOR)
-    count=min(units_by_risk,units_by_margin,whole_order_size_max)
+    # A loose stop cannot silently turn a proposed 300-USDT order into an
+    # arbitrarily larger exposure when the account balance is high.
+    unit_notional=e*multiplier*(1+slip)
+    units_by_notional=(MAX_POSITION_NOTIONAL_USDT/unit_notional).to_integral_value(rounding=ROUND_FLOOR)
+    units_by_margin_cap=(MAX_POSITION_INITIAL_MARGIN_USDT/unit_margin).to_integral_value(rounding=ROUND_FLOOR)
+    count=min(units_by_risk,units_by_margin,units_by_notional,
+              units_by_margin_cap,whole_order_size_max)
     if count<order_size_min or count<1:
         raise LiveSafetyError("Insufficient margin/risk for exchange minimum lot")
     risk=count*unit_loss
     if risk>eq*per_entry_risk() or risk+reserve>eq*MAX_AGGREGATE_RISK:
         raise LiveSafetyError("Risk cap crossed")
+    if count*unit_notional>MAX_POSITION_NOTIONAL_USDT or count*unit_margin>MAX_POSITION_INITIAL_MARGIN_USDT:
+        raise LiveSafetyError("Maximum authorized notional or margin exceeded")
     return dict(event_id=event,client_text=text,contract=contract,side=side,timeframe=tf,
                 received_epoch=int(signal['received_epoch']),
                 contracts=int(count),entry=str(e),sl=str(s),tp=str(t),
@@ -245,6 +257,8 @@ def build_plan(signal, metadata, equity, available, positions, reserved_risk=0, 
                 modeled_stop_risk_usdt=str(count*unit_stop_loss),
                 modeled_fee_slippage_usdt=str(count*unit_fee_slip),
                 max_entry_slippage_ratio=str(slip),
+                maximum_notional_usdt=str(MAX_POSITION_NOTIONAL_USDT),
+                maximum_initial_margin_usdt=str(MAX_POSITION_INITIAL_MARGIN_USDT),
                 leverage=str(lev),position_mode=position_mode,verified_live_order=False)
 
 
@@ -312,7 +326,10 @@ def verify_execution_preflight(plan, metadata, snapshot, now=None):
     if slip>Decimal('0.001') or fee>Decimal('0.01'):
         raise LiveSafetyError('Fee/slippage ceiling exceeded')
     notional=quantity*multiplier*max(entry,mark)*(1+slip)
-    if notional/planned+notional*fee>available:
+    margin_with_fees=notional/planned+notional*fee
+    if notional>MAX_POSITION_NOTIONAL_USDT or margin_with_fees>MAX_POSITION_INITIAL_MARGIN_USDT:
+        raise LiveSafetyError('Fresh exposure exceeds authorized notional or margin ceiling')
+    if margin_with_fees>available:
         raise LiveSafetyError('Insufficient fresh margin including entry fee and slippage')
     reserved=dec(plan.get('estimated_risk_usdt'),'modeled risk')
     fresh_risk=quantity*multiplier*(abs(entry-sl)+max(entry,mark)*(2*fee+2*slip))
