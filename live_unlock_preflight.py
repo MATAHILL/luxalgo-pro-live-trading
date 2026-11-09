@@ -66,3 +66,48 @@ def assess_unlock_readiness(operator_state, exchange_snapshot, *,
         "orders_submitted": 0,
         "note": "Read-only prerequisite report; never release source locks or override HALT.",
     }
+
+def diagnose_signal_feed(*, latest_received_at=None, last_qualified_at=None,
+                         eligible_count=None, now=None, stale_after_seconds=86400):
+    """Read-only operator diagnostic; never an order-dispatch or certification gate.
+
+    Some strategies may correctly produce no signals for days. STALE means
+    investigate the TradingView alert and webhook, not that it is broken.
+    """
+    from datetime import datetime, timezone
+    now = now if now is not None else datetime.now(timezone.utc)
+    def utc(value):
+        return (value.astimezone(timezone.utc)
+                if isinstance(value, datetime) and value.tzinfo is not None else None)
+    now_utc = utc(now)
+    latest = utc(latest_received_at)
+    qualified = utc(last_qualified_at)
+    count_ok = type(eligible_count) is int and eligible_count >= 0
+    threshold_ok = type(stale_after_seconds) is int and stale_after_seconds > 0
+    age = int((now_utc - qualified).total_seconds()) if now_utc and qualified else None
+    if not now_utc or not threshold_ok or not count_ok:
+        status = "UNVERIFIED"
+    elif latest and latest > now_utc:
+        status = "UNVERIFIED_CLOCK"
+    elif eligible_count == 0:
+        status = "NO_QUALIFYING_SIGNAL" if latest else "NO_SIGNALS_RECORDED"
+    elif not latest or not qualified or qualified > latest or age is None or age < 0:
+        status = "UNVERIFIED"
+    elif age > stale_after_seconds:
+        status = "STALE_QUALIFIED_SIGNAL"
+    else:
+        status = "RECENT_QUALIFIED_SIGNAL"
+    return {
+        "status": status,
+        "latest_received_at_utc": latest.isoformat() if latest else None,
+        "last_qualified_at_utc": qualified.isoformat() if qualified else None,
+        "qualified_total": eligible_count if count_ok else None,
+        "seconds_since_qualified": age if age is not None and age >= 0 else None,
+        "freshness_window_seconds": stale_after_seconds if threshold_ok else None,
+        "investigate_webhook": status in ("STALE_QUALIFIED_SIGNAL",
+                                       "NO_QUALIFYING_SIGNAL", "NO_SIGNALS_RECORDED"),
+        "diagnostic_only": True,
+        "orders_enabled_by_diagnostic": False,
+        "note": "A quiet LuxAlgo strategy is not proof that TradingView alerts failed. "
+                "Verify alert activity independently before drawing conclusions.",
+    }
