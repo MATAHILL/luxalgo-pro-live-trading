@@ -6984,6 +6984,9 @@ if os.getenv('PRODUCTION_TERMINAL_VIEW','false').strip().lower()=='true':
 from acceptance_terminal import register as register_single_acceptance
 register_single_acceptance(app,permitted=lambda:_terminal_permitted(),
     guard=lambda:_terminal_guard(),csrf_valid=lambda:_csrf_valid(),connect=lambda:_db_connect())
+from recovery_terminal import register as register_manual_recovery
+register_manual_recovery(app,permitted=lambda:_terminal_permitted(),
+    guard=lambda:_terminal_guard(),csrf_valid=lambda:_csrf_valid(),connect=lambda:_db_connect())
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=int(os.getenv('PORT', '8080')))
