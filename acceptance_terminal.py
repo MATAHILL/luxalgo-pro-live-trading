@@ -55,7 +55,7 @@ the software may reject one contract if it exceeds any limit.</p>
 <label>Leverage (must match exchange settings; maximum 5)
 <input name="leverage" type="number" min="1" max="5" step="1" required></label>
 <button type="submit">Prepare review — no order</button></form>
-<p><a href="/live-activation">Activation status</a> · <a href="/">Trading dashboard</a></p></html>'''
+<p><a href="/live-activation">Activation status</a> · <a href="/terminal/recovery">Manual recovery review</a> · <a href="/">Trading dashboard</a></p></html>'''
 
 
 def stored_signal(row):
