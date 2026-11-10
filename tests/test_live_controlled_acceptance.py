@@ -262,6 +262,15 @@ class ControlledAcceptanceTests(unittest.TestCase):
         stored=claim.call_args.args[1]
         self.assertEqual(stored['prepared_epoch'],NOW-20)
         self.assertEqual(acceptance.canonical_digest(stored),claim.call_args.args[2])
+        self.assertEqual(c.plan['submission_expires_epoch'],NOW+10)
+        self.assertNotIn('submission_expires_epoch',stored['plan'])
+
+    def test_exchange_deadline_preserves_earlier_scope_end(self):
+        c,db=self.fixture();p=self.prepared(c)
+        p['review']['scope']['end_epoch']=NOW+5
+        p['review_digest']=acceptance.canonical_digest(p['review'])
+        acceptance.submit_once(db,p,p['review_digest'],SIGNAL,c)
+        self.assertEqual(c.plan['submission_expires_epoch'],NOW+5)
 
     def test_expiry_during_exchange_refresh_blocks_before_entry(self):
         real_claim=acceptance.claim_and_reserve
