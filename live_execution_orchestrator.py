@@ -205,7 +205,22 @@ def require_safe_emergency_close_inventory(client, plan, now_epoch=None):
             "signed_contracts":str(signed)}
 
 
-def emergency_close_once(client,plan,*,durable_claim=None,open_connection=None):
+def exact_reduce_only_close_order(plan):
+    """Close at most the reviewed count, even if exposure grows after GET.
+
+    Gate hedge-mode partial closes use signed size without auto_size. Keep
+    reduce_only so a race can never turn the close into a reverse entry.
+    """
+    order=full_close_oneway_order(plan)
+    qty=dec(plan.get('contracts'),'recovery contracts')
+    if qty!=qty.to_integral_value():
+        raise LiveSafetyError('Whole recovery contract count required')
+    order.pop('close',None);order.pop('auto_size',None)
+    order['size']=int(qty)*(-1 if plan['side']=='LONG' else 1)
+    return order
+
+
+def emergency_close_once(client,plan,*,durable_claim=None,open_connection=None,close_order=None):
     """A close POST requires a previously persisted one-shot claim.
 
     This helper is deliberately NOT called by the live execution exception
@@ -233,6 +248,12 @@ def emergency_close_once(client,plan,*,durable_claim=None,open_connection=None):
                 "requires_manual_exchange_review":True,
                 "reason":"FRESH_EXCHANGE_CLOSE_PREFLIGHT_FAILED_NO_ORDER"}
     order=full_close_oneway_order(plan)
+    if close_order is not None:
+        if close_order!=exact_reduce_only_close_order(plan):
+            return {'closed_verified':False,'orders_sent':0,
+                    'requires_manual_exchange_review':True,
+                    'reason':'EXACT_REVIEWED_REDUCE_ONLY_CLOSE_REQUIRED'}
+        order=close_order
     from live_emergency_one_shot_claim import (
         consume_one_shot_recovery_claim,finalize_one_shot_recovery_claim)
     try:
@@ -256,11 +277,16 @@ def emergency_close_once(client,plan,*,durable_claim=None,open_connection=None):
             verified_order.get("contract")!=plan["contract"] or
             verified_order.get("text")!=order["text"] or
             verified_order.get("status")!="finished" or
-            not (verified_order.get("is_close") is True or
-                 verified_order.get("close") is True) or
+            (close_order is None and not (verified_order.get("is_close") is True or
+                 verified_order.get("close") is True)) or
             not (verified_order.get("is_reduce_only") is True or
                  verified_order.get("reduce_only") is True)):
             raise AckUnknown("Reduce-only close exchange order identity/readback unverified")
+        if close_order is not None and (
+                Decimal(str(verified_order.get('size')))!=order['size']
+                or Decimal(str(verified_order.get('left')))!=0
+                or dec(verified_order.get('fill_price'),'close fill')<=0):
+            raise AckUnknown('Exact reduce-only recovery fill unverified')
         snap=client.snapshot()
         if (snap.get("source") != "GATE_IO_LIVE_FUTURES" or
             not isinstance(snap.get("positions"),list) or
@@ -472,4 +498,5 @@ def restart_reconcile(open_connection,client=None):
             or result['untracked_open_triggers']):
         return {"status":"HALTED_REVIEW_REQUIRED","orders_resubmitted":0,"readback":result}
     return {"status":"RECONCILED_READ_ONLY","orders_resubmitted":0,"readback":result}
+
 
