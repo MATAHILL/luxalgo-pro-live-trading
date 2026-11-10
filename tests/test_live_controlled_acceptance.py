@@ -253,5 +253,32 @@ class ControlledAcceptanceTests(unittest.TestCase):
             reserve.assert_not_called()
             self.assertFalse(any('INSERT INTO' in call.args[0] for call in cur.execute.call_args_list))
 
+    def test_fresh_readback_does_not_replace_approved_review_or_digest(self):
+        c,db=self.fixture();p=self.prepared(c)
+        p['review']['prepared_epoch']=NOW-20
+        p['review_digest']=acceptance.canonical_digest(p['review'])
+        with patch.object(acceptance,'claim_and_reserve') as claim:
+            acceptance.submit_once(db,p,p['review_digest'],SIGNAL,c)
+        stored=claim.call_args.args[1]
+        self.assertEqual(stored['prepared_epoch'],NOW-20)
+        self.assertEqual(acceptance.canonical_digest(stored),claim.call_args.args[2])
+
+    def test_expiry_during_exchange_refresh_blocks_before_entry(self):
+        real_claim=acceptance.claim_and_reserve
+        real_prepare=acceptance.prepare
+        c,db=self.fixture();p=self.prepared(c)
+        p['review']['prepared_epoch']=NOW-29
+        p['review_digest']=acceptance.canonical_digest(p['review'])
+        with patch.object(acceptance.time,'time',return_value=NOW) as clock:
+            def delayed_refresh(*args,**kwargs):
+                value=real_prepare(*args,**kwargs)
+                clock.return_value=NOW+2
+                return value
+            with (patch.object(acceptance,'prepare',side_effect=delayed_refresh),
+                  patch.object(acceptance,'claim_and_reserve',side_effect=real_claim)):
+                with self.assertRaisesRegex(engine.LiveSafetyError,'expired'):
+                    acceptance.submit_once(db,p,p['review_digest'],SIGNAL,c)
+        self.assertEqual(c.entries,0)
+
 
 if __name__=='__main__': unittest.main()
