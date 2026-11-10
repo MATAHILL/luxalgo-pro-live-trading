@@ -2643,9 +2643,9 @@ def terminal_live_execution_plan():
         from live_execution_coordinator import install,control,read_rows
         with _db_connect() as con:
             _ensure_schema(con);install(con)
-            if control(con)['halted']:
-                return jsonify(error='Persistent execution HALT is active',
-                               orders_enabled=False),409
+            # Planning is non-executable and must remain available while HALT
+            # protects dispatch. Never clear or alter the control here.
+            halt_active=control(con)['halted'] is not False
             with con.cursor() as cur:
                 cur.execute("""SELECT r.event_id,r.received_at,r.symbol,r.side,r.timeframe,
                        l.entry_price,l.stop_loss,l.take_profit,l.status AS levels_status,
@@ -2675,6 +2675,7 @@ def terminal_live_execution_plan():
                     position_mode=snap['account'].get('position_mode'),leverage=5),
                     meta,equity,available,snap['positions'],reserved_risk=reserved)
         return jsonify(status='PREVIEW_ONLY_NOT_EXECUTABLE',plan=plan,
+                       halt_active=halt_active,orders_submitted=0,
                        orders_enabled=False,live_trading=False),200
     except (psycopg.Error,RuntimeError,OSError,ValueError,TypeError,KeyError,
             InvalidOperation,OverflowError):
