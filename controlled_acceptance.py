@@ -1,4 +1,4 @@
-"""Manually invoked, single-order acceptance path. Not wired to alerts or HTTP.
+"""Manually submitted, single-order acceptance path. Never run by alerts/workers.
 
 This revision is SOURCE LOCKED. Preparation is GET-only. Submission is built
 for later reviewed release; it never clears HALT or enables continuous trading.
@@ -174,7 +174,7 @@ def record_outcome(open_connection, scope_id, outcome):
 
 
 def submit_once(open_connection, prepared, review_digest, signal, client=None):
-    """Manual integration entry point; no HTTP/worker hook in this revision.
+    """Manual integration entry point used by the authenticated review interface.
 
     Never invoked by development tests against a real exchange. Source and
     environment locks are checked BEFORE DB or network. No retry or auto-close.
@@ -194,7 +194,9 @@ def submit_once(open_connection, prepared, review_digest, signal, client=None):
     fresh=prepare(review['scope'],signal,client)['review']
     if fresh['plan'] != plan or fresh['source_bar_id'] != review['source_bar_id']:
         raise engine.LiveSafetyError('Reviewed plan changed; review a new preview')
-    claim_and_reserve(open_connection,fresh,review_digest)
+    # Persist exactly what the user reviewed. Fresh readbacks validate this
+    # plan but cannot renew its original expiry or change its audit digest.
+    claim_and_reserve(open_connection,review,review_digest)
     # Claim is committed before the sole entry attempt. Any later failure is
     # uncertain exposure, even if no acknowledgment was received. Never replay.
     try:
