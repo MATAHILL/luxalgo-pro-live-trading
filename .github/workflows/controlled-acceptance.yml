@@ -1,10 +1,10 @@
 name: Controlled acceptance database and safety tests
 on:
   pull_request:
-    paths: ['controlled_acceptance.py', 'acceptance_terminal.py', 'live_*.py', 'production_bot_control.py', 'app.py', 'tests/test_live_*.py', '.github/workflows/controlled-acceptance.yml']
+    paths: ['controlled_acceptance.py', 'acceptance_terminal.py', 'manual_recovery.py', 'recovery_terminal.py', 'live_*.py', 'production_bot_control.py', 'app.py', 'tests/test_live_*.py', '.github/workflows/controlled-acceptance.yml']
   push:
     branches: [main]
-    paths: ['controlled_acceptance.py', 'acceptance_terminal.py', 'live_*.py', 'production_bot_control.py', 'app.py', 'tests/test_live_*.py', '.github/workflows/controlled-acceptance.yml']
+    paths: ['controlled_acceptance.py', 'acceptance_terminal.py', 'manual_recovery.py', 'recovery_terminal.py', 'live_*.py', 'production_bot_control.py', 'app.py', 'tests/test_live_*.py', '.github/workflows/controlled-acceptance.yml']
 permissions:
   contents: read
 jobs:
