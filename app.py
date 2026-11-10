@@ -2135,6 +2135,7 @@ a{color:#94d9ff}nav{display:flex;flex-wrap:wrap;gap:16px;margin-top:20px}
 <h2>What next?</h2>
 <p>Live trading requires a confirmed, protected acceptance order and verified recovery behavior before the operator can enable automated execution. A successful sign-in does not enable real-money orders.</p>
 <nav><a href="/">Open trading dashboard</a>
+<a href="/terminal/acceptance">Review one bounded acceptance test</a>
 <a href="/terminal/live-execution/unlock-readiness">View detailed readiness data</a></nav>
 <p class="small">If this page works but direct readiness links do not, use the links above in the same browser. Cookies must be enabled for this site.</p>
 </main></body></html>'''
@@ -6979,6 +6980,10 @@ if os.getenv('PRODUCTION_TERMINAL_VIEW','false').strip().lower()=='true':
     Thread(target=_capture_gate_live_acceptance_snapshot,daemon=True,
            name='gate-live-acceptance-snapshot').start()
 
+
+from acceptance_terminal import register as register_single_acceptance
+register_single_acceptance(app,permitted=lambda:_terminal_permitted(),
+    guard=lambda:_terminal_guard(),csrf_valid=lambda:_csrf_valid(),connect=lambda:_db_connect())
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=int(os.getenv('PORT', '8080')))
