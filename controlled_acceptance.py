@@ -213,7 +213,10 @@ def submit_once(open_connection, prepared, review_digest, signal, client=None):
                         or control(con)['halted'] is not False):
                     raise engine.LiveSafetyError('HALT or expired signal before entry')
                 protection_started=time.monotonic()
-                ack=client.submit_entry(plan)
+                # Fresh readbacks cannot renew the owner's original review.
+                dispatch_plan=dict(plan,submission_expires_epoch=min(
+                    review['prepared_epoch']+30,review['scope']['end_epoch']))
+                ack=client.submit_entry(dispatch_plan)
         order_id,filled=lifecycle.require_full_entry_readback(client,plan,ack)
         require_isolated_position(plan,filled,protected=False)
         lifecycle.persist_state(open_connection,plan['event_id'],'ENTRY_CONFIRMED',entry_order_id=order_id)
