@@ -10,14 +10,17 @@ clearance was performed while building this change.
 exchange inventory and contract metadata, preserves original LuxAlgo levels,
 and returns a canonical review digest. `submit_once(connection_factory,
 prepared, reviewed_digest, stored_signal)` is the manual integration entry
-point. It is deliberately not registered as a Flask route, webhook handler,
-worker or runnable CLI. Importing this module never accesses an account.
+point. It is not registered as a webhook handler, worker or runnable CLI.
+Importing this module never accesses an account.
 
-The integrator must load the signal from the authenticated stored handoff;
-browser JSON must never become an alternative source for signal levels or
-timestamps. A later user-facing submit control needs authenticated session,
-CSRF, explicit exact-plan review and transaction-specific user confirmation.
-This revision does not provide that control or authorize submission.
+`/terminal/acceptance` supplies the authenticated review/submit interface.
+The server loads original levels and timestamps from the stored handoff;
+browser form fields cannot override them. Both POST routes require session
+authentication and CSRF. A prepared review is held server-side, bound to the
+current session token hash, and expires after 30 seconds. Submission requires
+an explicit checkbox acknowledgment and matching review digest, then rechecks
+the original signal and account. Its control stays disabled under source/env
+locks; no new exchange-write authority or certification is granted.
 
 ## Scope and safeguards
 
@@ -60,16 +63,17 @@ reconciliation; neither restart nor an empty exchange snapshot resets claims.
 ## Validation and remaining release work
 
 Local suite: `python -m unittest discover -s tests -p 'test_live_*.py'`:
-202 passing tests, including 20 new acceptance tests. Exchange transports,
-claims and journals in lifecycle tests are simulated. PostgreSQL SQL guards
-are inspected with mocked cursors; competing submissions use a simulated
-atomic store. These tests do NOT prove real PostgreSQL transaction behavior,
-exchange acceptance, protection latency, restart recovery or live readiness.
+214 tests discovered: 209 passed locally, five real PostgreSQL tests skipped
+because local socket creation is prohibited. The dedicated GitHub workflow
+runs all tests with a disposable PostgreSQL 17 service. Its five integration
+tests cover schema/claim/reservation commit, two competing connections,
+rollback, replay after reconnect and active HALT. No production database or
+exchange credentials are used. Exchange transports and order outcomes remain
+simulated. These tests do NOT prove exchange acceptance, protection latency,
+live recovery or live readiness.
 
-Before release: run migration and true concurrent/commit-failure/restart
-integration tests against disposable PostgreSQL; complete independent source
-review; implement the authenticated user review/submit boundary; verify a
-fresh exact bounded owner scope; then let the user perform the financial
+Before release: verify the PostgreSQL workflow result; complete independent
+source review; verify a fresh exact bounded owner scope; then let the user perform the financial
 submission. Retain source/env locks until those release prerequisites pass.
 Only real readbacks can establish live fills/native protection evidence.
 Continuous automation and final certification are separate work.
