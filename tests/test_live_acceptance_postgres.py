@@ -110,5 +110,43 @@ class AcceptancePostgresTests(unittest.TestCase):
             acceptance.claim_and_reserve(self.connection,self.review,self.digest)
         self.assertEqual(self.counts(),(0,0))
 
+    def recovery_execution(self):
+        acceptance.claim_and_reserve(self.connection,self.review,self.digest)
+        with self.connection() as con:
+            con.execute("UPDATE luxalgo_prod_execution_ledger SET state='HALTED',entry_order_id='101'")
+            con.execute('UPDATE luxalgo_prod_execution_control SET halted=TRUE')
+
+    def test_recovery_claim_consumed_and_verified_close_journal_real_sql(self):
+        import manual_recovery as recovery
+        from test_live_manual_recovery import RecoveryExchange,EVENT
+        self.recovery_execution()
+        client=RecoveryExchange()
+        prepared=recovery.prepare(self.connection,EVENT,client)
+        with patch.object(recovery,'require_release'):
+            result=recovery.submit_once(self.connection,prepared,prepared['review_digest'],client)
+        self.assertTrue(result['closed_verified']);self.assertTrue(result['ledger_closed_verified'])
+        self.assertEqual(len(client.posts),1)
+        with self.connection() as con:
+            self.assertEqual(con.execute('SELECT state FROM luxalgo_prod_execution_ledger').fetchone()['state'],'CLOSED_VERIFIED')
+            self.assertEqual(con.execute('SELECT state FROM luxalgo_prod_emergency_close_claims').fetchone()['state'],'FLAT_READBACK_VERIFIED')
+            self.assertTrue(con.execute('SELECT halted FROM luxalgo_prod_execution_control').fetchone()['halted'])
+
+    def test_competing_recovery_claim_consumers_only_one_can_dispatch(self):
+        from live_emergency_one_shot_claim import claim_one_shot_recovery,consume_one_shot_recovery_claim
+        from live_execution_orchestrator import exact_reduce_only_close_order
+        self.recovery_execution()
+        plan=self.review['plan'];close=exact_reduce_only_close_order(plan)
+        with self.connection() as con:
+            claim=claim_one_shot_recovery(con,event_id=plan['event_id'],contract=plan['contract'],
+                approval_reference='offline-owner-scope-test',close_text=close['text'])
+        def consume(_):
+            try:
+                consume_one_shot_recovery_claim(self.connection,claim)
+                return 'consumed'
+            except LiveSafetyError:return 'rejected'
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            outcomes=list(pool.map(consume,range(2)))
+        self.assertCountEqual(outcomes,['consumed','rejected'])
+
 
 if __name__=='__main__': unittest.main()
