@@ -1,0 +1,33 @@
+name: Controlled acceptance database and safety tests
+on:
+  pull_request:
+    paths: ['controlled_acceptance.py', 'acceptance_terminal.py', 'live_*.py', 'production_bot_control.py', 'app.py', 'tests/test_live_*.py', '.github/workflows/controlled-acceptance.yml']
+  push:
+    branches: [main]
+    paths: ['controlled_acceptance.py', 'acceptance_terminal.py', 'live_*.py', 'production_bot_control.py', 'app.py', 'tests/test_live_*.py', '.github/workflows/controlled-acceptance.yml']
+permissions:
+  contents: read
+jobs:
+  acceptance-tests:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_DB: acceptance_test
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: disposable-test-only
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U postgres -d acceptance_test"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      TEST_ACCEPTANCE_DATABASE_URL: postgresql://postgres:disposable-test-only@localhost:5432/acceptance_test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install -r requirements.txt
+      - name: Test real PostgreSQL claims and offline exchange safety
+        run: python -m unittest discover -s tests -p 'test_live_*.py' -v
