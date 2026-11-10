@@ -215,6 +215,7 @@ class ControlledAcceptanceTests(unittest.TestCase):
         c=Exchange();plan=self.prepared(c)['review']['plan'];c.entries=1
         base=c.snapshot()
         for changes in ({'orders':[{'id':1}]},{'triggers':[{'id':1}]},
+                        {'triggers':None},
                         {'positions':[]},{'account':{'position_mode':'dual'}},
                         {'source':'UNKNOWN'}):
             with self.assertRaises(engine.LiveSafetyError):
