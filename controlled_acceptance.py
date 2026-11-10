@@ -253,6 +253,7 @@ def require_isolated_position(plan,snapshot,*,protected):
     """A test cannot certify amid a mode change, extra exposure or orphan order."""
     expected=1 if plan['side']=='LONG' else -1
     if (snapshot.get('source') != 'GATE_IO_LIVE_FUTURES'
+            or not all(isinstance(snapshot.get(key),list) for key in ('positions','orders','triggers'))
             or snapshot.get('account',{}).get('position_mode') != plan['position_mode']
             or snapshot.get('orders') != [] or len(snapshot.get('positions',[])) != 1
             or len(snapshot.get('triggers',[])) != (2 if protected else 0)):
