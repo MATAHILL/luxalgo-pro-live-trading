@@ -447,7 +447,7 @@ class GateLiveClient:
         self.secret=secret if secret is not None else os.getenv("GATE_API_SECRET","").strip()
         self.transport=transport or urlopen
 
-    def request(self,method,path,*,params=None,payload=None,timeout=8):
+    def request(self,method,path,*,params=None,payload=None,timeout=8,expires_at_ms=None):
         if method not in ("GET","POST"):
             raise LiveSafetyError("Unsupported method")
         if method=="GET":
@@ -465,6 +465,14 @@ class GateLiveClient:
                 raise LiveSafetyError("Real-money authorization incomplete")
             if path not in WRITE_PATHS or not isinstance(payload,dict):
                 raise LiveSafetyError("Write path/body not allowlisted")
+        if expires_at_ms is not None:
+            # Gate enforces this deadline on receipt, beyond local age checks.
+            # Never inherit an entry deadline for protection or recovery.
+            now_ms=int(time.time()*1000)
+            if (method != "POST" or path != PREFIX+"/orders"
+                    or type(expires_at_ms) is not int
+                    or not now_ms < expires_at_ms <= now_ms+60000):
+                raise LiveSafetyError("Invalid or expired exchange request deadline")
         if not self.key or not self.secret:
             raise LiveSafetyError("Production Gate.io credentials absent")
         query=urlencode(params or {})
@@ -476,6 +484,8 @@ class GateLiveClient:
         req=Request(url,method=method,data=body if method=="POST" else None,
                     headers={"KEY":self.key,"Timestamp":ts,"SIGN":sign,
                              "Accept":"application/json","Content-Type":"application/json"})
+        if expires_at_ms is not None:
+            req.add_header("x-gate-exptime",str(expires_at_ms))
         try:
             with self.transport(req,timeout=timeout) as response:
                 data=json.loads(response.read(800000))
@@ -507,7 +517,20 @@ class GateLiveClient:
 
     def submit_entry(self,plan):
         """Deliberately source-locked until separate live trial authorization."""
-        return self.request("POST",PREFIX+"/orders",payload=build_entry_order(plan))
+        if not EXCHANGE_WRITE_RELEASE:
+            raise LiveSafetyError("SOURCE_LOCKED: real-money API writes prohibited")
+        now=time.time()
+        received=plan.get("received_epoch")
+        if type(received) is not int or not 0 <= now-received < MAX_SIGNAL_AGE_SECONDS:
+            raise LiveSafetyError("Entry signal deadline expired or invalid")
+        deadline=(received+MAX_SIGNAL_AGE_SECONDS)*1000
+        if "submission_expires_epoch" in plan:
+            reviewed=plan["submission_expires_epoch"]
+            if type(reviewed) is not int:
+                raise LiveSafetyError("Invalid reviewed entry deadline")
+            deadline=min(deadline,reviewed*1000)
+        return self.request("POST",PREFIX+"/orders",payload=build_entry_order(plan),
+                            expires_at_ms=deadline)
 
     def submit_trigger(self,plan,kind):
         return self.request("POST",PREFIX+"/price_orders",
@@ -595,5 +618,6 @@ def reconcile_ledger(ledger_rows,positions,trigger_orders):
     return {"safe_to_dispatch":False,"results":results,
             "requires_halt":any(x["state"].startswith("HALT") for x in results),
             "orders_enabled":False}
+
 
 
