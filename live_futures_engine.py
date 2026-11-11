@@ -42,7 +42,7 @@ MAX_AGGREGATE_RISK = Decimal("0.025")
 MAX_LEVERAGE = Decimal("5")
 # Owner's requested maximum trade exposure, independently of the risk model.
 # Caps only; they never force an order or override the 0.5% equity risk limit.
-MAX_POSITION_NOTIONAL_USDT = Decimal("300")
+MAX_POSITION_NOTIONAL_USDT = Decimal("100")
 MAX_POSITION_INITIAL_MARGIN_USDT = Decimal("60")
 MAX_SIGNAL_AGE_SECONDS = 60
 CONTRACT_RE = re.compile(r"^[A-Z0-9]{2,28}_USDT$")
@@ -249,7 +249,7 @@ def build_plan(signal, metadata, equity, available, positions, reserved_risk=0, 
     units_by_risk=(budget/unit_loss).to_integral_value(rounding=ROUND_FLOOR)
     unit_margin=(e*multiplier)*(1+slip)*(Decimal(1)/lev+fee)
     units_by_margin=(av/unit_margin).to_integral_value(rounding=ROUND_FLOOR)
-    # A loose stop cannot silently turn a proposed 300-USDT order into an
+    # A loose stop cannot silently turn a proposed 100-USDT order into an
     # arbitrarily larger exposure when the account balance is high.
     unit_notional=e*multiplier*(1+slip)
     units_by_notional=(MAX_POSITION_NOTIONAL_USDT/unit_notional).to_integral_value(rounding=ROUND_FLOOR)
