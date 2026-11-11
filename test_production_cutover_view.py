@@ -69,4 +69,55 @@ class ProductionCutoverTests(unittest.TestCase):
             data=response.get_json()
             self.assertFalse(data['orders_enabled'])
 
+class GateUnlockControlTests(unittest.TestCase):
+    """CLEAR HALT / CERTIFY buttons exist and call the real endpoints."""
+
+    def setUp(self):
+        self.page=production_monitor_page(PAGE)
+
+    def test_both_buttons_render_in_the_bot_control_panel(self):
+        for part in ('id="productionHaltClear"','id="productionCertifyOpen"',
+                     'id="productionCertifyForm"','id="productionEvidenceSha"',
+                     'id="productionApprovalId"','id="productionValidHours"',
+                     'id="productionCertifySubmit"','id="productionGateResult"'):
+            self.assertIn(part,self.page,part)
+        # The new controls live inside the same panel as BOT ON / BOT OFF.
+        panel=self.page.split('class="bot-control-panel"',1)[1].split('</section>',1)[0]
+        for part in ('id="productionBotOn"','id="productionBotOff"',
+                     'id="productionHaltClear"','id="productionCertifyOpen"'):
+            self.assertIn(part,panel,part)
+
+    def test_buttons_call_the_same_endpoints_with_csrf(self):
+        self.assertIn("postJson('/api/live/halt-clear',{})",self.page)
+        self.assertIn("postJson('/api/live/certify'",self.page)
+        self.assertIn("'X-Terminal-CSRF':csrf",self.page)
+        for field in ('evidence_sha','signed_approval_id','valid_hours'):
+            self.assertIn(field,self.page,field)
+
+    def test_certify_form_defaults_are_valid(self):
+        import re
+        ev=re.search(r'id="productionEvidenceSha"[^>]*value="([^"]*)"',self.page).group(1)
+        ap=re.search(r'id="productionApprovalId"[^>]*value="([^"]*)"',self.page).group(1)
+        hr=re.search(r'id="productionValidHours"[^>]*value="(\d+)"',self.page).group(1)
+        self.assertRegex(ev,r'^[A-Za-z0-9_.:-]{8,128}$')
+        self.assertRegex(ap,r'^[A-Za-z0-9_.:-]{4,128}$')
+        self.assertTrue(1<=int(hr)<=168)
+
+    def test_valid_hours_input_is_bounded_1_to_168(self):
+        self.assertIn('min="1" max="168"',self.page)
+
+    def test_existing_bot_switch_and_gate_list_unchanged(self):
+        self.assertIn("const url='/terminal/production-bot-control'",self.page)
+        self.assertIn('id="productionBotIndicator"',self.page)
+        self.assertIn('● BOT OFF',self.page)
+        # No new order-sending path was introduced by the buttons.
+        self.assertNotIn("fetch('/api/v4/futures/usdt/orders'",self.page)
+        self.assertNotIn('/api/live/disarm',self.page)
+
+    def test_buttons_do_not_bypass_server_validation(self):
+        # The page must not send a fabricated success or skip the server call.
+        self.assertNotIn('halted:false',self.page.replace('r.data.halted===false',''))
+        self.assertIn('r.data.cleared===false',self.page)
+
+
 if __name__=="__main__":unittest.main()

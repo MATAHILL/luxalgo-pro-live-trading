@@ -179,6 +179,31 @@ PRODUCTION_CONTROL='''<section class="bot-control-panel" aria-label="Production 
 <div class="bot-control-actions">
 <button class="btn" id="productionBotOn" type="button" aria-pressed="false">▶ BOT ON</button>
 <button class="btn" id="productionBotOff" type="button" aria-pressed="true">■ BOT OFF</button>
+</div>
+<div class="gate-unlock-row">
+<div class="gate-unlock-head"><strong>UNLOCK LIVE TRADING</strong>
+<p class="light">Do these in order: <b>1 CLEAR HALT</b>, then <b>2 CERTIFY</b>, then <b>3 BOT ON</b>. Each step only works once the one before it is done.</p></div>
+<div class="gate-unlock-actions">
+<button class="btn gate-btn" id="productionHaltClear" type="button">1 · CLEAR HALT</button>
+<button class="btn gate-btn" id="productionCertifyOpen" type="button" aria-expanded="false" aria-controls="productionCertifyForm">2 · CERTIFY</button>
+</div>
+<div class="gate-certify-form" id="productionCertifyForm" hidden>
+<p class="light">CERTIFY records your own sign-off that you have checked a real acceptance trade. It does not place an order and it does not clear the HALT.</p>
+<label for="productionEvidenceSha"><strong>Evidence reference</strong>
+<span class="light">A short label pointing at your proof — the acceptance trade you checked. At least 8 characters: letters, numbers, dot, underscore, colon or dash.</span></label>
+<input id="productionEvidenceSha" type="text" value="acceptance-2026-11-11-run1" maxlength="128" autocomplete="off" spellcheck="false">
+<label for="productionApprovalId"><strong>Your approval ID</strong>
+<span class="light">Your own sign-off label, for example your initials and the date. At least 4 characters.</span></label>
+<input id="productionApprovalId" type="text" value="approval-owner-1111" maxlength="128" autocomplete="off" spellcheck="false">
+<label for="productionValidHours"><strong>Valid for how many hours</strong>
+<span class="light">How long this permission lasts, from 1 to 168 hours (168 = one week). When it runs out, live trading stops by itself.</span></label>
+<input id="productionValidHours" type="number" value="24" min="1" max="168" step="1">
+<div class="gate-certify-submit">
+<button class="btn gate-btn" id="productionCertifySubmit" type="button">RECORD CERTIFICATION</button>
+<button class="btn gate-btn gate-btn-quiet" id="productionCertifyCancel" type="button">Cancel</button>
+</div>
+</div>
+<p class="gate-result" id="productionGateResult" role="status" aria-live="polite"></p>
 </div></section>'''
 
 PRODUCTION_ORDERS=r'''<section class="panel production-live-orders-panel" id="productionOrdersPanel" aria-label="Current live Futures orders read only">
@@ -298,6 +323,127 @@ async function update(enabled){
 on.addEventListener('click',()=>update(true));
 off.addEventListener('click',()=>update(false));
 refresh();setInterval(()=>{if(!document.hidden)refresh();},15000);
+
+/* ---- Gate unlock controls: CLEAR HALT and CERTIFY ----------------------
+   These call the SAME endpoints with the SAME validation as the API.
+   Nothing here weakens a safety check: the server still re-reads the live
+   exchange and still refuses on any ambiguity. This only removes the need
+   to paste JavaScript into the browser console. */
+const haltBtn=document.getElementById('productionHaltClear'),
+      certOpen=document.getElementById('productionCertifyOpen'),
+      certForm=document.getElementById('productionCertifyForm'),
+      certSubmit=document.getElementById('productionCertifySubmit'),
+      certCancel=document.getElementById('productionCertifyCancel'),
+      evInput=document.getElementById('productionEvidenceSha'),
+      apInput=document.getElementById('productionApprovalId'),
+      hrInput=document.getElementById('productionValidHours'),
+      gateOut=document.getElementById('productionGateResult');
+if(!haltBtn||!certOpen||!certForm||!certSubmit||!gateOut)return;
+
+const GATE_WORDS={
+ SOURCE_LOCKED:'the code release switch is still off',
+ ENVIRONMENT_LOCKED:'a Render environment variable is still missing or not exactly "true"',
+ EMERGENCY_HALT:'the emergency HALT is still on',
+ ACCEPTANCE_AND_FINAL_AUTHORIZATION_MISSING:'no certification has been recorded yet',
+ OPERATOR_OFF:'the bot has not been switched on yet'
+};
+function say(text,kind){
+ gateOut.textContent=text;
+ gateOut.className='gate-result'+(kind?' gate-'+kind:'');
+}
+function gateWords(list){
+ if(!Array.isArray(list)||!list.length)return 'All gates are open.';
+ return 'Still closed: '+list.map(g=>GATE_WORDS[g]||String(g).replaceAll('_',' ').toLowerCase()).join('; ')+'.';
+}
+function csrfToken(){
+ const el=document.querySelector('input[name="csrf_token"]');
+ return el?el.value:'';
+}
+async function postJson(url,body){
+ const csrf=csrfToken();
+ if(!csrf)throw Error('Your sign-in token is missing. Reload the page and sign in again.');
+ const resp=await fetch(url,{method:'POST',credentials:'same-origin',cache:'no-store',
+   headers:{'Content-Type':'application/json','X-Terminal-CSRF':csrf},
+   body:JSON.stringify(body||{})});
+ let data=null;
+ try{data=await resp.json();}catch(_){data=null;}
+ return {ok:resp.ok,status:resp.status,data:data||{}};
+}
+function lockButtons(state){
+ haltBtn.disabled=state;certSubmit.disabled=state;certOpen.disabled=state;
+}
+
+haltBtn.addEventListener('click',async()=>{
+ lockButtons(true);
+ say('Checking your Gate.io account for open positions, orders and triggers\u2026');
+ try{
+  const r=await postJson('/api/live/halt-clear',{});
+  if(r.status===401){say('Your session expired. Reload the page and sign in again.','bad');return;}
+  if(r.status===403){say('The page security token was rejected. Reload the page and try again.','bad');return;}
+  if(r.ok&&r.data.halted===false){
+   say('HALT CLEARED. Your Gate.io account was re-checked and showed no open positions, no open orders and no protective triggers. Next step: press 2 \u00b7 CERTIFY.','good');
+  }else if(r.data&&r.data.cleared===false){
+   say('HALT NOT CLEARED \u2014 the server refused. '+(r.data.error||'It found something on Gate.io it could not match.')+
+       ' This usually means there is still an open position, an open order, a resting stop/take-profit trigger, or an unfinished trade record. Check Gate.io directly, close or cancel anything open, then try again. The HALT stays on until it is clean.','bad');
+  }else{
+   say('HALT NOT CLEARED \u2014 unexpected reply (HTTP '+r.status+'). '+(r.data.error||'No reason given.')+' The HALT is still on.','bad');
+  }
+ }catch(e){
+  say('Could not reach the server: '+e.message+' The HALT is still on.','bad');
+ }finally{
+  lockButtons(false);
+  try{await refresh();}catch(_){}
+ }
+});
+
+certOpen.addEventListener('click',()=>{
+ const opening=certForm.hidden;
+ certForm.hidden=!opening;
+ certOpen.setAttribute('aria-expanded',String(opening));
+ if(opening)evInput.focus();
+});
+certCancel.addEventListener('click',()=>{
+ certForm.hidden=true;certOpen.setAttribute('aria-expanded','false');
+});
+
+certSubmit.addEventListener('click',async()=>{
+ const evidence=(evInput.value||'').trim();
+ const approval=(apInput.value||'').trim();
+ const hoursRaw=(hrInput.value||'').trim();
+ const hours=Number(hoursRaw);
+ // Same rules the server enforces, checked here first so the message is clear.
+ if(!/^[A-Za-z0-9_.:-]{8,128}$/.test(evidence)){
+  say('The evidence reference must be 8 to 128 characters, using only letters, numbers, dot, underscore, colon or dash.','bad');return;
+ }
+ if(!/^[A-Za-z0-9_.:-]{4,128}$/.test(approval)){
+  say('Your approval ID must be 4 to 128 characters, using only letters, numbers, dot, underscore, colon or dash.','bad');return;
+ }
+ if(!Number.isInteger(hours)||hours<1||hours>168){
+  say('The validity window must be a whole number of hours from 1 to 168.','bad');return;
+ }
+ lockButtons(true);
+ say('Recording your certification\u2026');
+ try{
+  const r=await postJson('/api/live/certify',
+    {evidence_sha:evidence,signed_approval_id:approval,valid_hours:hours});
+  if(r.status===401){say('Your session expired. Reload the page and sign in again.','bad');return;}
+  if(r.status===403){say('The page security token was rejected. Reload the page and try again.','bad');return;}
+  if(r.ok&&r.data.certified===true){
+   const until=r.data.approved_until?(' It is valid until '+new Date(r.data.approved_until).toLocaleString('en-IN',{timeZone:'Asia/Kolkata'})+' IST.'):'';
+   say('CERTIFIED for '+hours+' hour'+(hours===1?'':'s')+'.'+until+' '+gateWords(r.data.safety_gates)+
+       (r.data.can_arm?' Next step: press \u25b6 BOT ON.':' Finish the remaining steps first.'),'good');
+   certForm.hidden=true;certOpen.setAttribute('aria-expanded','false');
+  }else{
+   say('CERTIFICATION NOT RECORDED \u2014 the server refused (HTTP '+r.status+'). '+
+       (r.data.error||'No reason given.')+' Check the three fields and try again.','bad');
+  }
+ }catch(e){
+  say('Could not reach the server: '+e.message+' Nothing was recorded.','bad');
+ }finally{
+  lockButtons(false);
+  try{await refresh();}catch(_){}
+ }
+});
 })();</script>'''
 
 PRODUCTION_CSS='''
@@ -316,6 +462,27 @@ body.production-view .bot-control-panel{display:flex!important;justify-content:s
 body.production-view #productionBotOn{color:#eefff5;border:1px solid #6effb6;background:linear-gradient(160deg,#5ff3ae,#16aa68 48%,#086c44 50%,#20c87f 100%)}
 body.production-view #productionBotOff{color:#fff0f0;border:1px solid #ff8da3;background:linear-gradient(160deg,#ff8ba4,#de335e 48%,#921f3e 50%,#e84b72 100%)}
 body.production-view .bot-control-actions .btn:disabled{opacity:.38;cursor:not-allowed}
+/* Gate unlock controls: CLEAR HALT / CERTIFY, beside the BOT ON/OFF pair. */
+body.production-view .gate-unlock-row{flex-basis:100%;margin-top:12px;padding-top:12px;border-top:1px solid #2c4a68}
+body.production-view .gate-unlock-head strong{display:block;font-size:12px;letter-spacing:.06em;color:#9de7ff}
+body.production-view .gate-unlock-head p{margin:4px 0 0;font-size:12px}
+body.production-view .gate-unlock-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+body.production-view .gate-btn{color:#eaf7ff;border:1px solid #4bb8f2;background:linear-gradient(160deg,#2a7fb8,#12507c 50%,#0b3a5c 52%,#1d6f9f 100%)}
+body.production-view .gate-btn:disabled{opacity:.38;cursor:not-allowed}
+body.production-view .gate-btn-quiet{color:#cfe6f5;border-color:#3d5f7d;background:#16324b}
+body.production-view .gate-certify-form{margin-top:12px;padding:12px;border:1px solid #355a7b;border-radius:10px;background:rgba(13,33,56,.55);max-width:640px}
+body.production-view .gate-certify-form[hidden]{display:none!important}
+body.production-view .gate-certify-form label{display:block;margin-top:10px;font-size:12px}
+body.production-view .gate-certify-form label span{display:block;font-weight:400;margin-top:2px;font-size:11px;line-height:1.45}
+body.production-view .gate-certify-form input{display:block;width:100%;margin-top:5px;padding:8px 10px;border-radius:7px;
+  border:1px solid #3d5f7d;background:#0a1d32;color:#eaf7ff;font-size:13px;box-sizing:border-box}
+body.production-view .gate-certify-form input:focus{outline:2px solid #66e6ff;outline-offset:1px}
+body.production-view .gate-certify-submit{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px}
+body.production-view .gate-result{margin:12px 0 0;padding:10px 12px;border-radius:9px;font-size:12.5px;line-height:1.5;
+  border:1px solid #355a7b;background:rgba(13,33,56,.55);color:#cfe6f5}
+body.production-view .gate-result:empty{display:none}
+body.production-view .gate-result.gate-good{border-color:#2f9e6b;background:rgba(20,80,55,.5);color:#c8ffe4}
+body.production-view .gate-result.gate-bad{border-color:#c0455f;background:rgba(90,25,40,.5);color:#ffd7de}
 body.production-view .production-live-orders-panel{margin-top:12px;padding-bottom:12px}
 body.production-view .production-live-orders-panel .v4-head{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}
 body.production-view .production-orders-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;padding:13px 18px}
