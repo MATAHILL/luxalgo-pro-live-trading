@@ -119,5 +119,65 @@ class GateUnlockControlTests(unittest.TestCase):
         self.assertNotIn('halted:false',self.page.replace('r.data.halted===false',''))
         self.assertIn('r.data.cleared===false',self.page)
 
+    # --- v6: the panel must reflect LIVE state, never stale text -------------
+
+    def test_gate_sync_hook_exists_and_reads_server_gates(self):
+        """The panel re-renders from safety_gates instead of a frozen message."""
+        self.assertIn('window.__luxGateSync',self.page)
+        self.assertIn("gates.indexOf('EMERGENCY_HALT')",self.page)
+        self.assertIn("gates.indexOf('ACCEPTANCE_AND_FINAL_AUTHORIZATION_MISSING')",self.page)
+
+    def test_gate_sync_is_called_from_the_state_poll(self):
+        """Every BOT ON/OFF poll feeds the gate panel, so it cannot go stale."""
+        self.assertIn("window.__luxGateSync(state);",self.page)
+
+    def test_stale_next_step_message_is_replaced_when_armed(self):
+        """The old 'Next step: press BOT ON' must not survive an armed bot."""
+        self.assertIn("if(armed){",self.page)
+        self.assertIn('all gates open',self.page)
+
+    def test_relatched_halt_is_reported_in_plain_words(self):
+        self.assertIn('HALT RE-LATCHED',self.page)
+        self.assertIn('UNPROTECTED_OR_UNKNOWN_EXCHANGE_EXPOSURE',self.page)
+        self.assertIn('EXCHANGE_RECONCILIATION_FAILED',self.page)
+
+    def test_buttons_disable_once_their_gate_is_open(self):
+        """A finished step must not keep inviting another click."""
+        self.assertIn('haltBtn.disabled=!halted;',self.page)
+        self.assertIn('certOpen.disabled=!needsCert;',self.page)
+        self.assertIn('HALT CLEARED \\u2713',self.page)
+        self.assertIn('CERTIFIED \\u2713',self.page)
+
+    def test_refusal_message_is_never_overwritten(self):
+        """A refusal must stay on screen, not be replaced by a calm status line."""
+        self.assertIn('refused',self.page)
+        self.assertIn('NOT CLEARED',self.page)
+
+    def test_halt_reason_is_explained_in_words(self):
+        self.assertIn('HALT because ',self.page)
+        self.assertIn('halt_reason',self.page)
+
+
+class ProductionStateDisclosureTests(unittest.TestCase):
+    """state() must disclose WHY the halt is on and when the cert expires."""
+
+    def test_state_exposes_halt_reason_and_certified_until(self):
+        import inspect as _inspect
+        from production_bot_control import state
+        src=_inspect.getsource(state)
+        self.assertIn('halt_reason',src)
+        self.assertIn('certified_until',src)
+        self.assertIn('operator_reason',src)
+
+    def test_state_does_not_relax_any_gate(self):
+        """Disclosure only: the gate list logic must be untouched."""
+        import inspect as _inspect
+        from production_bot_control import state
+        src=_inspect.getsource(state)
+        for gate in ('SOURCE_LOCKED','ENVIRONMENT_LOCKED','EMERGENCY_HALT',
+                     'ACCEPTANCE_AND_FINAL_AUTHORIZATION_MISSING','OPERATOR_OFF'):
+            self.assertIn(gate,src)
+        self.assertIn('effective=not gates',src)
+
 
 if __name__=="__main__":unittest.main()

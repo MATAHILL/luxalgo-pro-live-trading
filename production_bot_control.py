@@ -67,10 +67,20 @@ def state(con, *, install_schema=True):
     if not op["operator_on"]:gates.append("OPERATOR_OFF")
     effective=not gates
     from live_risk_policy import policy_status
+    # Surface WHY the halt is latched and until when the certificate runs.
+    # Without these the operator sees only the gate NAME and has to guess
+    # whether the halt came from a button press, a reconciliation anomaly or
+    # an unreachable exchange. Read-only disclosure: no gate is relaxed.
+    halt_reason=(protected.get("reason") or "") if db_halt else None
+    certified_until=(cert["approved_until"].isoformat()
+                     if certified and cert.get("approved_until") else None)
     return dict(risk_policy=policy_status(), bot_on=effective,operator_requested_on=bool(op["operator_on"]),
                 can_arm=(source_released and env_released and not db_halt and certified),
                 orders_enabled=effective, exchange="GATE_IO_LIVE_USDT_FUTURES",
                 safety_gates=gates, halt_active=db_halt,certified=certified,
+                halt_reason=halt_reason,
+                operator_reason=op["reason"] or None,
+                certified_until=certified_until,
                 reason="ARMED" if effective else ", ".join(gates),
                 changed_at=op["changed_at"].isoformat() if op["changed_at"] else None,
                 monitoring_independent=True)

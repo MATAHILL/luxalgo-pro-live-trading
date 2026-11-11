@@ -271,11 +271,32 @@ const on=document.getElementById('productionBotOn'),
       indicator=document.getElementById('productionBotIndicator'),
       detail=document.getElementById('productionBotDetail');
 if(!on||!off||!label||!indicator||!detail)return;
-let busy=false,actualOn=false;
+let busy=false,actualOn=false,lastState=null;
 const url='/terminal/production-bot-control';
+// Plain-words explanation of the stored HALT reason. The server now returns it,
+// so the operator can tell a button press from a failed exchange readback.
+const HALT_REASON_WORDS={
+ OPERATOR_OFF_NO_NEW_ENTRIES:'you pressed BOT OFF',
+ OPERATOR_PERSISTENT_HALT:'the emergency halt was pressed',
+ MANUAL_EMERGENCY_HALT:'the emergency halt button was pressed',
+ UNPROTECTED_OR_UNKNOWN_EXCHANGE_EXPOSURE:'the 60-second exchange check found a position, order or trigger it cannot match',
+ UNKNOWN_OR_UNPROTECTED_EXPOSURE:'the exchange check found a position, order or trigger it cannot match',
+ EXCHANGE_RECONCILIATION_FAILED:'the exchange could not be read (network, API error or timeout)',
+ OPERATOR_RECONCILED_CLEAR:'cleared by the operator'
+};
+function haltWords(reason){
+ const key=String(reason||'').trim().toUpperCase();
+ if(!key)return '';
+ return HALT_REASON_WORDS[key]||String(reason).replaceAll('_',' ').toLowerCase();
+}
 function display(state){
  const enabled=state&&state.bot_on===true;
  actualOn=enabled;
+ lastState=state||null;
+ // Keep the gate panel in step with the real server state. Guarded: the gate
+ // elements are wired further down, so this hook may not exist yet.
+ if(typeof window.__luxGateSync==='function'){try{window.__luxGateSync(state);}catch(_){}}
+ const why=state&&state.halt_reason?haltWords(state.halt_reason):'';
  label.textContent=enabled?'PRODUCTION BOT · ON':'PRODUCTION BOT · OFF';
  indicator.textContent=enabled?'● BOT ON':'● BOT OFF';
  indicator.className='bot-state-indicator '+(enabled?'on':'off');
@@ -283,7 +304,7 @@ function display(state){
  off.setAttribute('aria-pressed',String(!enabled));
  on.disabled=enabled;off.disabled=!enabled;
  detail.textContent=enabled?'Automatic entries permitted · Gate.io live Futures':
-  'New entries paused · '+String(state?.reason||state?.error||'Unverified safety state').replaceAll('_',' ');
+  'New entries paused · '+(why?('HALT because '+why):String(state?.reason||state?.error||'Unverified safety state').replaceAll('_',' '));
 }
 async function refresh(){
  if(busy)return;
@@ -347,10 +368,57 @@ const GATE_WORDS={
  ACCEPTANCE_AND_FINAL_AUTHORIZATION_MISSING:'no certification has been recorded yet',
  OPERATOR_OFF:'the bot has not been switched on yet'
 };
+let lastGateText='',lastGateKind='';
 function say(text,kind){
+ lastGateText=text;lastGateKind=kind||'';
  gateOut.textContent=text;
  gateOut.className='gate-result'+(kind?' gate-'+kind:'');
 }
+// Re-render the guidance line from the LIVE state so the panel never tells the
+// operator to do a step they already finished, and shouts when a HALT re-latches
+// after it was cleared. Driven by STATE TRANSITIONS, not by the last message
+// text: CERTIFY overwrites the "HALT CLEARED" line, so matching on text alone
+// would silently miss a re-latch (which is exactly the failure we are fixing).
+let prevHalted=null,prevArmed=null,refusalUntil=0;
+window.__luxGateSync=function(state){
+ const gates=Array.isArray(state&&state.safety_gates)?state.safety_gates:[];
+ const halted=gates.indexOf('EMERGENCY_HALT')!==-1;
+ const needsCert=gates.indexOf('ACCEPTANCE_AND_FINAL_AUTHORIZATION_MISSING')!==-1;
+ const armed=state&&state.bot_on===true;
+ if(!busy){
+  haltBtn.disabled=!halted;
+  haltBtn.textContent=halted?'1 \u00b7 CLEAR HALT':'1 \u00b7 HALT CLEARED \u2713';
+  certOpen.disabled=!needsCert;
+  certOpen.textContent=needsCert?'2 \u00b7 CERTIFY':'2 \u00b7 CERTIFIED \u2713';
+ }
+ if(busy)return;
+ // A refusal the operator just triggered stays on screen for a while.
+ if(Date.now()<refusalUntil)return;
+ const wasHalted=prevHalted,wasArmed=prevArmed;
+ prevHalted=halted;prevArmed=armed;
+ if(armed){
+  say('LIVE \u00b7 all gates open. New entries are permitted and every trade carries an exchange stop loss and take profit. Certification ends '+
+      (state.certified_until?'at '+new Date(state.certified_until).toLocaleString('en-IN',{timeZone:'Asia/Kolkata'})+' IST':'when it expires')+
+      '; after that the bot stops opening new trades by itself.','good');
+  return;
+ }
+ // Re-latch: it was running (or the halt had been cleared) and now it is not.
+ if(halted&&(wasArmed===true||wasHalted===false)){
+  say('HALT RE-LATCHED \u2014 '+(haltWords(state.halt_reason)||'the server re-latched it')+
+      '. New entries are blocked. Check Gate.io for an open position, resting order or trigger, then press 1 \u00b7 CLEAR HALT again.','bad');
+  return;
+ }
+ if(halted){
+  say('New entries are blocked. The HALT is on because '+(haltWords(state.halt_reason)||'the server has not cleared it')+
+      '. Press 1 \u00b7 CLEAR HALT to re-check Gate.io and clear it.','bad');
+  return;
+ }
+ if(needsCert){
+  say('The HALT is clear. Next step: press 2 \u00b7 CERTIFY to record your sign-off.','good');
+  return;
+ }
+ say('Certification is recorded and the HALT is clear. Press \u25b6 BOT ON to start live entries.','good');
+};
 function gateWords(list){
  if(!Array.isArray(list)||!list.length)return 'All gates are open.';
  return 'Still closed: '+list.map(g=>GATE_WORDS[g]||String(g).replaceAll('_',' ').toLowerCase()).join('; ')+'.';
@@ -372,6 +440,8 @@ async function postJson(url,body){
 function lockButtons(state){
  haltBtn.disabled=state;certSubmit.disabled=state;certOpen.disabled=state;
 }
+// Prime the gate panel with whatever the BOT ON/OFF poll already knows.
+if(lastState)window.__luxGateSync(lastState);
 
 haltBtn.addEventListener('click',async()=>{
  lockButtons(true);
@@ -383,6 +453,7 @@ haltBtn.addEventListener('click',async()=>{
   if(r.ok&&r.data.halted===false){
    say('HALT CLEARED. Your Gate.io account was re-checked and showed no open positions, no open orders and no protective triggers. Next step: press 2 \u00b7 CERTIFY.','good');
   }else if(r.data&&r.data.cleared===false){
+   refusalUntil=Date.now()+45000;
    say('HALT NOT CLEARED \u2014 the server refused. '+(r.data.error||'It found something on Gate.io it could not match.')+
        ' This usually means there is still an open position, an open order, a resting stop/take-profit trigger, or an unfinished trade record. Check Gate.io directly, close or cancel anything open, then try again. The HALT stays on until it is clean.','bad');
   }else{
@@ -434,6 +505,7 @@ certSubmit.addEventListener('click',async()=>{
        (r.data.can_arm?' Next step: press \u25b6 BOT ON.':' Finish the remaining steps first.'),'good');
    certForm.hidden=true;certOpen.setAttribute('aria-expanded','false');
   }else{
+   refusalUntil=Date.now()+45000;
    say('CERTIFICATION NOT RECORDED \u2014 the server refused (HTTP '+r.status+'). '+
        (r.data.error||'No reason given.')+' Check the three fields and try again.','bad');
   }
