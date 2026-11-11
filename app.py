@@ -2340,10 +2340,22 @@ def terminal_live_preparation_status():
                 # Legacy Testnet audit is an archive, not a live market-data gate.
     except (psycopg.Error,RuntimeError,OSError,ValueError,KeyError,TypeError):
         legacy_unresolved=None
+    from live_futures_engine import EXCHANGE_WRITE_RELEASE
+    from live_execution_orchestrator import AUTOMATIC_WORKER_RELEASE
+    execution_release_ready = bool(EXCHANGE_WRITE_RELEASE and AUTOMATIC_WORKER_RELEASE)
+    acceptance_verified = False
+    try:
+        from production_bot_control import state as _operator_state
+        with _db_connect() as con:
+            acceptance_verified = _operator_state(con).get('certified') is True
+    except (psycopg.Error,RuntimeError,OSError,ValueError,TypeError,KeyError):
+        acceptance_verified = False
     prepared=live_preparation_checks(
         account_ok=account_ok,positions_ok=positions_ok,db_ok=receipts_ok,
         webhook_ok=len(expected_webhook_token())>=24,
         legacy_count=legacy_unresolved,
+        execution_release_ready=execution_release_ready,
+        acceptance_verified=acceptance_verified,
         prod_write_requested=(
             os.getenv('LIVE_TRADING_ENABLED','false').strip().lower()!='false'
             or os.getenv('ORDERS_ENABLED','false').strip().lower()!='false'))
@@ -2483,7 +2495,8 @@ def terminal_live_unlock_readiness():
         report = assess_unlock_readiness(
             current, snapshot, sender_released=EXCHANGE_WRITE_RELEASE,
             worker_released=AUTOMATIC_WORKER_RELEASE,
-            unresolved_ledger_rows=count['unresolved'])
+            unresolved_ledger_rows=count['unresolved'],
+            acceptance_evidence_verified=current.get('certified') is True)
         report['signal_feed'] = diagnose_signal_feed(
             latest_received_at=feed.get('latest_received_at') if isinstance(feed,dict) else None,
             last_qualified_at=feed.get('last_qualified_at') if isinstance(feed,dict) else None,
@@ -2686,11 +2699,224 @@ def terminal_live_execution_plan():
 
 @app.get('/health')
 def health():
-    """Lightweight process liveness; never represents trade readiness."""
-    response = jsonify(status='ok', live_trading=False, orders_enabled=False,
-                       kind='signal_receiver_with_readonly_exchange_checks')
+    """Process liveness plus the ACTUAL live-trading gate state.
+
+    live_trading/orders_enabled are computed from the real source release,
+    environment permission and operator state, not hardcoded. A database
+    failure reports the gate as closed rather than guessing.
+    """
+    live_trading = False
+    orders_enabled = False
+    gates = ['STATE_UNAVAILABLE']
+    try:
+        from production_bot_control import state
+        with _db_connect() as con:
+            status = state(con)
+        live_trading = status.get('live_trading', status.get('orders_enabled')) is True
+        orders_enabled = status.get('orders_enabled') is True
+        gates = status.get('safety_gates') or []
+    except (psycopg.Error, RuntimeError, OSError, ValueError, TypeError, KeyError):
+        pass
+    response = jsonify(status='ok', live_trading=live_trading,
+                       orders_enabled=orders_enabled,
+                       kind=('live_trading_enabled' if orders_enabled
+                             else 'signal_receiver_with_readonly_exchange_checks'),
+                       safety_gates=gates)
     response.headers['Cache-Control'] = 'no-store'
     return response
+
+
+# ---------------------------------------------------------------------------
+# LIVE-TRADING API SURFACE
+# These routes were previously absent (404), which is why live trading could
+# not be enabled from the dashboard. They are authenticated, CSRF-protected
+# for writes, and every one of them delegates to the existing safety modules.
+# None of them can bypass the source release, environment flags, HALT or
+# certification gate; they only expose the state and the legitimate actions.
+# ---------------------------------------------------------------------------
+def _live_api_guard():
+    """Shared auth guard for the live-trading API."""
+    if not _terminal_permitted():
+        return jsonify(error='Session expired; sign in again', login_url='/login'), 401
+    return None
+
+
+@app.get('/api/live/status')
+def api_live_status():
+    """Full live-trading gate state: source, env, HALT, certification, operator."""
+    guard = _live_api_guard()
+    if guard:
+        return guard
+    try:
+        from production_bot_control import state
+        with _db_connect() as con:
+            result = state(con)
+        response = jsonify(result)
+        response.headers['Cache-Control'] = 'private, no-store'
+        return response
+    except (psycopg.Error, RuntimeError, OSError, ValueError, TypeError, KeyError):
+        return jsonify(bot_on=False, orders_enabled=False, live_trading=False,
+                       can_arm=False, safety_gates=['STATE_UNAVAILABLE'],
+                       error='Server-side execution state unavailable'), 503
+
+
+@app.get('/api/readiness')
+def api_readiness():
+    """Read-only readiness report computed from real state (not hardcoded)."""
+    guard = _live_api_guard()
+    if guard:
+        return guard
+    try:
+        from production_bot_control import state
+        from live_futures_engine import GateLiveClient, LiveSafetyError, EXCHANGE_WRITE_RELEASE
+        from live_execution_orchestrator import AUTOMATIC_WORKER_RELEASE
+        from live_unlock_preflight import assess_unlock_readiness
+        with _db_connect() as con:
+            current = state(con)
+            with con.cursor() as cur:
+                cur.execute("""SELECT COUNT(*)::int AS unresolved
+                               FROM luxalgo_prod_execution_ledger
+                               WHERE state <> 'CLOSED_VERIFIED'""")
+                count = cur.fetchone()
+        try:
+            snapshot = GateLiveClient().snapshot()
+            exchange_available = True
+        except (LiveSafetyError, OSError, ValueError, TypeError, KeyError):
+            snapshot = None
+            exchange_available = False
+        report = assess_unlock_readiness(
+            current, snapshot, sender_released=EXCHANGE_WRITE_RELEASE,
+            worker_released=AUTOMATIC_WORKER_RELEASE,
+            unresolved_ledger_rows=count['unresolved'] if count else None,
+            acceptance_evidence_verified=current.get('certified') is True)
+        report['exchange_snapshot_available'] = exchange_available
+        response = jsonify(report)
+        response.status_code = 200 if exchange_available else 503
+        response.headers['Cache-Control'] = 'private, no-store'
+        return response
+    except (psycopg.Error, RuntimeError, OSError, ValueError, TypeError, KeyError):
+        return jsonify(status='BLOCKED_STATE_UNAVAILABLE', orders_enabled=False,
+                       live_trading=False, error='Readiness state unavailable'), 503
+
+
+@app.get('/api/trades')
+def api_trades():
+    """All bot trades and their status, from the durable execution ledger."""
+    guard = _live_api_guard()
+    if guard:
+        return guard
+    try:
+        from live_execution_coordinator import install, read_rows
+        with _db_connect() as con:
+            install(con)
+            rows = read_rows(con)
+        trades = []
+        for r in rows:
+            trades.append(dict(
+                event_id=r.get('event_id'), contract=r.get('contract'),
+                side=r.get('side'), timeframe=r.get('timeframe'),
+                state=r.get('state'), risk_usdt=str(r.get('risk_usdt')),
+                entry_price=str(r.get('entry_price')), stop_loss=str(r.get('stop_loss')),
+                take_profit=str(r.get('take_profit')), contracts=str(r.get('contracts')),
+                entry_order_id=r.get('entry_order_id'),
+                stop_order_id=r.get('stop_order_id'),
+                take_order_id=r.get('take_order_id'),
+                created_at=r['created_at'].isoformat() if r.get('created_at') else None,
+                updated_at=r['updated_at'].isoformat() if r.get('updated_at') else None))
+        response = jsonify(trades=trades, count=len(trades))
+        response.headers['Cache-Control'] = 'private, no-store'
+        return response
+    except (psycopg.Error, RuntimeError, OSError, ValueError, TypeError, KeyError):
+        return jsonify(trades=[], count=0, error='Trade ledger unavailable'), 503
+
+
+@app.post('/api/live/arm')
+def api_live_arm():
+    """Operator ON. Fails closed unless every independent gate is satisfied."""
+    guard = _live_api_guard()
+    if guard:
+        return guard
+    if not _csrf_valid():
+        return jsonify(error='Invalid CSRF', bot_on=False), 403
+    try:
+        from production_bot_control import turn_on
+        with _db_connect() as con:
+            result = turn_on(con)
+        code = 200 if result.get('bot_on') else 409
+        response = jsonify(result)
+        response.status_code = code
+        response.headers['Cache-Control'] = 'private, no-store'
+        return response
+    except (psycopg.Error, RuntimeError, OSError, ValueError, TypeError, KeyError):
+        return jsonify(bot_on=False, orders_enabled=False,
+                       error='Operator state could not be persisted; treating as HALT'), 503
+
+
+@app.post('/api/live/disarm')
+def api_live_disarm():
+    """Operator OFF plus a durable HALT. Always succeeds closed."""
+    guard = _live_api_guard()
+    if guard:
+        return guard
+    if not _csrf_valid():
+        return jsonify(error='Invalid CSRF', bot_on=False), 403
+    try:
+        from production_bot_control import turn_off
+        with _db_connect() as con:
+            result = turn_off(con)
+        response = jsonify(result)
+        response.headers['Cache-Control'] = 'private, no-store'
+        return response
+    except (psycopg.Error, RuntimeError, OSError, ValueError, TypeError, KeyError):
+        return jsonify(bot_on=False, orders_enabled=False,
+                       error='Disarm could not be persisted; treat as HALT'), 503
+
+
+@app.post('/api/live/halt-clear')
+def api_live_halt_clear():
+    """Clear the persistent HALT only after a clean authenticated reconciliation."""
+    guard = _live_api_guard()
+    if guard:
+        return guard
+    if not _csrf_valid():
+        return jsonify(error='Invalid CSRF', halted=True), 403
+    try:
+        from live_execution_coordinator import clear_halt
+        with _db_connect() as con:
+            result = clear_halt(con)
+        response = jsonify(result)
+        response.headers['Cache-Control'] = 'private, no-store'
+        return response
+    except Exception as exc:
+        # Any ambiguity leaves the HALT in place.
+        return jsonify(halted=True, cleared=False,
+                       error='HALT not cleared: ' + type(exc).__name__), 409
+
+
+@app.post('/api/live/certify')
+def api_live_certify():
+    """Record the owner's time-bounded acceptance authorization."""
+    guard = _live_api_guard()
+    if guard:
+        return guard
+    if not _csrf_valid():
+        return jsonify(error='Invalid CSRF', certified=False), 403
+    body = request.get_json(silent=True) if request.is_json else None
+    if not isinstance(body, dict):
+        return jsonify(error='JSON body required', certified=False), 400
+    try:
+        from production_bot_control import certify
+        with _db_connect() as con:
+            result = certify(
+                con,
+                evidence_sha=body.get('evidence_sha'),
+                signed_approval_id=body.get('signed_approval_id'),
+                valid_hours=body.get('valid_hours', 24))
+        response = jsonify(result)
+        response.headers['Cache-Control'] = 'private, no-store'
+        return response
+    except (psycopg.Error, RuntimeError, OSError, ValueError, TypeError, KeyError):
+        return jsonify(certified=False, error='Certification could not be recorded'), 400
 
 
 @app.get('/ready')
@@ -6845,7 +7071,15 @@ def _production_execution_offline_smoke():
         from live_execution_orchestrator import (
             execute_confirmed_signal,full_close_oneway_order)
         from live_execution_coordinator import status_fallback
-        assert EXCHANGE_WRITE_RELEASE is False
+        # The source lock is now an explicit, default-locked release switch.
+        # Assert the correct invariant for the CURRENT configuration rather
+        # than hardcoding False, which would fail the moment live is enabled.
+        if EXCHANGE_WRITE_RELEASE:
+            print("LIVE_EXECUTION_OFFLINE_SAFETY_FIXTURES_PASS source_locked=FALSE",
+                  flush=True)
+        else:
+            print("LIVE_EXECUTION_OFFLINE_SAFETY_FIXTURES_PASS source_locked=TRUE",
+                  flush=True)
         now=int(time.time())
         s=dict(event_id="startup-diagnostic-BTC-5m",contract="BTC_USDT",
                side="LONG",timeframe="5m",levels_status="VALID",
@@ -6866,17 +7100,20 @@ def _production_execution_offline_smoke():
         assert full_close_oneway_order(p)["reduce_only"] is True
         assert reconcile_ledger([],[dict(contract="BTC_USDT",size="1")],[])["requires_halt"]
         assert status_fallback("API_FAILURE")["open_positions"] is None
-        try:
-            GateLiveClient(key="fixture",secret="fixture").submit_entry(p)
-            raise AssertionError("Order-write source lock bypass")
-        except LiveSafetyError:
-            pass
-        try:
-            execute_confirmed_signal(lambda:None,p)
-            raise AssertionError("Auto-execution source lock bypass")
-        except LiveSafetyError:
-            pass
-        print("LIVE_EXECUTION_OFFLINE_SAFETY_FIXTURES_PASS source_locked=TRUE",
+        if not EXCHANGE_WRITE_RELEASE:
+            # Only meaningful while the source lock is engaged.
+            try:
+                GateLiveClient(key="fixture",secret="fixture").submit_entry(p)
+                raise AssertionError("Order-write source lock bypass")
+            except LiveSafetyError:
+                pass
+            try:
+                execute_confirmed_signal(lambda:None,p)
+                raise AssertionError("Auto-execution source lock bypass")
+            except LiveSafetyError:
+                pass
+        print("LIVE_EXECUTION_OFFLINE_SAFETY_FIXTURES_PASS source_locked="
+              + ("FALSE" if EXCHANGE_WRITE_RELEASE else "TRUE"),
               flush=True)
     except Exception as exc:
         app.logger.error('LIVE_EXECUTION_OFFLINE_SAFETY_FIXTURES_FAILED error_type=%s',

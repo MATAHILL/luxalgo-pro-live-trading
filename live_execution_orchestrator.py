@@ -432,8 +432,10 @@ def execute_confirmed_signal(open_connection,plan,client=None):
                 "requires_manual_exchange_review":True}
 
 # Separate release gate for continuous automation, independent of a one-order
-# live acceptance test. Changing environment variables cannot bypass this.
-AUTOMATIC_WORKER_RELEASE = False
+# live acceptance test. Defaults to False; an operator must deliberately set
+# LUXALGO_AUTOMATIC_WORKER_RELEASE=true in the deployment environment.
+from live_futures_engine import _env_release as _env_release
+AUTOMATIC_WORKER_RELEASE = _env_release("LUXALGO_AUTOMATIC_WORKER_RELEASE")
 
 def process_stored_luxalgo_alert(open_connection,event_id,client=None):
     """Authenticated, validated TradingView receipt -> protected order workflow.

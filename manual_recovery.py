@@ -15,7 +15,9 @@ from live_execution_coordinator import control,LOCK_ID
 from live_emergency_one_shot_claim import evaluate_one_shot_close_candidate,claim_one_shot_recovery
 from controlled_acceptance import canonical_digest
 
-RECOVERY_RELEASE=False
+# Defaults to False; an operator must deliberately set
+# LUXALGO_RECOVERY_RELEASE=true in the deployment environment.
+RECOVERY_RELEASE=engine._env_release("LUXALGO_RECOVERY_RELEASE")
 LEDGER_SQL='''SELECT event_id,contract,side,position_mode,state,contracts,
  client_text,entry_order_id,entry_price,stop_loss,take_profit
  FROM luxalgo_prod_execution_ledger WHERE event_id=%s'''

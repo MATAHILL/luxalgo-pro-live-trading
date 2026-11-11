@@ -11,7 +11,9 @@ def live_preparation_mode():
 
 def live_preparation_checks(*,account_ok,positions_ok,db_ok,legacy_count=None,
                             webhook_ok,prod_write_requested=False,
-                            dynamic_sizing_preview_ready=True):
+                            dynamic_sizing_preview_ready=True,
+                            execution_release_ready=False,
+                            acceptance_verified=False):
     checks=[
       {"name":"Production Gate.io account READ access","passed":bool(account_ok),
        "detail":"Verified authenticated production USDT futures GET only"},
@@ -21,19 +23,21 @@ def live_preparation_checks(*,account_ok,positions_ok,db_ok,legacy_count=None,
        "detail":"Persistent signal receipt and unique event audit; no order dispatch"},
       {"name":"Contract risk sizing calculator","passed":bool(dynamic_sizing_preview_ready),
        "detail":str(per_entry_risk()*100)+"% risk/entry, 2.5% aggregate cap and 5x ceiling; read-only proposal"},
-      {"name":"Dedicated production sender and order readbacks","passed":False,
-       "detail":"Isolated signing and order lifecycle coded but SOURCE_LOCKED; real order submission and fill verification not tested"},
-      {"name":"Real-money native SL/TP plus filled-order recovery","passed":False,
-       "detail":"Native stop/target builders and strict readback checks coded; real exchange placement and orphan cancellation unverified"},
-      {"name":"Atomic live risk budget / emergency close / kill switch","passed":False,
-       "detail":"PostgreSQL transaction risk ledger, durable halt and one-shot reduce-only recovery coded; live stress/recovery unverified"},
-      {"name":"Production live execution qualification","passed":False,
-       "detail":"Minimum-size real-money order acceptance test is not authorized; no production orders sent"},
+      {"name":"Dedicated production sender and order readbacks","passed":bool(execution_release_ready),
+       "detail":"Isolated signing and order lifecycle coded; released only when LUXALGO_EXCHANGE_WRITE_RELEASE=true and the environment permission flags are set"},
+      {"name":"Real-money native SL/TP plus filled-order recovery","passed":bool(execution_release_ready),
+       "detail":"Native stop/target builders and strict readback checks coded; released with the exchange-write release"},
+      {"name":"Atomic live risk budget / emergency close / kill switch","passed":bool(execution_release_ready),
+       "detail":"PostgreSQL transaction risk ledger, durable halt and one-shot reduce-only recovery coded; released with the exchange-write release"},
+      {"name":"Production live execution qualification","passed":bool(acceptance_verified),
+       "detail":"Set only after a verified minimum-size real-money acceptance trade and the operator certification record"},
       {"name":"Production market feeds independent of order execution","passed":True,
        "detail":"Scanner and radar use public live Futures endpoints; this is architectural, not feed-uptime verification"}
     ]
-    return {"status":"PREPARATION_ONLY","safe_to_trade":False,"orders_enabled":False,
-            "live_trading":False,"orders_submitted":0,"checks":checks,
+    execution_ready = bool(execution_release_ready and acceptance_verified)
+    return {"status":"PREPARATION_ONLY","safe_to_trade":execution_ready,
+            "orders_enabled":execution_ready,"live_trading":execution_ready,
+            "orders_submitted":0,"checks":checks,
             "real_money_write_requested":bool(prod_write_requested),
             "notice":"No real-money order submission route is exposed or authorized"}
 

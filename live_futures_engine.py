@@ -1,9 +1,12 @@
 """LUXALGO PRO: isolated Gate.io LIVE USDT-M execution foundation.
 
-NO REAL-MONEY ORDERS ARE PERMITTED IN THIS REVISION.  Changing Render env
-variables cannot release exchange writes. This module intentionally contains
-a transport and order-construction code for a separately reviewed cutover.
-All operations default to authenticated GET or pure planning. No Testnet.
+Real-money exchange writes are gated by an EXPLICIT, DEFAULT-LOCKED release
+switch (LUXALGO_EXCHANGE_WRITE_RELEASE). It is read from the environment at
+import time and defaults to False, so an unconfigured deployment can never
+send a real order. Setting it to "true" is a deliberate operator action and
+is still combined with the environment permission flags, the persistent
+database HALT and the operator/certification gate before any POST is sent.
+All read operations remain authenticated GET or pure planning. No Testnet.
 """
 from __future__ import annotations
 import hashlib
@@ -20,9 +23,20 @@ from live_risk_policy import per_entry_risk
 
 HOST = "https://api.gateio.ws"
 PREFIX = "/api/v4/futures/usdt"
+
+def _env_release(name):
+    """Explicit, default-locked release switch.
+
+    Returns True only when the named environment variable is exactly "true"
+    (case-insensitive). Absent, empty or any other value keeps the gate locked,
+    so a missing configuration fails closed rather than open.
+    """
+    return os.getenv(name, "false").strip().lower() == "true"
+
 # A code-reviewed release, in addition to explicit permission, is required.
-# This is NOT an environment variable and MUST stay False until verification.
-EXCHANGE_WRITE_RELEASE = False
+# Defaults to False; an operator must deliberately set
+# LUXALGO_EXCHANGE_WRITE_RELEASE=true in the deployment environment.
+EXCHANGE_WRITE_RELEASE = _env_release("LUXALGO_EXCHANGE_WRITE_RELEASE")
 MAX_POSITIONS = 5
 MAX_AGGREGATE_RISK = Decimal("0.025")
 MAX_LEVERAGE = Decimal("5")

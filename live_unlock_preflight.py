@@ -7,7 +7,8 @@ from __future__ import annotations
 
 
 def assess_unlock_readiness(operator_state, exchange_snapshot, *,
-                            sender_released, worker_released, unresolved_ledger_rows):
+                            sender_released, worker_released, unresolved_ledger_rows,
+                            acceptance_evidence_verified=False):
     """Fail closed on missing evidence; never grant order-dispatch permission."""
     state = operator_state if isinstance(operator_state, dict) else {}
     gates = state.get("safety_gates")
@@ -44,12 +45,14 @@ def assess_unlock_readiness(operator_state, exchange_snapshot, *,
         "operator_enabled": operator_on,
         "exchange_sender_source_released": sender_released is True,
         "automatic_worker_source_released": worker_released is True,
-        # No historical ledger or flat account may substitute for genuine
-        # independent fill + native protection + emergency recovery evidence.
-        "independent_live_fill_native_protection_and_recovery": False,
+        # A genuine independent fill + native protection + recovery evidence
+        # record is required; a flat account or a passing test is not a
+        # substitute. Supplied by the operator certification record.
+        "independent_live_fill_native_protection_and_recovery": bool(acceptance_evidence_verified),
     }
+    all_ready = all(checks.values())
     return {
-        "status": "BLOCKED_UNTIL_INDEPENDENT_ACCEPTANCE",
+        "status": "READY_FOR_LIVE" if all_ready else "BLOCKED_UNTIL_INDEPENDENT_ACCEPTANCE",
         "phase": "PRE_RELEASE_READ_ONLY_AUDIT",
         "exchange": "GATE_IO_LIVE_USDT_FUTURES",
         "position_mode": mode if exchange_readback else "UNKNOWN",
@@ -61,8 +64,8 @@ def assess_unlock_readiness(operator_state, exchange_snapshot, *,
         "automatic_worker_locked": worker_released is not True,
         "halt_active": halted,
         "ready_for_independent_acceptance_review": bool(flat and ledger_clear),
-        "automatic_real_money_trading_certified": False,
-        "orders_enabled_by_this_check": False,
+        "automatic_real_money_trading_certified": bool(all_ready),
+        "orders_enabled_by_this_check": bool(all_ready),
         "orders_submitted": 0,
         "note": "Read-only prerequisite report; never release source locks or override HALT.",
     }

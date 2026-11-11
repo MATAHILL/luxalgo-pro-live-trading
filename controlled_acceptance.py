@@ -16,7 +16,9 @@ import live_futures_engine as engine
 import live_execution_orchestrator as lifecycle
 from live_execution_coordinator import LOCK_ID, control, halt, risk_reserve
 
-ACCEPTANCE_RELEASE = False
+# Defaults to False; an operator must deliberately set
+# LUXALGO_ACCEPTANCE_RELEASE=true in the deployment environment.
+ACCEPTANCE_RELEASE = engine._env_release("LUXALGO_ACCEPTANCE_RELEASE")
 CAPS = {'max_margin':'1.70', 'max_notional':'8.30', 'max_modeled_loss':'0.10'}
 SCHEMA = """CREATE TABLE IF NOT EXISTS luxalgo_single_acceptance (
  scope_id TEXT PRIMARY KEY, event_id TEXT NOT NULL UNIQUE,

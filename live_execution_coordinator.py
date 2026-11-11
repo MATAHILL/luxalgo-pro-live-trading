@@ -185,6 +185,41 @@ def reconcile_and_halt_if_needed(con, client=None):
         halt(con,"UNPROTECTED_OR_UNKNOWN_EXCHANGE_EXPOSURE")
     return status
 
+def clear_halt(con, client=None, reason="OPERATOR_RECONCILED_CLEAR"):
+    """Clear the persistent HALT ONLY after a clean authenticated reconciliation.
+
+    This is the missing counterpart to halt(). It never clears on a flat account
+    alone: it re-reads the live exchange inventory and refuses unless the
+    reconciliation reports no untracked positions, orders or triggers and no
+    unresolved ledger rows. Any ambiguity leaves the HALT in place.
+    """
+    if not isinstance(reason,str) or not reason or len(reason)>200:
+        raise LiveSafetyError("Invalid halt-clear reason")
+    client=client or GateLiveClient()
+    install(con)
+    # A clean readback is mandatory; an exception here propagates and the
+    # caller must treat the HALT as still active.
+    status=inspect(con,client)
+    if (status["reconciliation"]["requires_halt"] or
+        status["untracked_open_orders"] or status["untracked_open_triggers"]):
+        raise LiveSafetyError("Reconciliation still reports unknown or unprotected exposure")
+    with con.cursor() as cur:
+        cur.execute("SELECT pg_advisory_xact_lock(%s)",(LOCK_ID,))
+        cur.execute("""SELECT COUNT(*)::int AS unresolved
+                       FROM luxalgo_prod_execution_ledger
+                       WHERE state <> 'CLOSED_VERIFIED'""")
+        row=cur.fetchone()
+        if not row or row["unresolved"] != 0:
+            raise LiveSafetyError("Unresolved execution rows block halt clear")
+        cur.execute("""UPDATE luxalgo_prod_execution_control
+                       SET halted=FALSE,reason=%s,updated_at=NOW()
+                       WHERE id=1""",(reason,))
+        if cur.rowcount!=1:
+            raise LiveSafetyError("Halt clear database update failed")
+    return {"halted":False,"reason":reason,"reconciled":True,
+            "untracked_open_orders":0,"untracked_open_triggers":0,
+            "note":"HALT cleared after a clean authenticated reconciliation"}
+
 def status_fallback(reason):
     """Explicitly distinguish unknown account state from an empty account."""
     return {"status":"UNAVAILABLE","halted":True,"halt_reason":reason,

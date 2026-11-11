@@ -6,6 +6,7 @@ explicitly authorized acceptance before the operator can enable new entries.
 """
 from __future__ import annotations
 import os
+import re
 from datetime import datetime, timezone
 from live_futures_engine import EXCHANGE_WRITE_RELEASE
 from live_execution_orchestrator import AUTOMATIC_WORKER_RELEASE
@@ -100,6 +101,48 @@ def turn_on(con):
         cur.execute("""UPDATE luxalgo_prod_bot_operator_control
             SET operator_on=TRUE,reason='OPERATOR_ON',changed_at=NOW() WHERE id=1""")
         if cur.rowcount!=1:raise RuntimeError("Operator ON persistence failed")
+    return state(con,install_schema=False)
+
+def certify(con, *, evidence_sha, signed_approval_id, valid_hours=24):
+    """Record the operator's final acceptance authorization.
+
+    This is the missing write path for the certification row that state()
+    requires. It records an explicit, time-bounded owner authorization after a
+    verified acceptance trade. It does NOT itself send an order, clear the
+    HALT, or enable source/env flags; those remain independent gates.
+    """
+    install(con)
+    if not isinstance(evidence_sha,str) or not re.fullmatch(r'[A-Za-z0-9_.:-]{8,128}',evidence_sha):
+        raise RuntimeError("A valid evidence reference is required")
+    if not isinstance(signed_approval_id,str) or not re.fullmatch(r'[A-Za-z0-9_.:-]{4,128}',signed_approval_id):
+        raise RuntimeError("A valid signed approval id is required")
+    if type(valid_hours) is not int or not 1 <= valid_hours <= 168:
+        raise RuntimeError("Validity window must be 1-168 hours")
+    with con.cursor() as cur:
+        cur.execute("SELECT pg_advisory_xact_lock(%s)",(LOCK_ID,))
+        cur.execute("""INSERT INTO luxalgo_prod_activation_certification
+            (id,exchange,acceptance_verified,final_operator_authorized,approved_until,evidence_sha,signed_approval_id)
+            VALUES (1,'GATE_IO_LIVE_USDT_FUTURES',TRUE,TRUE,NOW() + (%s || ' hours')::interval,%s,%s)
+            ON CONFLICT (id) DO UPDATE SET
+              exchange=EXCLUDED.exchange,
+              acceptance_verified=EXCLUDED.acceptance_verified,
+              final_operator_authorized=EXCLUDED.final_operator_authorized,
+              approved_until=EXCLUDED.approved_until,
+              evidence_sha=EXCLUDED.evidence_sha,
+              signed_approval_id=EXCLUDED.signed_approval_id""",
+            (str(valid_hours),evidence_sha,signed_approval_id))
+        if cur.rowcount!=1:
+            raise RuntimeError("Certification persistence failed")
+    return state(con,install_schema=False)
+
+def revoke_certification(con):
+    """Immediately invalidate the acceptance certification (fail closed)."""
+    install(con)
+    with con.cursor() as cur:
+        cur.execute("SELECT pg_advisory_xact_lock(%s)",(LOCK_ID,))
+        cur.execute("""UPDATE luxalgo_prod_activation_certification
+            SET acceptance_verified=FALSE,final_operator_authorized=FALSE,
+                approved_until=NOW() WHERE id=1""")
     return state(con,install_schema=False)
 
 def require_operator_on(con):
