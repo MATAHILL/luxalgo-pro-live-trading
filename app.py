@@ -860,7 +860,7 @@ header.terminal-header{border-radius:17px!important}
 <div class="adv-table"><table><thead><tr><th>PAIR</th><th>DIRECTION</th><th>TIMEFRAME</th><th>LUXALGO</th><th>ENTRY REF.</th><th>SL1</th><th>TP1</th><th>R:R</th><th>0.5% RISK / SIZE</th><th>STATUS / REASON</th></tr></thead><tbody id="advancedScanBody"><tr><td colspan="10" class="light">Waiting for scan results.</td></tr></tbody></table></div>
 <p class="light">Technical watchlist is NOT a LuxAlgo signal or recommendation. Technical entry/SL1/TP1 are non-executable previews. No verified LuxAlgo SL1/TP1 = NO TRADE. Capital figures are account-read-only; sizes are indicative BASE-asset quantities, not validated Gate.io contract quantities. Live execution remains BLOCKED.</p>
 </section>
-<div class="bottom-grid"><section class="panel performance-panel"><div class="panel-heading"><h2>PERFORMANCE ANALYTICS</h2><span class="label-muted">VERIFIED FILLS ONLY</span></div><div class="perf-grid"><div><span>Total Closed Trades</span><strong>—</strong></div><div><span>Winning Trades</span><strong>—</strong></div><div><span>Losing Trades</span><strong>—</strong></div><div><span>Win Rate</span><strong>—</strong></div><div><span>Total Realized P&amp;L</span><strong>—</strong></div><div><span>Unrealized P&amp;L</span><strong>—</strong></div></div><p class="light">Waiting for authenticated position and fill synchronization. No synthetic P&amp;L or win statistics.</p></section></div><section class="panel"><div class="panel-heading"><h2>COMPLETED TRADES · EXIT RECORD</h2><span class="label-muted">PENDING ACCOUNT HISTORY INTEGRATION</span></div><div class="tablewrap"><table><thead><tr><th>TIME (IST)</th><th>PAIR</th><th>DIRECTION</th><th>ENTRY FILL</th><th>EXIT FILL</th><th>NET REALIZED P&amp;L</th><th>RESULT</th></tr></thead><tbody><tr><td colspan="7" class="empty-state">No verified exchange fills have been synchronized. Signal receipts are not executed trades.</td></tr></tbody></table></div></section><section class="panel legacy-paper-panel"><div class="panel-heading"><h2>PAPER TRADE MONITOR <span class="tag">SIMULATION ONLY</span></h2><button class="btn gloss-action" id="paperRefresh" type="button">↻ Check Paper Trades</button></div><p class="light" id="paperStatus" role="status" aria-live="polite">Checks queued simulated orders when the dashboard is open; historical outcomes remain estimates, not fills.</p><div class="tablewrap"><table><thead><tr><th>CREATED (IST)</th><th>PAIR</th><th>SIDE</th><th>SIM ENTRY</th><th>SIM SL</th><th>SIM TP</th><th>STATE</th><th>LAST PRICE</th><th>UNREALIZED P&amp;L</th><th>EST. CLOSED P&amp;L</th></tr></thead><tbody id="paperBody"><tr><td colspan="10">No simulated positions loaded.</td></tr></tbody></table></div><p id="paperOpenPnlTotal" class="light" role="status" aria-live="polite">Open paper unrealized P&amp;L: not yet available.</p><p class="light">Simulation outcomes assume the reference entry was achievable and exclude fees, slippage and funding. If both SL and TP are touched in one candle, SL is assumed first. Historical-data gaps are not guessed. Simulated P&amp;L is never included in verified real-trade analytics.</p></section><div class="foot">LUXALGO PRO · Private terminal · Market data is public Gate.io data. Scanners are technical watchlists, not LuxAlgo entry signals. No account positions, fills, profit or loss are available until authenticated exchange sync is implemented. Live order placement is controlled by the PRODUCTION BOT switch above: when it reads BOT ON, enabled signals are sent to Gate.io and the panels above show the real result; when it reads BOT OFF or a gate is listed, no orders are placed.</div></div><script>
+<div class="bottom-grid"><section class="panel performance-panel"><div class="panel-heading"><h2>PERFORMANCE ANALYTICS</h2><span class="label-muted">VERIFIED FILLS ONLY</span></div><div class="perf-grid"><div><span>Total Closed Trades</span><strong>—</strong></div><div><span>Winning Trades</span><strong>—</strong></div><div><span>Losing Trades</span><strong>—</strong></div><div><span>Win Rate</span><strong>—</strong></div><div><span>Total Realized P&amp;L</span><strong>—</strong></div><div><span>Unrealized P&amp;L</span><strong>—</strong></div></div><p class="light">Waiting for authenticated position and fill synchronization. No synthetic P&amp;L or win statistics.</p></section></div><section class="panel"><div class="panel-heading"><h2>COMPLETED TRADES · EXIT RECORD</h2><span class="label-muted" id="completedTradesStatus">LOADING…</span></div><div class="tablewrap"><table><thead><tr><th>TIME (IST)</th><th>PAIR</th><th>DIRECTION</th><th>ENTRY FILL</th><th>EXIT FILL</th><th>NET REALIZED P&amp;L</th><th>RESULT</th></tr></thead><tbody id="completedTradesBody"><tr><td colspan="7" class="empty-state">Loading closed bot trades…</td></tr></tbody></table></div><p class="light">Closed bot trades only. A row appears here once the exchange reports the position, its open orders and its resting SL/TP triggers all gone. Realized P&amp;L is the exchange's own fill P&amp;L, never an estimate.</p></section><section class="panel legacy-paper-panel"><div class="panel-heading"><h2>PAPER TRADE MONITOR <span class="tag">SIMULATION ONLY</span></h2><button class="btn gloss-action" id="paperRefresh" type="button">↻ Check Paper Trades</button></div><p class="light" id="paperStatus" role="status" aria-live="polite">Checks queued simulated orders when the dashboard is open; historical outcomes remain estimates, not fills.</p><div class="tablewrap"><table><thead><tr><th>CREATED (IST)</th><th>PAIR</th><th>SIDE</th><th>SIM ENTRY</th><th>SIM SL</th><th>SIM TP</th><th>STATE</th><th>LAST PRICE</th><th>UNREALIZED P&amp;L</th><th>EST. CLOSED P&amp;L</th></tr></thead><tbody id="paperBody"><tr><td colspan="10">No simulated positions loaded.</td></tr></tbody></table></div><p id="paperOpenPnlTotal" class="light" role="status" aria-live="polite">Open paper unrealized P&amp;L: not yet available.</p><p class="light">Simulation outcomes assume the reference entry was achievable and exclude fees, slippage and funding. If both SL and TP are touched in one candle, SL is assumed first. Historical-data gaps are not guessed. Simulated P&amp;L is never included in verified real-trade analytics.</p></section><div class="foot">LUXALGO PRO · Private terminal · Market data is public Gate.io data. Scanners are technical watchlists, not LuxAlgo entry signals. No account positions, fills, profit or loss are available until authenticated exchange sync is implemented. Live order placement is controlled by the PRODUCTION BOT switch above: when it reads BOT ON, enabled signals are sent to Gate.io and the panels above show the real result; when it reads BOT OFF or a gate is listed, no orders are placed.</div></div><script>
 
 // Read-only advanced watchlist: uses completed 5m/15m public candles and validated LuxAlgo receipt records.
 (function(){
@@ -1296,11 +1296,24 @@ function renderPositions(positions){
   chart.addEventListener('click',()=>{
    window.openGateTradingView(p.contract);
   });actions.append(chart);
-  for(const name of ['Set TP/SL','Reverse','Market Close','Close Position']){
-   const action=element('button','btn btn-danger',name+' · LOCKED');action.type='button';action.disabled=true;
-   action.title='Disabled: live order execution and exchange-side risk protection have not been implemented';actions.append(action);
-  }
-  inner.append(actions,element('p','position-readonly-hint','Read-only Gate.io account snapshot · Actions remain locked until secure order management is implemented. ROI excludes fees and funding. SL/TP status not verified.'));
+  // Live operator actions. Each one is an explicit click that re-reads the
+  // exchange before acting; nothing here is reachable from a signal.
+  const ledger=window.__liveLedgerByContract&&window.__liveLedgerByContract[p.contract];
+  const canAct=!!ledger;
+  const mk=(label,kind)=>{
+   const b=element('button','btn btn-danger',label);b.type='button';
+   b.dataset.posAction=kind;b.dataset.eventId=ledger?ledger.event_id:'';
+   if(!canAct){b.disabled=true;b.title='No bot execution record for this contract. '
+     +'A position opened outside the bot cannot be managed from here.';}
+   return b;
+  };
+  actions.append(mk('Set TP/SL','protection'),mk('Reverse','reverse'),
+                 mk('Market Close','close'));
+  inner.append(actions,element('p','position-readonly-hint',
+   canAct?'Actions re-read Gate.io before sending and verify the result. '
+     +'Market Close is reduce-only. Reverse is blocked while the bot is halted.'
+   :'Read-only Gate.io account snapshot. No bot execution record matches this '
+     +'contract, so the action buttons are disabled. ROI excludes fees and funding.'));
   card.append(inner);body.append(card);
  });
  for(const key of expanded){if(!seen.has(key))expanded.delete(key);}
@@ -1309,6 +1322,16 @@ function renderPositions(positions){
 async function loadPositions(){
  if(busy)return;busy=true;button.disabled=true;
  try{
+  // Ledger identity first, so each card knows which bot trade it belongs to.
+  try{
+   const lr=await fetch('/terminal/live-positions',{cache:'no-store'});
+   const ld=await lr.json();
+   const map={};
+   if(lr.ok&&Array.isArray(ld.positions)){
+    for(const r of ld.positions){if(r.contract)map[r.contract]=r;}
+   }
+   window.__liveLedgerByContract=map;
+  }catch(e){window.__liveLedgerByContract={};}
   const r=await fetch('/terminal/positions',{cache:'no-store'}),d=await r.json();
   if(!r.ok)throw Error(d.error||'Gate.io account temporarily unavailable');
   count.textContent=String(d.count);pnl.textContent=money(d.unrealized_pnl_usdt);
@@ -1319,6 +1342,59 @@ async function loadPositions(){
  finally{busy=false;button.disabled=false;}
 }
 button.addEventListener('click',()=>{loadPositions();loadFuturesEquity();});
+// Operator position actions: close / protection / reverse.
+body.addEventListener('click',async e=>{
+ const b=e.target.closest('[data-pos-action]');
+ if(!b||b.disabled)return;
+ const kind=b.dataset.posAction,eventId=b.dataset.eventId;
+ if(!eventId)return;
+ const card=b.closest('.position-card');
+ const hint=card&&card.querySelector('.position-readonly-hint');
+ const say=t=>{if(hint)hint.textContent=t;};
+ const csrf=document.querySelector('input[name="csrf_token"]')?.value;
+ if(!csrf){say('No valid terminal session token. Refresh and sign in again.');return;}
+ let body_=null,label='';
+ if(kind==='close'){
+  if(!window.confirm('Send ONE reduce-only market close for this position? '
+    +'This closes the real position at Gate.io.'))return;
+  body_={event_id:eventId};label='Closing position\u2026';
+ }else{
+  const cur=window.__liveLedgerByContract?.[card?.querySelector('.position-symbol')?.textContent?.replace('/','_')||''];
+  const sl=window.prompt('New STOP LOSS price (must be on the losing side of entry):',
+                         cur?cur.stop_loss:'');
+  if(sl===null)return;
+  const tp=window.prompt('New TAKE PROFIT price (must be on the winning side of entry):',
+                         cur?cur.take_profit:'');
+  if(tp===null)return;
+  if(kind==='reverse'){
+   if(!window.confirm('Close this position and open the OPPOSITE one with these '
+     +'SL/TP? This creates new exposure.'))return;
+   label='Reversing position\u2026';
+  }else{label='Replacing SL/TP\u2026';}
+  body_={event_id:eventId,stop_loss:sl,take_profit:tp};
+ }
+ const url=kind==='close'?'/terminal/position/close'
+   :kind==='reverse'?'/terminal/position/reverse'
+   :'/terminal/position/protection';
+ const all=card?card.querySelectorAll('[data-pos-action]'):[];
+ all.forEach(x=>x.disabled=true);
+ say(label+' do not repeat if the response is uncertain.');
+ try{
+  const res=await fetch(url,{method:'POST',cache:'no-store',
+   headers:{'Content-Type':'application/json','X-Terminal-CSRF':csrf},
+   body:JSON.stringify(body_)});
+  const out=await res.json();
+  const ok=res.ok&&['CLOSED_VERIFIED','ALREADY_CLOSED','PROTECTION_VERIFIED',
+                    'REVERSED_AND_PROTECTED'].includes(out.state);
+  say((ok?'\u2713 ':'\u26a0 ')+(out.state||('HTTP '+res.status))
+      +(out.detail?' \u00b7 '+out.detail:'')
+      +(out.error?' \u00b7 '+out.error:''));
+  if(ok){setTimeout(()=>{loadPositions();loadFuturesEquity();},1200);}
+ }catch(err){
+  say('\u26a0 OUTCOME UNKNOWN \u00b7 '+String(err.message).slice(0,90)
+      +' \u00b7 Check Gate.io before any retry.');
+ }finally{all.forEach(x=>x.disabled=false);}
+});
 loadPositions();loadFuturesEquity();setInterval(()=>{if(!document.hidden){loadPositions();loadFuturesEquity();}},30000);
 })();
 
@@ -1720,6 +1796,60 @@ draw(true);
 syncTestnetCards();
 setInterval(syncTestnetCards,20000);
 document.addEventListener('visibilitychange',()=>{if(!document.hidden)syncTestnetCards();});
+})();
+</script>
+<script>
+/* COMPLETED TRADES v1 — read-only closed bot trades from the execution ledger. */
+(function(){
+'use strict';
+const body=document.getElementById('completedTradesBody');
+const status=document.getElementById('completedTradesStatus');
+if(!body)return;
+const esc=v=>String(v??'\u2014').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const num=v=>{if(v===null||v===undefined||v==='')return '\u2014';const n=Number(v);return Number.isFinite(n)?n.toLocaleString(undefined,{maximumFractionDigits:6}):'\u2014';};
+const ist=iso=>{if(!iso)return '\u2014';const d=new Date(iso);return Number.isNaN(d.getTime())?'\u2014':d.toLocaleString('en-IN',{timeZone:'Asia/Kolkata',hour12:true});};
+let busy=false;
+async function load(){
+ if(busy||document.hidden)return;busy=true;
+ try{
+  const r=await fetch('/api/completed-trades',{cache:'no-store',credentials:'same-origin'});
+  const d=await r.json();
+  if(!r.ok)throw Error(d.error||('HTTP '+r.status));
+  const rows=Array.isArray(d.trades)?d.trades:[];
+  body.replaceChildren();
+  if(!rows.length){
+   const tr=body.insertRow(),td=tr.insertCell();
+   td.colSpan=7;td.className='empty-state';
+   td.textContent='No closed bot trades yet. A trade appears here after the exchange reports the position fully closed.';
+  }else{
+   for(const t of rows){
+    const tr=body.insertRow();
+    const pnl=Number(t.realized_pnl_usdt);
+    const hasPnl=t.realized_pnl_usdt!==null&&t.realized_pnl_usdt!==undefined&&Number.isFinite(pnl);
+    const cells=[
+     ist(t.closed_at),
+     String(t.symbol||'').replace('USDT','/USDT'),
+     t.side||'\u2014',
+     num(t.entry_price),
+     t.exit_price===null||t.exit_price===undefined?'\u2014':num(t.exit_price),
+     hasPnl?((pnl>0?'+':'')+num(pnl)):'\u2014',
+     hasPnl?(pnl>0?'WIN':pnl<0?'LOSS':'FLAT'):'CLOSED'
+    ];
+    cells.forEach((v,i)=>{
+     const td=tr.insertCell();td.textContent=v;
+     if(i===5&&hasPnl)td.className=pnl>0?'positive':pnl<0?'negative':'';
+     if(i===6&&hasPnl)td.className=pnl>0?'positive':pnl<0?'negative':'';
+    });
+   }
+  }
+  status.textContent=rows.length+' closed bot trade'+(rows.length===1?'':'s')+' \u00b7 exchange-verified \u00b7 updated '+new Date().toLocaleTimeString('en-IN',{timeZone:'Asia/Kolkata',hour12:true})+' IST';
+ }catch(e){
+  status.textContent='Completed trades unavailable: '+String(e.message).slice(0,90);
+ }finally{busy=false;}
+}
+load();
+setInterval(()=>{if(!document.hidden)load();},60000);
+document.addEventListener('visibilitychange',()=>{if(!document.hidden)load();});
 })();
 </script>
 <script>
@@ -2828,6 +2958,162 @@ def api_trades():
         return response
     except (psycopg.Error, RuntimeError, OSError, ValueError, TypeError, KeyError):
         return jsonify(trades=[], count=0, error='Trade ledger unavailable'), 503
+
+
+@app.get('/api/completed-trades')
+def api_completed_trades():
+    """Closed bot trades with exchange-derived realized P&L. Read-only."""
+    guard = _live_api_guard()
+    if guard:
+        return guard
+    try:
+        from live_close_record import read_completed_trades
+        from live_execution_coordinator import install
+        with _db_connect() as con:
+            install(con)
+            trades = read_completed_trades(con)
+        response = jsonify(trades=trades, count=len(trades))
+        response.headers['Cache-Control'] = 'private, no-store'
+        return response
+    except (psycopg.Error, RuntimeError, OSError, ValueError, TypeError, KeyError):
+        return jsonify(trades=[], count=0,
+                       error='Completed trade record unavailable'), 503
+
+
+@app.post('/terminal/position/close')
+def terminal_position_close():
+    """Operator click: reduce-only market close of one live bot position."""
+    if not _terminal_permitted():
+        return _terminal_guard()
+    if not _csrf_valid():
+        return jsonify(error='Invalid terminal session verification'), 403
+    data = request.get_json(silent=True) if request.is_json else None
+    if not isinstance(data, dict) or not isinstance(data.get('event_id'), str):
+        return jsonify(error='Exact bot execution record required'), 400
+    if not re.fullmatch(r'[a-zA-Z0-9_.:-]{8,128}', data['event_id']):
+        return jsonify(error='Invalid execution record id'), 422
+    try:
+        from live_position_actions import close_position
+        from live_futures_engine import LiveSafetyError, AckUnknown
+        with _db_connect() as con:
+            result = close_position(con, data['event_id'])
+        code = 200 if result.get('state') in ('CLOSED_VERIFIED', 'ALREADY_CLOSED') else 409
+        response = jsonify(**result)
+        response.headers['Cache-Control'] = 'private, no-store'
+        return response, code
+    except AckUnknown as exc:
+        return jsonify(state='CLOSE_OUTCOME_UNKNOWN', error=str(exc),
+                       detail='The close may have been accepted. Inspect Gate.io '
+                              'before any retry.'), 503
+    except LiveSafetyError as exc:
+        return jsonify(state='REFUSED', error=str(exc)), 409
+    except (psycopg.Error, RuntimeError, OSError, ValueError, TypeError, KeyError):
+        app.logger.exception('Position close failed')
+        return jsonify(state='CLOSE_OUTCOME_UNKNOWN',
+                       error='Close could not be confirmed; inspect Gate.io'), 503
+
+
+@app.post('/terminal/position/protection')
+def terminal_position_protection():
+    """Operator click: replace the resting SL/TP with new verified prices."""
+    if not _terminal_permitted():
+        return _terminal_guard()
+    if not _csrf_valid():
+        return jsonify(error='Invalid terminal session verification'), 403
+    data = request.get_json(silent=True) if request.is_json else None
+    if not isinstance(data, dict):
+        return jsonify(error='JSON body required'), 400
+    event_id = data.get('event_id')
+    if not isinstance(event_id, str) or not re.fullmatch(r'[a-zA-Z0-9_.:-]{8,128}', event_id):
+        return jsonify(error='Exact bot execution record required'), 422
+    try:
+        from live_position_actions import modify_protection
+        from live_futures_engine import LiveSafetyError, AckUnknown
+        with _db_connect() as con:
+            result = modify_protection(con, event_id,
+                                       data.get('stop_loss'), data.get('take_profit'))
+        code = 200 if result.get('state') == 'PROTECTION_VERIFIED' else 409
+        response = jsonify(**result)
+        response.headers['Cache-Control'] = 'private, no-store'
+        return response, code
+    except AckUnknown as exc:
+        return jsonify(state='PROTECTION_OUTCOME_UNKNOWN', error=str(exc),
+                       detail='Inspect Gate.io now; the position may be unprotected.'), 503
+    except LiveSafetyError as exc:
+        return jsonify(state='REFUSED', error=str(exc)), 409
+    except (psycopg.Error, RuntimeError, OSError, ValueError, TypeError, KeyError):
+        app.logger.exception('Protection modify failed')
+        return jsonify(state='PROTECTION_OUTCOME_UNKNOWN',
+                       error='Protection change could not be confirmed'), 503
+
+
+@app.post('/terminal/position/reverse')
+def terminal_position_reverse():
+    """Operator click: close, then open the opposite side with new SL/TP."""
+    if not _terminal_permitted():
+        return _terminal_guard()
+    if not _csrf_valid():
+        return jsonify(error='Invalid terminal session verification'), 403
+    data = request.get_json(silent=True) if request.is_json else None
+    if not isinstance(data, dict):
+        return jsonify(error='JSON body required'), 400
+    event_id = data.get('event_id')
+    if not isinstance(event_id, str) or not re.fullmatch(r'[a-zA-Z0-9_.:-]{8,128}', event_id):
+        return jsonify(error='Exact bot execution record required'), 422
+    try:
+        from live_position_actions import reverse_position
+        from live_futures_engine import LiveSafetyError, AckUnknown
+        with _db_connect() as con:
+            result = reverse_position(con, event_id,
+                                      data.get('stop_loss'), data.get('take_profit'))
+        code = 200 if result.get('state') == 'REVERSED_AND_PROTECTED' else 409
+        response = jsonify(**result)
+        response.headers['Cache-Control'] = 'private, no-store'
+        return response, code
+    except AckUnknown as exc:
+        return jsonify(state='REVERSE_OUTCOME_UNKNOWN', error=str(exc),
+                       detail='Inspect Gate.io immediately; exposure may be open '
+                              'and unprotected.'), 503
+    except LiveSafetyError as exc:
+        return jsonify(state='REFUSED', error=str(exc)), 409
+    except (psycopg.Error, RuntimeError, OSError, ValueError, TypeError, KeyError):
+        app.logger.exception('Position reverse failed')
+        return jsonify(state='REVERSE_OUTCOME_UNKNOWN',
+                       error='Reverse could not be confirmed; inspect Gate.io'), 503
+
+
+@app.get('/terminal/live-positions')
+def terminal_live_positions():
+    """Live bot positions with their ledger identity, for the action buttons."""
+    if not _terminal_permitted():
+        return _terminal_guard()
+    try:
+        from live_execution_coordinator import install, read_rows
+        with _db_connect() as con:
+            install(con)
+            rows = read_rows(con)
+        out = []
+        for r in rows:
+            if r.get('state') == 'CLOSED_VERIFIED':
+                continue
+            out.append(dict(
+                event_id=r.get('event_id'), contract=r.get('contract'),
+                side=r.get('side'), state=r.get('state'),
+                contracts=str(r.get('contracts')),
+                entry_price=str(r.get('entry_price')),
+                stop_loss=str(r.get('stop_loss')),
+                take_profit=str(r.get('take_profit')),
+                entry_order_id=r.get('entry_order_id'),
+                stop_order_id=r.get('stop_order_id'),
+                take_order_id=r.get('take_order_id'),
+                protected=bool(r.get('stop_order_id') and r.get('take_order_id')),
+                created_at=(r['created_at'].isoformat() if r.get('created_at') else None)))
+        response = jsonify(positions=out, count=len(out))
+        response.headers['Cache-Control'] = 'private, no-store'
+        return response
+    except (psycopg.Error, RuntimeError, OSError, ValueError, TypeError, KeyError):
+        return jsonify(positions=[], count=0,
+                       error='Live position records unavailable'), 503
 
 
 @app.post('/api/live/arm')
@@ -5818,7 +6104,9 @@ def terminal_incoming_signals():
                     cur.execute("""SELECT p.event_id,p.received_at,p.symbol,p.side,p.timeframe,
                            l.status AS level_status,l.entry_price,l.stop_loss,l.take_profit,
                            o.order_type,h.event_id AS handoff_event_id,
-                           h.source_bar_id,h.order_type AS handoff_order_type
+                           h.source_bar_id,h.order_type AS handoff_order_type,
+                           r.reason AS refusal_reason,r.stage AS refusal_stage,
+                           r.detail AS refusal_detail
                         FROM (
                            SELECT DISTINCT ON (event_id)
                                event_id,received_at,symbol,side,timeframe
@@ -5829,6 +6117,7 @@ def terminal_incoming_signals():
                         LEFT JOIN luxalgo_signal_levels l ON l.event_id=p.event_id
                         LEFT JOIN luxalgo_signal_order_types o ON o.event_id=p.event_id
                         LEFT JOIN luxalgo_live_signal_handoff h ON h.event_id=p.event_id
+                        LEFT JOIN luxalgo_live_execution_refusals r ON r.event_id=p.event_id
                         ORDER BY p.received_at DESC LIMIT 25""",(cutoff,))
                     rows=cur.fetchall()
             # Read the LIVE gate state so the panel stops claiming the code is
@@ -5872,6 +6161,14 @@ def terminal_incoming_signals():
                 else:
                     qualification='QUALIFIED_SIGNAL_EXECUTION_LOCKED' if not _live_on else 'QUALIFIED_SIGNAL_EXECUTABLE'
                     reason=_qualified_reason
+                # A persisted refusal is the authoritative answer to "why did
+                # this signal not become an order". It overrides the generic
+                # text, which cannot know the specific gate that fired.
+                if r.get('refusal_reason'):
+                    qualification='REFUSED_'+str(r.get('refusal_stage') or 'DISPATCH')
+                    reason=('Refused at '+str(r.get('refusal_stage') or 'DISPATCH')
+                            +': '+str(r['refusal_reason'])
+                            +(' \u00b7 '+str(r['refusal_detail']) if r.get('refusal_detail') else ''))
                 signals.append(dict(event_id=r['event_id'],time=r['received_at'].isoformat(),
                      symbol=r['symbol'],side=r['side'],timeframe=r['timeframe'],
                      entry=str(r['entry_price']) if r['entry_price'] is not None else None,
@@ -5879,6 +6176,8 @@ def terminal_incoming_signals():
                      take_profit=str(r['take_profit']) if r['take_profit'] is not None else None,
                      order_type=r['order_type'] or 'UNDECLARED',state='NOT EXECUTED',
                      status_label='NOT EXECUTED',reason=reason,level_status=level,
+                     refusal_reason=r.get('refusal_reason'),
+                     refusal_stage=r.get('refusal_stage'),
                      source_bar_verified=stable_bar,execution_qualification=qualification))
             response=jsonify(signals=signals,count=len(signals),display_limit=25,
                              display_since=cutoff.isoformat(),mode='PRODUCTION_SIGNAL_ONLY',
