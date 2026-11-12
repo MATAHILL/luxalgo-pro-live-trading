@@ -2880,17 +2880,43 @@ def api_live_halt_clear():
         return guard
     if not _csrf_valid():
         return jsonify(error='Invalid CSRF', halted=True), 403
+    body = request.get_json(silent=True) if request.is_json else None
+    release = body.get('release_stale_reservations', False) if isinstance(body, dict) else False
+    if type(release) is not bool:
+        return jsonify(halted=True, cleared=False,
+                       error='release_stale_reservations must be true or false'), 422
     try:
         from live_execution_coordinator import clear_halt
         with _db_connect() as con:
-            result = clear_halt(con)
+            result = clear_halt(con, release_stale_reservations=release)
         response = jsonify(result)
         response.headers['Cache-Control'] = 'private, no-store'
         return response
     except Exception as exc:
-        # Any ambiguity leaves the HALT in place.
+        # Any ambiguity leaves the HALT in place. Return the REAL reason so the
+        # operator can tell a Gate.io position from a leftover ledger row.
+        detail = str(exc) if isinstance(exc, RuntimeError) else ''
         return jsonify(halted=True, cleared=False,
-                       error='HALT not cleared: ' + type(exc).__name__), 409
+                       error='HALT not cleared: ' + type(exc).__name__,
+                       reason=detail or None), 409
+
+
+@app.get('/api/live/halt-diagnose')
+def api_live_halt_diagnose():
+    """Read-only: exactly what blocks a HALT clear. Never mutates anything."""
+    guard = _live_api_guard()
+    if guard:
+        return guard
+    try:
+        from live_execution_coordinator import diagnose_halt
+        with _db_connect() as con:
+            result = diagnose_halt(con)
+        response = jsonify(result)
+        response.headers['Cache-Control'] = 'private, no-store'
+        return response
+    except Exception as exc:
+        return jsonify(read_only=True, error='Diagnostic unavailable: '
+                       + type(exc).__name__), 503
 
 
 @app.post('/api/live/certify')

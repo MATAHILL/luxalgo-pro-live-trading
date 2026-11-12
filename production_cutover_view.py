@@ -185,7 +185,13 @@ PRODUCTION_CONTROL='''<section class="bot-control-panel" aria-label="Production 
 <p class="light">Do these in order: <b>1 CLEAR HALT</b>, then <b>2 CERTIFY</b>, then <b>3 BOT ON</b>. Each step only works once the one before it is done.</p></div>
 <div class="gate-unlock-actions">
 <button class="btn gate-btn" id="productionHaltClear" type="button">1 · CLEAR HALT</button>
+<button class="btn gate-btn" id="productionHaltDiagnose" type="button" aria-expanded="false" aria-controls="productionHaltDiagnoseOut">WHY IS IT BLOCKED?</button>
 <button class="btn gate-btn" id="productionCertifyOpen" type="button" aria-expanded="false" aria-controls="productionCertifyForm">2 · CERTIFY</button>
+</div>
+<div class="gate-certify-form" id="productionHaltDiagnoseOut" hidden>
+<p class="light">Read-only. This asks the server exactly what is stopping CLEAR HALT. It never changes anything on Gate.io or in the bot.</p>
+<pre id="productionHaltDiagnoseBody" style="white-space:pre-wrap;word-break:break-word;font-size:12px;margin:0"></pre>
+<button class="btn" id="productionHaltRelease" type="button" hidden>RELEASE STALE RECORD &amp; CLEAR HALT</button>
 </div>
 <div class="gate-certify-form" id="productionCertifyForm" hidden>
 <p class="light">CERTIFY records your own sign-off that you have checked a real acceptance trade. It does not place an order and it does not clear the HALT.</p>
@@ -358,6 +364,10 @@ const haltBtn=document.getElementById('productionHaltClear'),
       evInput=document.getElementById('productionEvidenceSha'),
       apInput=document.getElementById('productionApprovalId'),
       hrInput=document.getElementById('productionValidHours'),
+      diagBtn=document.getElementById('productionHaltDiagnose'),
+      diagOut=document.getElementById('productionHaltDiagnoseOut'),
+      diagBody=document.getElementById('productionHaltDiagnoseBody'),
+      releaseBtn=document.getElementById('productionHaltRelease'),
       gateOut=document.getElementById('productionGateResult');
 if(!haltBtn||!certOpen||!certForm||!certSubmit||!gateOut)return;
 
@@ -454,8 +464,8 @@ haltBtn.addEventListener('click',async()=>{
    say('HALT CLEARED. Your Gate.io account was re-checked and showed no open positions, no open orders and no protective triggers. Next step: press 2 \u00b7 CERTIFY.','good');
   }else if(r.data&&r.data.cleared===false){
    refusalUntil=Date.now()+45000;
-   say('HALT NOT CLEARED \u2014 the server refused. '+(r.data.error||'It found something on Gate.io it could not match.')+
-       ' This usually means there is still an open position, an open order, a resting stop/take-profit trigger, or an unfinished trade record. Check Gate.io directly, close or cancel anything open, then try again. The HALT stays on until it is clean.','bad');
+   say('HALT NOT CLEARED \u2014 the server refused. '+(r.data.reason?(' Server said: '+r.data.reason):'')+
+       ' Open the HALT DIAGNOSE panel to see exactly what it is blocking on: a Gate.io position, an open order, a resting trigger, or a leftover trade record that was never sent. The HALT stays on until it is clean.','bad');
   }else{
    say('HALT NOT CLEARED \u2014 unexpected reply (HTTP '+r.status+'). '+(r.data.error||'No reason given.')+' The HALT is still on.','bad');
   }
@@ -466,6 +476,64 @@ haltBtn.addEventListener('click',async()=>{
   try{await refresh();}catch(_){}
  }
 });
+
+// Read-only diagnostic: name the exact blocker instead of guessing.
+if(diagBtn&&diagOut&&diagBody){
+ diagBtn.addEventListener('click',async()=>{
+  const opening=diagOut.hidden;
+  diagOut.hidden=!opening;
+  diagBtn.setAttribute('aria-expanded',String(opening));
+  if(!opening)return;
+  diagBody.textContent='Checking\u2026';
+  if(releaseBtn)releaseBtn.hidden=true;
+  try{
+   const r=await fetch('/api/live/halt-diagnose',{credentials:'same-origin',headers:{'Accept':'application/json'}});
+   const d=await r.json();
+   if(!r.ok){diagBody.textContent='Diagnostic unavailable: '+(d.error||('HTTP '+r.status));return;}
+   const lines=[];
+   lines.push('Gate.io reachable: '+(d.exchange_reachable===true?'YES':d.exchange_reachable===false?'NO \u2014 the account could not be read':'unknown'));
+   if(d.exchange_reachable===true){
+    lines.push('Open positions on Gate.io: '+d.exchange_positions);
+    lines.push('Open orders on Gate.io: '+d.exchange_open_orders);
+    lines.push('Open stop/take triggers on Gate.io: '+d.exchange_open_triggers);
+   }
+   lines.push('Unfinished trade records in the bot: '+d.unresolved_ledger_rows);
+   if(d.stale_reservation_rows&&d.stale_reservation_rows.length){
+    lines.push('');
+    lines.push('LEFTOVER RECORDS THAT WERE NEVER SENT ('+d.stale_reservation_rows.length+'):');
+    d.stale_reservation_rows.forEach(x=>lines.push('  '+x.event_id+'  '+x.contract+'  state='+x.state+'  entry_order_id=none'));
+   }
+   if(d.unrecoverable_rows&&d.unrecoverable_rows.length){
+    lines.push('');
+    lines.push('RECORDS THAT MAY HAVE REACHED THE EXCHANGE ('+d.unrecoverable_rows.length+') \u2014 these need manual review:');
+    d.unrecoverable_rows.forEach(x=>lines.push('  '+x.event_id+'  '+x.contract+'  state='+x.state+'  entry_order_id='+(x.entry_order_id||'none')));
+   }
+   if(d.blocking_reasons&&d.blocking_reasons.length){
+    lines.push('');
+    lines.push('BLOCKING: '+d.blocking_reasons.join(', '));
+   }
+   diagBody.textContent=lines.join('\n');
+   if(releaseBtn)releaseBtn.hidden=!(d.can_clear_with_stale_release===true);
+  }catch(e){diagBody.textContent='Could not reach the server: '+e.message;}
+ });
+}
+// Explicit, operator-confirmed release of provably-unsent leftover records.
+if(releaseBtn){
+ releaseBtn.addEventListener('click',async()=>{
+  releaseBtn.disabled=true;
+  try{
+   const r=await postJson('/api/live/halt-clear',{release_stale_reservations:true});
+   if(r.ok&&r.data.halted===false){
+    say('HALT CLEARED. '+(r.data.note||'')+' Next step: press 2 \\u00b7 CERTIFY.','good');
+    if(diagOut)diagOut.hidden=true;
+    releaseBtn.hidden=true;
+   }else{
+    say('Still refused. '+(r.data.reason||r.data.error||'No reason given.')+' The HALT is still on.','bad');
+   }
+  }catch(e){say('Could not reach the server: '+e.message+' The HALT is still on.','bad');}
+  finally{releaseBtn.disabled=false;try{await refresh();}catch(_){}}
+ });
+}
 
 certOpen.addEventListener('click',()=>{
  const opening=certForm.hidden;
