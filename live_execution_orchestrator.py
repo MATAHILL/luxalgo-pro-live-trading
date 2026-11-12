@@ -13,7 +13,7 @@ from live_futures_engine import (
     EXCHANGE_WRITE_RELEASE, LiveSafetyError, AckUnknown, GateLiveClient,
     PREFIX, ORDER_RE, build_plan, client_text, evaluate_protection,
     verified_account_equity, verify_ledger_position, dec, price_geometry,
-    verify_execution_preflight)
+    verify_execution_preflight, account_position_mode)
 from live_execution_coordinator import install,control,halt,read_rows,risk_reserve
 
 def persist_state(open_connection, event_id, state, *, entry_order_id=None,
@@ -181,7 +181,7 @@ def require_safe_emergency_close_inventory(client, plan, now_epoch=None):
     if not age.is_finite() or not 0<=age<=30:
         raise LiveSafetyError("Stale or future exchange inventory")
     account=snap.get("account")
-    if not isinstance(account,dict) or account.get("position_mode")!=mode:
+    if not isinstance(account,dict) or account_position_mode(account)!=mode:
         raise LiveSafetyError("Emergency account mode mismatch")
     positions=snap.get("positions")
     orders=snap.get("orders")
@@ -470,7 +470,10 @@ def process_stored_luxalgo_alert(open_connection,event_id,client=None):
     # Contract metadata and balance are checked against the live exchange,
     # never inferred from TradingView or a scanner ranking.
     snap=client.snapshot()
-    verified_mode=snap["account"].get("position_mode")
+    # Gate reports hedge mode as the boolean in_dual_mode, not a position_mode
+    # string. Derive it from the field the API actually sends; unknown still
+    # fails closed here.
+    verified_mode=account_position_mode(snap["account"])
     if verified_mode not in ("single","dual"):
         raise LiveSafetyError("Authenticated live position mode unknown or unsupported")
     meta=client.request("GET",PREFIX+"/contracts/"+contract)

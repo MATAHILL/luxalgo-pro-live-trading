@@ -134,6 +134,39 @@ def price_geometry(side, entry, sl, tp):
     return e,s,t
 
 
+def account_position_mode(account):
+    """Derive Gate's one-way/hedge mode from the field the API actually sends.
+
+    Gate.io's USDT-M ``/accounts`` response reports hedge mode as the boolean
+    ``in_dual_mode``. It does NOT send a ``position_mode`` string. Reading
+    ``position_mode`` directly therefore always yielded ``None`` and every live
+    entry was refused with "Authenticated live position mode unknown or
+    unsupported" before any order could be built.
+
+    ``in_dual_mode`` is authoritative when present. A ``position_mode`` string
+    is accepted only as a fallback for fixtures/older payloads, and only when
+    it agrees with ``in_dual_mode`` if both are present. Anything missing,
+    contradictory or unrecognised returns None so the caller fails closed.
+    """
+    if not isinstance(account, dict):
+        return None
+    dual = account.get("in_dual_mode")
+    declared = account.get("position_mode")
+    if isinstance(declared, bool):
+        declared = None
+    if isinstance(declared, str):
+        declared = declared.strip().lower() or None
+    if declared is not None and declared not in ("single", "dual"):
+        return None
+    if isinstance(dual, bool):
+        derived = "dual" if dual else "single"
+        if declared is not None and declared != derived:
+            return None
+        return derived
+    # No authoritative boolean: accept an explicit string, else unknown.
+    return declared
+
+
 def verified_account_equity(account):
     """Classic Gate USDT-M equity = total cash balance + unrealized P&L.
 
@@ -307,7 +340,7 @@ def verify_execution_preflight(plan, metadata, snapshot, now=None):
         if dec(plan.get(key),key)%tick!=0:
             raise LiveSafetyError('Original LuxAlgo protective price is off tick')
     mode=plan.get('position_mode')
-    if mode not in ('single','dual') or snapshot['account'].get('position_mode')!=mode:
+    if mode not in ('single','dual') or account_position_mode(snapshot['account'])!=mode:
         raise LiveSafetyError('Account position mode changed or unknown')
     settings=snapshot.get('position_settings')
     expected_mode='single' if mode=='single' else ('dual_long' if plan['side']=='LONG' else 'dual_short')
@@ -520,6 +553,10 @@ class GateLiveClient:
         triggers=self.request("GET",PREFIX+"/price_orders",params={"status":"open","limit":100})
         if not isinstance(account,dict) or account.get("currency")!="USDT":
             raise LiveSafetyError("Unverified production account")
+        # Normalise the mode once, from the field Gate actually sends, so every
+        # downstream reader sees the same verified value.
+        account=dict(account)
+        account["position_mode"]=account_position_mode(account)
         if not isinstance(orders,list) or not isinstance(triggers,list):
             raise LiveSafetyError("Incomplete exchange order inventory")
         if len(orders)>=100 or len(triggers)>=100:

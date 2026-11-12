@@ -787,7 +787,7 @@ header.terminal-header{border-radius:17px!important}
 </div></details>
 <details class="panel" style="margin:12px 0" id="liveReadinessPanel"><summary style="font-weight:850;cursor:pointer;color:#ffcf89">LIVE EXECUTION READINESS · SAFETY CHECK (READ ONLY)</summary><p class="light">This panel checks safeguards only. It cannot start trading or enable Gate.io API writes.</p><button class="btn" type="button" id="readinessRefresh">Check readiness</button><button class="btn gloss-action" type="button" id="guardTestButton" style="margin-left:8px">Test Duplicate Order Guard</button><button class="btn gloss-action" type="button" id="riskCheckButton" style="margin-left:8px">Check Account Risk Limits</button><button class="btn gloss-action" type="button" id="stage2GateTestButton" style="margin-left:8px">Test Stage 2 Risk Gate</button><button class="btn gloss-action" type="button" id="stage3ContractTestButton" style="margin-left:8px">Test Stage 3 Contract Sizing</button><button class="btn gloss-action" type="button" id="stage4ProtectiveTestButton" style="margin-left:8px">Test Stage 4 SL/TP</button><button class="btn gloss-action" type="button" id="stage5LedgerTestButton" style="margin-left:8px">Test Stage 5 Ledger</button><button class="btn gloss-action" type="button" id="stage6HaltTestButton" style="margin-left:8px">Test Stage 6 Halt &amp; Recovery</button><button class="btn gloss-action" type="button" id="stage7AuditButton" style="margin-left:8px">Test Stage 7 Readiness Audit</button><button class="btn gloss-action" type="button" id="stage8AckTestButton" style="margin-left:8px">Test Stage 8 Ack Recovery</button><button class="btn gloss-action" type="button" id="stage9ReconcileTestButton" style="margin-left:8px">Test Stage 9 Reconciliation</button><button class="btn gloss-action" type="button" id="stage10ProtectionTestButton" style="margin-left:8px">Test Stage 10 SL/TP Coverage</button><button class="btn gloss-action" type="button" id="stage11RiskTestButton" style="margin-left:8px">Test Stage 11 Atomic Risk</button><button class="btn gloss-action" type="button" id="stage12ReadOnlyTestButton" style="margin-left:8px">Test Stage 12 Gate.io Read-Only</button><button class="btn gloss-action" type="button" id="stage13RecoveryTestButton" style="margin-left:8px">Test Stage 13 Recovery &amp; Failures</button><button class="btn gloss-action" type="button" id="stage14FinalTestButton" style="margin-left:8px">Test Stage 14 Final Paper Audit</button><button class="btn gloss-action" type="button" id="stage15IntegrationTestButton" style="margin-left:8px">Test Stage 15 Real Alert Paper Audit</button><button class="btn gloss-action" type="button" id="stage15InspectButton" style="margin-left:8px">Inspect Stage 15 Record Issues</button><button class="btn btn-danger" type="button" id="stage6EmergencyHalt" style="margin-left:8px">EMERGENCY HALT · PAPER &amp; FUTURE EXECUTION</button><p class="light" id="riskCheckResult" role="status" aria-live="polite">Read-only risk inspection available. Never authorizes a trade.</p><p class="light" id="guardTestResult">Test only: all candidates are BLOCKED; no exchange orders.</p><p class="light" id="stage2GateTestResult" role="status" aria-live="polite">Stage 2 PostgreSQL concurrency test not yet run.</p><p class="light" id="stage3ContractTestResult" role="status" aria-live="polite">Stage 3 read-only sizing diagnostic not yet run.</p><p class="light" id="stage4ProtectiveTestResult" role="status" aria-live="polite">Stage 4 protective-price validation not yet run. No protective orders exist.</p><p class="light" id="stage5LedgerTestResult" role="status" aria-live="polite">Stage 5 PostgreSQL simulated lifecycle test not yet run. No exchange writes.</p><p class="light" id="stage6HaltTestResult" role="status" aria-live="polite">Stage 6 persistent halt diagnostic not yet run. No exchange writes.</p><p class="light" id="stage7AuditResult" role="status" aria-live="polite">Stage 7 read-only readiness audit not yet run. All exchange execution blocked.</p><p class="light" id="stage8AckTestResult" role="status" aria-live="polite">Stage 8 unknown-acknowledgment quarantine not yet tested. No exchange write.</p><p class="light" id="stage9ReconcileTestResult" role="status" aria-live="polite">Stage 9 fixture-only reconciliation test not yet run. Real Gate.io orders are not reconciled.</p><p class="light" id="stage10ProtectionTestResult" role="status" aria-live="polite">Stage 10 protective-order fixture audit not yet run. No exchange protections verified.</p><p class="light" id="stage11RiskTestResult" role="status" aria-live="polite">Stage 11 account-wide risk fixture not yet tested. Exchange orders disabled.</p><p class="light" id="stage12ReadOnlyTestResult" role="status" aria-live="polite">Stage 12 read-only exchange snapshot not yet run. Live order reconciliation is NOT implemented.</p><p class="light" id="stage13RecoveryTestResult" role="status" aria-live="polite">Stage 13 restart/failure diagnostic not yet run. No exchange writes.</p><p class="light" id="stage14FinalTestResult" role="status" aria-live="polite">Stage 14 final simulated paper-trading audit not yet run. Live execution remains blocked.</p><p class="light" id="stage15IntegrationTestResult" role="status" aria-live="polite">Stage 15 real-alert paper audit not yet run. Requires genuine TradingView alerts; no test order placed.</p><pre id="stage15InspectResult" role="status" aria-live="polite" style="display:none;white-space:pre-wrap;overflow-wrap:anywhere;background:#081b2e;border:1px solid #345c83;border-radius:9px;padding:12px;color:#d9ecff;max-height:440px;overflow:auto">No read-only breakdown requested.</pre><p class="light" id="stage6HaltState" role="status" aria-live="polite">Future execution stays HALTED; checking database status…</p><div id="readinessOutput" role="status" aria-live="polite" style="margin-top:10px;color:#fdbfbf">Live execution BLOCKED until all critical safeguards are implemented and tested.</div></details>
 <div class="grid metric-grid">
-<div class="metric"><small>GATE.IO ACCOUNT MONITOR</small><strong class="gloss-cyan">CONNECTED · READ MODE</strong><span id="gatePositionStatus">Checking position feed…</span></div>
+<div class="metric"><small>GATE.IO ACCOUNT MONITOR</small><strong class="gloss-cyan">CONNECTED · POSITION MONITOR</strong><span id="gatePositionStatus">Checking position feed…</span></div>
 <div class="metric"><small>OPEN POSITIONS</small><strong id="openPositionCount">—</strong><span>Verified Gate.io positions only</span></div>
 <div class="metric"><small>UNREALIZED P&amp;L (USDT)</small><strong id="unrealizedPositionPnl">—</strong><span>Read-only, refreshed every 30s</span></div>
 <div class="metric"><small>TOTAL REALIZED P&amp;L</small><strong>—</strong><span>Verified fills not available</span></div>
@@ -3239,6 +3239,19 @@ def webhook():
             one_trade_candidate = 'UNAVAILABLE_NO_ORDER'
     # Future production worker cannot run without explicit source code release,
     # permission, and authenticated, stable TradingView bar-level signal.
+    _dispatch_blockers=[]
+    if duplicate:
+        _dispatch_blockers.append('DUPLICATE_IN_CANDLE')
+    if level_status!='VALID':
+        _dispatch_blockers.append('LEVELS_'+level_status)
+    if not source_bar_id:
+        _dispatch_blockers.append('MISSING_STABLE_BAR_ID')
+    if declared_order_type!='MARKET':
+        _dispatch_blockers.append('ORDER_TYPE_NOT_MARKET')
+    for _name in ('LIVE_TRADING_ENABLED','ORDERS_ENABLED',
+                  'LIVE_ORDERS_SEPARATELY_AUTHORIZED'):
+        if os.getenv(_name,'false')!='true':
+            _dispatch_blockers.append(_name+'_OFF')
     if (not duplicate and level_status=='VALID' and source_bar_id and
         declared_order_type=='MARKET' and
         os.getenv('LIVE_TRADING_ENABLED','false')=='true' and
@@ -3249,14 +3262,25 @@ def webhook():
             from live_execution_orchestrator import AUTOMATIC_WORKER_RELEASE
             if EXCHANGE_WRITE_RELEASE and AUTOMATIC_WORKER_RELEASE:
                 _live_auto_executor.submit(_process_live_webhook_once,event_id)
+            else:
+                _dispatch_blockers.append(
+                    'SOURCE_LOCKED' if not EXCHANGE_WRITE_RELEASE
+                    else 'AUTOMATIC_WORKER_LOCKED')
         except (RuntimeError,OSError,ValueError):
             app.logger.warning('Production execution worker unavailable; signal retained')
+            _dispatch_blockers.append('WORKER_UNAVAILABLE')
+    if _dispatch_blockers:
+        # Record the real reason so the dashboard can show it instead of
+        # implying the signal reached the order sender.
+        _record_live_refusal(event_id,'WEBHOOK_DISPATCH',
+                             ', '.join(_dispatch_blockers))
     return jsonify(status='signal_received', mode='SIGNAL_ONLY', symbol=symbol,
                    side=allowed[side], timeframe=tf, duplicate_in_candle=duplicate,
                    dry_run_intent_id=event_id, level_status=level_status,
                    stable_bar_identity=bool(source_bar_id),
                    order_type_qualified=(declared_order_type=='MARKET'),
-                   one_trade_candidate=one_trade_candidate, orders_placed=0), 200
+                   one_trade_candidate=one_trade_candidate,
+                   dispatch_blockers=_dispatch_blockers, orders_placed=0), 200
 
 
 def binance_read_only_ping(api_key, api_secret):
@@ -5819,9 +5843,10 @@ def terminal_incoming_signals():
                 _live_on=False
                 _live_gates=['STATE_UNAVAILABLE']
             if _live_on:
-                _qualified_reason=('Qualified LuxAlgo signal received. Live execution is enabled, '
-                                   'so this signal was handed to the order sender; any refusal '
-                                   'appears in the exchange order and position panels.')
+                _qualified_reason=('Qualified LuxAlgo signal received and live execution is '
+                                   'enabled. The order sender runs asynchronously; its exact '
+                                   'outcome (order id, or the refusal reason) is shown in the '
+                                   'EXECUTION OUTCOME column below.')
             else:
                 _qualified_reason=('Qualified LuxAlgo signal received, but new entries are blocked by: '
                                    +', '.join(_live_gates).replace('_',' ').lower()
@@ -6118,14 +6143,56 @@ def _paper_trade_snapshot(order):
 _paper_auto_executor = ThreadPoolExecutor(max_workers=1,thread_name_prefix='luxalgo-paper')
 # Production worker queue is separate from public market data. Source gates OFF.
 _live_auto_executor = ThreadPoolExecutor(max_workers=1,thread_name_prefix='luxalgo-live-locked')
+LIVE_REFUSAL_SCHEMA = """
+CREATE TABLE IF NOT EXISTS luxalgo_live_execution_refusals (
+ event_id TEXT PRIMARY KEY,
+ recorded_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+ stage TEXT NOT NULL,
+ reason TEXT NOT NULL,
+ detail TEXT
+);
+"""
+
+
+def _record_live_refusal(event_id, stage, reason, detail=None):
+    """Persist WHY a live signal did not become an order.
+
+    The dashboard used to claim "any refusal appears in the exchange order and
+    position panel" while the refusal only ever reached the process log, which
+    the operator cannot see on Render. This makes that claim true: every
+    refusal is written to a durable row the panel reads back.
+    """
+    try:
+        with _db_connect() as con:
+            con.execute(LIVE_REFUSAL_SCHEMA)
+            con.execute("""INSERT INTO luxalgo_live_execution_refusals
+                (event_id,stage,reason,detail) VALUES (%s,%s,%s,%s)
+                ON CONFLICT (event_id) DO UPDATE
+                SET recorded_at=NOW(),stage=EXCLUDED.stage,
+                    reason=EXCLUDED.reason,detail=EXCLUDED.detail""",
+                (str(event_id), str(stage)[:80], str(reason)[:400],
+                 (str(detail)[:400] if detail is not None else None)))
+    except (psycopg.Error, RuntimeError, OSError, ValueError, TypeError):
+        app.logger.warning('Live refusal could not be persisted for %s', event_id)
+
+
 def _process_live_webhook_once(event_id):
     from live_execution_orchestrator import process_stored_luxalgo_alert
     from live_futures_engine import LiveSafetyError
     try:
         result=process_stored_luxalgo_alert(_db_connect,event_id)
         app.logger.info('Production lifecycle state=%s',result.get('state','UNKNOWN'))
-    except (LiveSafetyError,psycopg.Error,RuntimeError,OSError,ValueError,TypeError) as exc:
+        state=str(result.get('state','UNKNOWN'))
+        if state!='PROTECTED':
+            _record_live_refusal(event_id,'ORDER_SENDER',state,
+                                 result.get('reason') or result.get('detail'))
+    except LiveSafetyError as exc:
+        # A LiveSafetyError is a deliberate refusal: name it on the dashboard.
+        app.logger.warning('Production lifecycle worker blocked: %s',exc)
+        _record_live_refusal(event_id,'ORDER_SENDER',str(exc))
+    except (psycopg.Error,RuntimeError,OSError,ValueError,TypeError) as exc:
         app.logger.warning('Production lifecycle worker blocked: %s',type(exc).__name__)
+        _record_live_refusal(event_id,'ORDER_SENDER',type(exc).__name__,str(exc))
 
 
 # Separate TESTNET-only serialized executor. Remains OFF without BOTH dedicated
