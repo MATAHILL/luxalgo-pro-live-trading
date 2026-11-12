@@ -44,7 +44,7 @@ class LiveRiskAndSourceTests(unittest.TestCase):
         self.assertLessEqual(
             q * one_notional * (1 + slip) * (Decimal(1) / Decimal(5) + fee),
             MAX_POSITION_INITIAL_MARGIN_USDT)
-        self.assertEqual(p["maximum_notional_usdt"], "300")
+        self.assertEqual(p["maximum_notional_usdt"], "100")
         self.assertEqual(p["maximum_initial_margin_usdt"], "60")
         self.assertFalse(p["verified_live_order"])
 
