@@ -48,8 +48,13 @@ MAX_SIGNAL_AGE_SECONDS = 60
 CONTRACT_RE = re.compile(r"^[A-Z0-9]{2,28}_USDT$")
 ORDER_RE = re.compile(r"^[1-9][0-9]{0,19}$")
 READ_PATHS = {PREFIX + suffix for suffix in
-              ("/accounts", "/positions", "/orders", "/price_orders", "/contracts")}
+              ("/accounts", "/positions", "/orders", "/price_orders", "/contracts",
+               "/my_trades")}
 WRITE_PATHS = {PREFIX + "/orders", PREFIX + "/price_orders"}
+# Cancelling a resting trigger is a risk-REDUCING write. It is allowlisted
+# separately so it can never be confused with opening exposure, and it is only
+# reachable from an explicit operator click in live_position_actions.
+CANCEL_PATH_RE = re.compile(PREFIX + r"/price_orders/[1-9][0-9]{0,19}")
 MIGRATION_SQL = """
 DO $luxalgo_schema$
 BEGIN
@@ -495,7 +500,7 @@ class GateLiveClient:
         self.transport=transport or urlopen
 
     def request(self,method,path,*,params=None,payload=None,timeout=8,expires_at_ms=None):
-        if method not in ("GET","POST"):
+        if method not in ("GET","POST","DELETE"):
             raise LiveSafetyError("Unsupported method")
         if method=="GET":
             allow=(path in READ_PATHS or
@@ -503,6 +508,17 @@ class GateLiveClient:
                    bool(re.fullmatch(PREFIX+r"/contracts/[A-Z0-9]{2,28}_USDT",path)))
             if not allow or payload is not None:
                 raise LiveSafetyError("GET path not allowlisted")
+        elif method=="DELETE":
+            # Only a resting price trigger may be cancelled, and only with the
+            # same release + permission gates as any other real-money write.
+            if not EXCHANGE_WRITE_RELEASE:
+                raise LiveSafetyError("SOURCE_LOCKED: real-money API writes prohibited")
+            if (os.getenv("LIVE_TRADING_ENABLED")!="true" or
+                os.getenv("ORDERS_ENABLED")!="true" or
+                os.getenv("LIVE_ORDERS_SEPARATELY_AUTHORIZED")!="true"):
+                raise LiveSafetyError("Real-money authorization incomplete")
+            if not CANCEL_PATH_RE.fullmatch(path) or payload is not None:
+                raise LiveSafetyError("Cancel path not allowlisted")
         else:
             if not EXCHANGE_WRITE_RELEASE:
                 raise LiveSafetyError("SOURCE_LOCKED: real-money API writes prohibited")

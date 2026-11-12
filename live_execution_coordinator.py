@@ -173,7 +173,22 @@ def inspect(con, client=None):
             "fetched_at":snap["fetched_at"]}
 
 def reconcile_and_halt_if_needed(con, client=None):
-    """Run at restart and on periodic refresh; persist halt on any anomaly."""
+    """Run at restart and on periodic refresh; persist halt on any anomaly.
+
+    A position that closed normally on the exchange (native SL/TP hit, or a
+    manual close at Gate.io) used to leave its ledger row in PROTECTED forever.
+    reconcile_ledger then reported POSITION_MISSING_OR_AMBIGUOUS, which latched
+    EMERGENCY_HALT and blocked every later signal. Before deciding whether an
+    anomaly is real, record any position the exchange has already closed.
+    """
+    try:
+        # Read-only against the exchange; writes only the bot's own ledger row.
+        from live_close_record import detect_and_record_closes
+        detect_and_record_closes(con, client)
+    except Exception:
+        # A close-detection failure must never relax a gate. Fall through to
+        # the normal reconciliation, which will halt if anything is unclear.
+        pass
     try:
         status=inspect(con,client)
     except Exception:
