@@ -123,15 +123,67 @@ class StaleReservationReleaseTests(unittest.TestCase):
         self.assertEqual(store["released"], [])
 
     def test_release_refused_for_a_row_that_may_have_been_sent(self):
-        # PROTECTED with an entry order id: it reached the exchange. Never
-        # silently closed, even with a flat account.
+        # PROTECTED with an entry order id: it reached the exchange. Asking only
+        # for the stale-reservation release must never close it, even on a flat
+        # account. The operator has to request the flat-account release
+        # explicitly, and even then this path is refused here.
         store = make_store([SENT_ROW], unresolved_after=1)
         with self.assertRaises(engine.LiveSafetyError) as ctx:
             self._clear(store, clean_status(),
                         release_stale_reservations=True)
-        self.assertIn("manual exchange review", str(ctx.exception))
+        self.assertIn("reached the exchange", str(ctx.exception))
+        self.assertIn("flat-account release", str(ctx.exception))
         self.assertFalse(store["control_updated"])
         self.assertEqual(store["released"], [])
+
+    def test_sent_row_is_never_closed_when_the_exchange_reports_exposure(self):
+        # THE safety property: a row that reached the exchange is never closed
+        # while the exchange shows a position. Checked with BOTH flags on.
+        store = make_store([SENT_ROW], unresolved_after=1)
+        with self.assertRaises(engine.LiveSafetyError):
+            self._clear(store, exposed_status(),
+                        release_stale_reservations=True,
+                        release_flat_reconciled=True)
+        self.assertFalse(store["control_updated"])
+        self.assertEqual(store["released"], [])
+
+    def test_sent_row_is_closed_only_on_a_flat_account_with_explicit_flag(self):
+        # The AKE_USDT case: the trade finished, Gate.io is flat, so only the
+        # bot's own record is unfinished. Closing it must be explicit.
+        store = make_store([SENT_ROW], unresolved_after=0)
+        result = self._clear(store, clean_status(),
+                             release_flat_reconciled=True)
+        self.assertFalse(result["halted"])
+        self.assertEqual(result["flat_account_reconciled"], ["b" * 20])
+        self.assertEqual(result["stale_reservations_released"], [])
+        self.assertTrue(store["control_updated"])
+        self.assertIn("b" * 20, store["released"])
+
+    def test_sent_row_still_refused_when_untracked_order_exists(self):
+        store = make_store([SENT_ROW], unresolved_after=1)
+        status = clean_status()
+        status["untracked_open_orders"] = 1
+        with self.assertRaises(engine.LiveSafetyError):
+            self._clear(store, status, release_flat_reconciled=True)
+        self.assertFalse(store["control_updated"])
+        self.assertEqual(store["released"], [])
+
+    def test_sent_row_still_refused_when_exchange_unreadable(self):
+        store = make_store([SENT_ROW], unresolved_after=1)
+        with patch.object(coord, "install"), \
+             patch.object(coord, "inspect",
+                          side_effect=engine.LiveSafetyError("GET failed")):
+            with self.assertRaises(engine.LiveSafetyError):
+                coord.clear_halt(FakeCon(store), client=object(),
+                                 release_flat_reconciled=True)
+        self.assertFalse(store["control_updated"])
+        self.assertEqual(store["released"], [])
+
+    def test_non_boolean_flat_flag_is_rejected(self):
+        store = make_store([SENT_ROW], unresolved_after=1)
+        with self.assertRaises(engine.LiveSafetyError):
+            self._clear(store, clean_status(), release_flat_reconciled="yes")
+        self.assertFalse(store["control_updated"])
 
     def test_release_refused_when_untracked_orders_exist(self):
         store = make_store([STALE_ROW], unresolved_after=1)
@@ -171,16 +223,31 @@ class DiagnoseHaltTests(unittest.TestCase):
             return coord.diagnose_halt(FakeCon(store), client=object())
 
     def test_diagnose_separates_stale_from_unrecoverable(self):
+        # With a genuinely exposed account, a sent row is NOT offered for
+        # release: it stays in the manual-review bucket.
         store = make_store([STALE_ROW, SENT_ROW])
-        out = self._diagnose(store, clean_status())
+        out = self._diagnose(store, exposed_status())
         self.assertTrue(out["read_only"])
         self.assertEqual(out["unresolved_ledger_rows"], 2)
         self.assertEqual([r["event_id"] for r in out["stale_reservation_rows"]],
                          ["a" * 20])
         self.assertEqual([r["event_id"] for r in out["unrecoverable_rows"]],
                          ["b" * 20])
+        self.assertEqual(out["flat_reconciled_rows"], [])
+        self.assertFalse(out["exchange_flat"])
         self.assertFalse(out["can_clear_with_stale_release"])
+        self.assertFalse(out["can_clear_with_flat_release"])
         self.assertFalse(out["can_clear"])
+
+    def test_diagnose_marks_sent_row_flat_when_account_is_flat(self):
+        # The AKE_USDT case: flat account, finished trade, unfinished record.
+        store = make_store([SENT_ROW])
+        out = self._diagnose(store, clean_status())
+        self.assertTrue(out["exchange_flat"])
+        self.assertEqual([r["event_id"] for r in out["flat_reconciled_rows"]],
+                         ["b" * 20])
+        self.assertEqual(out["unrecoverable_rows"], [])
+        self.assertTrue(out["can_clear_with_flat_release"])
 
     def test_diagnose_offers_release_for_stale_only(self):
         store = make_store([STALE_ROW])
@@ -229,6 +296,63 @@ class HaltDiagnoseRouteTests(unittest.TestCase):
             client = backend.app.test_client()
             self.assertEqual(
                 client.get("/api/live/halt-diagnose").status_code, 401)
+
+    def test_halt_clear_route_accepts_the_flat_reconciled_flag(self):
+        # The emergency button sends both flags. The route must forward them
+        # rather than silently dropping the new one.
+        import inspect
+        import app as backend
+        source = inspect.getsource(backend.api_live_halt_clear)
+        self.assertIn("release_flat_reconciled", source)
+        self.assertIn("release_stale_reservations", source)
+
+    def test_halt_clear_route_rejects_a_non_boolean_flat_flag(self):
+        import os
+        import app as backend
+        with patch.dict(os.environ, {"TERMINAL_PASSWORD": "x" * 28,
+                                     "TERMINAL_USER": "admin"}):
+            client = backend.app.test_client()
+            # Unauthenticated first: the guard must win before any parsing.
+            self.assertEqual(
+                client.post("/api/live/halt-clear",
+                            json={"release_flat_reconciled": "yes"}).status_code,
+                401)
+
+
+class EmergencyButtonTests(unittest.TestCase):
+    """The one-press emergency control must diagnose before it clears."""
+
+    @classmethod
+    def setUpClass(cls):
+        import production_cutover_view as view
+        cls.html = view.render() if hasattr(view, "render") else None
+        if cls.html is None:
+            import inspect
+            cls.html = inspect.getsource(view)
+
+    def test_emergency_button_is_rendered(self):
+        self.assertIn('id="productionEmergencyClear"', self.html)
+        self.assertIn("EMERGENCY: CLEAR HALT NOW", self.html)
+
+    def test_emergency_button_calls_the_read_only_diagnostic_first(self):
+        self.assertIn("/api/live/halt-diagnose", self.html)
+        # The confirm control starts hidden: nothing clears on the first press.
+        self.assertIn('id="productionEmergencyConfirm"', self.html)
+        self.assertIn("hidden>YES", self.html)
+
+    def test_emergency_confirm_sends_both_release_flags(self):
+        self.assertIn("release_stale_reservations:true", self.html)
+        self.assertIn("release_flat_reconciled:true", self.html)
+
+    def test_emergency_confirm_is_only_shown_when_server_says_safe(self):
+        self.assertIn("can_clear_with_flat_release", self.html)
+        self.assertIn("can_clear_with_stale_release", self.html)
+
+    def test_emergency_panel_reports_what_was_cleared(self):
+        self.assertIn("What was cleared", self.html)
+
+    def test_emergency_panel_states_the_safety_property(self):
+        self.assertIn("never clears while a position", self.html)
 
 
 if __name__ == "__main__":

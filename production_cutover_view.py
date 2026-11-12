@@ -188,6 +188,15 @@ PRODUCTION_CONTROL='''<section class="bot-control-panel" aria-label="Production 
 <button class="btn gate-btn" id="productionHaltDiagnose" type="button" aria-expanded="false" aria-controls="productionHaltDiagnoseOut">WHY IS IT BLOCKED?</button>
 <button class="btn gate-btn" id="productionCertifyOpen" type="button" aria-expanded="false" aria-controls="productionCertifyForm">2 · CERTIFY</button>
 </div>
+<div class="gate-emergency-row">
+<button class="btn gate-btn gate-btn-emergency" id="productionEmergencyClear" type="button" aria-describedby="productionEmergencyHint">&#9888; EMERGENCY: CLEAR HALT NOW</button>
+<p class="light gate-emergency-hint" id="productionEmergencyHint">One press. It first re-reads your Gate.io account and shows you the exact blocking reason, then clears the HALT if the account is genuinely flat. It never clears while a position, an open order or a resting trigger exists on Gate.io.</p>
+</div>
+<div class="gate-certify-form" id="productionEmergencyOut" hidden>
+<pre id="productionEmergencyBody" style="white-space:pre-wrap;word-break:break-word;font-size:12px;margin:0"></pre>
+<button class="btn gate-btn gate-btn-emergency" id="productionEmergencyConfirm" type="button" hidden>YES &mdash; CLEAR IT NOW</button>
+<button class="btn gate-btn gate-btn-quiet" id="productionEmergencyCancel" type="button">Cancel</button>
+</div>
 <div class="gate-certify-form" id="productionHaltDiagnoseOut" hidden>
 <p class="light">Read-only. This asks the server exactly what is stopping CLEAR HALT. It never changes anything on Gate.io or in the bot.</p>
 <pre id="productionHaltDiagnoseBody" style="white-space:pre-wrap;word-break:break-word;font-size:12px;margin:0"></pre>
@@ -368,6 +377,11 @@ const haltBtn=document.getElementById('productionHaltClear'),
       diagOut=document.getElementById('productionHaltDiagnoseOut'),
       diagBody=document.getElementById('productionHaltDiagnoseBody'),
       releaseBtn=document.getElementById('productionHaltRelease'),
+      emgBtn=document.getElementById('productionEmergencyClear'),
+      emgOut=document.getElementById('productionEmergencyOut'),
+      emgBody=document.getElementById('productionEmergencyBody'),
+      emgConfirm=document.getElementById('productionEmergencyConfirm'),
+      emgCancel=document.getElementById('productionEmergencyCancel'),
       gateOut=document.getElementById('productionGateResult');
 if(!haltBtn||!certOpen||!certForm||!certSubmit||!gateOut)return;
 
@@ -524,7 +538,7 @@ if(releaseBtn){
   try{
    const r=await postJson('/api/live/halt-clear',{release_stale_reservations:true});
    if(r.ok&&r.data.halted===false){
-    say('HALT CLEARED. '+(r.data.note||'')+' Next step: press 2 \\u00b7 CERTIFY.','good');
+    say('HALT CLEARED. '+(r.data.note||'')+' Next step: press 2 \u00b7 CERTIFY.','good');
     if(diagOut)diagOut.hidden=true;
     releaseBtn.hidden=true;
    }else{
@@ -533,6 +547,94 @@ if(releaseBtn){
   }catch(e){say('Could not reach the server: '+e.message+' The HALT is still on.','bad');}
   finally{releaseBtn.disabled=false;try{await refresh();}catch(_){}}
  });
+}
+
+// ---- EMERGENCY: one press, diagnose first, then clear -------------------
+// The button never clears blind. Press 1 runs the READ-ONLY diagnostic and
+// prints the real blocking reason. Only when the server says the account is
+// genuinely flat does the confirm button appear. The server re-checks the
+// exchange again on the actual clear, so this cannot be used to bypass it.
+function emgLines(d){
+ const L=[];
+ L.push('Gate.io reachable: '+(d.exchange_reachable===true?'YES':d.exchange_reachable===false?'NO \u2014 the account could not be read':'unknown'));
+ if(d.exchange_reachable===true){
+  L.push('Open positions on Gate.io: '+d.exchange_positions);
+  L.push('Open orders on Gate.io: '+d.exchange_open_orders);
+  L.push('Open stop/take triggers on Gate.io: '+d.exchange_open_triggers);
+ }
+ L.push('Unfinished trade records in the bot: '+d.unresolved_ledger_rows);
+ if(d.stale_reservation_rows&&d.stale_reservation_rows.length){
+  L.push('');
+  L.push('NEVER SENT \u2014 safe to close ('+d.stale_reservation_rows.length+'):');
+  d.stale_reservation_rows.forEach(x=>L.push('  '+x.event_id+'  '+x.contract+'  state='+x.state));
+ }
+ if(d.flat_reconciled_rows&&d.flat_reconciled_rows.length){
+  L.push('');
+  L.push('FINISHED TRADES \u2014 Gate.io is flat, only the record is open ('+d.flat_reconciled_rows.length+'):');
+  d.flat_reconciled_rows.forEach(x=>L.push('  '+x.event_id+'  '+x.contract+'  state='+x.state+'  entry_order_id='+(x.entry_order_id||'none')));
+ }
+ if(d.unrecoverable_rows&&d.unrecoverable_rows.length){
+  L.push('');
+  L.push('REAL EXPOSURE OR UNREADABLE \u2014 will NOT be cleared ('+d.unrecoverable_rows.length+'):');
+  d.unrecoverable_rows.forEach(x=>L.push('  '+x.event_id+'  '+x.contract+'  state='+x.state));
+ }
+ if(d.blocking_reasons&&d.blocking_reasons.length){
+  L.push('');
+  L.push('BLOCKING: '+d.blocking_reasons.join(', '));
+ }
+ L.push('');
+ if(d.can_clear===true){
+  L.push('VERDICT: nothing is blocking. The HALT can be cleared now.');
+ }else if(d.can_clear_with_flat_release===true){
+  L.push('VERDICT: Gate.io is flat. The HALT is held only by the bot\u2019s own finished-trade record(s) above. Safe to clear.');
+ }else if(d.can_clear_with_stale_release===true){
+  L.push('VERDICT: Gate.io is flat. The HALT is held only by record(s) that were never sent. Safe to clear.');
+ }else{
+  L.push('VERDICT: NOT safe to clear. Resolve the exposure above on Gate.io first. The HALT stays on.');
+ }
+ return L;
+}
+if(emgBtn&&emgOut&&emgBody&&emgConfirm){
+ emgBtn.addEventListener('click',async()=>{
+  const opening=emgOut.hidden;
+  emgOut.hidden=!opening;
+  if(!opening)return;
+  emgBody.textContent='Re-reading your Gate.io account\u2026';
+  emgConfirm.hidden=true;
+  emgBtn.disabled=true;
+  try{
+   const r=await fetch('/api/live/halt-diagnose',{credentials:'same-origin',headers:{'Accept':'application/json'}});
+   const d=await r.json();
+   if(!r.ok){emgBody.textContent='Diagnostic unavailable: '+(d.error||('HTTP '+r.status))+' The HALT is still on.';return;}
+   emgBody.textContent=emgLines(d).join('\n');
+   // Only offer the confirm when the server itself says it is safe.
+   emgConfirm.hidden=!(d.can_clear===true||d.can_clear_with_flat_release===true||d.can_clear_with_stale_release===true);
+  }catch(e){emgBody.textContent='Could not reach the server: '+e.message+' The HALT is still on.';}
+  finally{emgBtn.disabled=false;}
+ });
+ emgConfirm.addEventListener('click',async()=>{
+  emgConfirm.disabled=true;emgBtn.disabled=true;
+  emgBody.textContent='Clearing\u2026 the server is re-checking Gate.io one more time.';
+  try{
+   // Both flags: the server still refuses on any real exposure.
+   const r=await postJson('/api/live/halt-clear',{release_stale_reservations:true,release_flat_reconciled:true});
+   if(r.ok&&r.data.halted===false){
+    const cleared=[];
+    if(r.data.stale_reservations_released&&r.data.stale_reservations_released.length)
+     cleared.push(r.data.stale_reservations_released.length+' never-sent record(s) closed');
+    if(r.data.flat_account_reconciled&&r.data.flat_account_reconciled.length)
+     cleared.push(r.data.flat_account_reconciled.length+' finished-trade record(s) reconciled');
+    emgBody.textContent='HALT CLEARED.\n\nWhat was cleared: '+(cleared.length?cleared.join('; '):'nothing needed closing \u2014 the ledger was already clean')+'.\nGate.io: 0 positions, 0 open orders, 0 resting triggers.\n\nNext step: press 2 \u00b7 CERTIFY, then \u25b6 BOT ON.';
+    emgConfirm.hidden=true;
+    say('HALT CLEARED via the emergency button. '+(r.data.note||'')+' Next step: press 2 \u00b7 CERTIFY.','good');
+   }else{
+    emgBody.textContent='STILL REFUSED \u2014 the HALT is on.\n\nServer said: '+(r.data.reason||r.data.error||'no reason given')+'\n\nNothing was changed. Resolve the exposure on Gate.io, then press the emergency button again.';
+    say('Emergency clear refused. '+(r.data.reason||r.data.error||'')+' The HALT is still on.','bad');
+   }
+  }catch(e){emgBody.textContent='Could not reach the server: '+e.message+' The HALT is still on.';}
+  finally{emgConfirm.disabled=false;emgBtn.disabled=false;try{await refresh();}catch(_){}}
+ });
+ if(emgCancel)emgCancel.addEventListener('click',()=>{emgOut.hidden=true;emgConfirm.hidden=true;});
 }
 
 certOpen.addEventListener('click',()=>{
@@ -623,6 +725,10 @@ body.production-view .gate-result{margin:12px 0 0;padding:10px 12px;border-radiu
 body.production-view .gate-result:empty{display:none}
 body.production-view .gate-result.gate-good{border-color:#2f9e6b;background:rgba(20,80,55,.5);color:#c8ffe4}
 body.production-view .gate-result.gate-bad{border-color:#c0455f;background:rgba(90,25,40,.5);color:#ffd7de}
+body.production-view .gate-emergency-row{margin-top:14px;padding:12px;border:1px solid #b8455f;border-radius:10px;background:rgba(70,18,30,.42);max-width:640px}
+body.production-view .gate-btn-emergency{color:#fff3f5;border:1px solid #ff6b86;background:linear-gradient(160deg,#b32b46,#7d1428 52%,#5c0d1c);font-weight:700}
+body.production-view .gate-btn-emergency:disabled{opacity:.38;cursor:not-allowed}
+body.production-view .gate-emergency-hint{margin:8px 0 0;font-size:11.5px;line-height:1.5}
 body.production-view .production-live-orders-panel{margin-top:12px;padding-bottom:12px}
 body.production-view .production-live-orders-panel .v4-head{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}
 body.production-view .production-orders-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;padding:13px 18px}

@@ -2882,13 +2882,18 @@ def api_live_halt_clear():
         return jsonify(error='Invalid CSRF', halted=True), 403
     body = request.get_json(silent=True) if request.is_json else None
     release = body.get('release_stale_reservations', False) if isinstance(body, dict) else False
+    flat = body.get('release_flat_reconciled', False) if isinstance(body, dict) else False
     if type(release) is not bool:
         return jsonify(halted=True, cleared=False,
                        error='release_stale_reservations must be true or false'), 422
+    if type(flat) is not bool:
+        return jsonify(halted=True, cleared=False,
+                       error='release_flat_reconciled must be true or false'), 422
     try:
         from live_execution_coordinator import clear_halt
         with _db_connect() as con:
-            result = clear_halt(con, release_stale_reservations=release)
+            result = clear_halt(con, release_stale_reservations=release,
+                                release_flat_reconciled=flat)
         response = jsonify(result)
         response.headers['Cache-Control'] = 'private, no-store'
         return response

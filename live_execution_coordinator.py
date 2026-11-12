@@ -194,6 +194,43 @@ def reconcile_and_halt_if_needed(con, client=None):
 # behind reading 'RESERVED'. That makes a RESERVED row proof of "never sent".
 STALE_RESERVATION_STATE = "RESERVED"
 
+
+def _is_never_sent(row):
+    """A reservation that provably never became an exchange order."""
+    return (row.get("state") == STALE_RESERVATION_STATE
+            and not row.get("entry_order_id"))
+
+
+def _exchange_is_flat(status):
+    """True only when a READABLE exchange reports zero exposure everywhere.
+
+    This is deliberately about the EXCHANGE only. A ledger row whose position
+    has closed makes reconcile_ledger() report an anomaly
+    (POSITION_MISSING_OR_AMBIGUOUS); that is bot bookkeeping, not exposure, and
+    must not make a genuinely flat account look unsafe. Untracked orders and
+    triggers are included because they are real resting exposure.
+
+    Unreadable is UNKNOWN exposure, never a flat account, so a missing or
+    malformed status keeps this False and the HALT stays latched.
+    """
+    if not isinstance(status, dict):
+        return False
+    return (status.get("open_positions") == 0
+            and status.get("exchange_open_orders") == 0
+            and status.get("exchange_open_triggers") == 0
+            and not status.get("untracked_open_orders")
+            and not status.get("untracked_open_triggers"))
+
+
+def _blocker_line(rows):
+    """Name rows the way an operator reads them: id/contract/state."""
+    text = ", ".join(str(r["event_id"]) + "/" + str(r["contract"])
+                      + "/" + str(r["state"]) for r in rows[:5])
+    if len(rows) > 5:
+        text += " (+" + str(len(rows) - 5) + " more)"
+    return text
+
+
 def diagnose_halt(con, client=None):
     """Read-only: report exactly WHAT blocks a halt clear, in operator words.
 
@@ -204,9 +241,10 @@ def diagnose_halt(con, client=None):
     out={"read_only":True,"exchange_reachable":None,"exchange_positions":None,
          "exchange_open_orders":None,"exchange_open_triggers":None,
          "unresolved_ledger_rows":None,"unresolved_rows":[],
-         "stale_reservation_rows":[],"unrecoverable_rows":[],
+         "stale_reservation_rows":[],"flat_reconciled_rows":[],
+         "unrecoverable_rows":[],"exchange_flat":False,
          "blocking_reasons":[],"can_clear_with_stale_release":False,
-         "can_clear":False}
+         "can_clear_with_flat_release":False,"can_clear":False}
     status=None
     try:
         install(con)
@@ -236,57 +274,78 @@ def diagnose_halt(con, client=None):
                        ORDER BY created_at ASC""")
         rows=[dict(r) for r in cur.fetchall()]
     out["unresolved_ledger_rows"]=len(rows)
+    # A None status means the exchange readback failed: unreadable is UNKNOWN
+    # exposure, so this stays False and the HALT is preserved.
+    flat=_exchange_is_flat(status)
+    out["exchange_flat"]=flat
     for r in rows:
         row={"event_id":r["event_id"],"contract":r["contract"],
              "state":r["state"],"contracts":str(r["contracts"]),
              "entry_order_id":r["entry_order_id"],
              "created_at":r["created_at"].isoformat() if r.get("created_at") else None}
-        if r["state"]==STALE_RESERVATION_STATE and not r["entry_order_id"]:
+        if _is_never_sent(r):
+            # Nothing was ever sent: the safest class to release.
             out["stale_reservation_rows"].append(row)
+        elif flat:
+            # It did reach the exchange, but the exchange now reports no
+            # position, no open order and no resting trigger anywhere. The
+            # trade is finished; only the bot's own record is unfinished.
+            out["flat_reconciled_rows"].append(row)
         else:
+            # Real exposure, or the account could not be read. Never released.
             out["unrecoverable_rows"].append(row)
     if rows:
         out["blocking_reasons"].append("UNRESOLVED_EXECUTION_LEDGER_ROWS")
-    # A None status means the exchange readback failed: unreadable is UNKNOWN
-    # exposure, so this stays False and the HALT is preserved.
-    clean_exchange=(out["exchange_reachable"] is True and status is not None
-                    and not status["reconciliation"]["requires_halt"]
-                    and not status["untracked_open_orders"]
-                    and not status["untracked_open_triggers"])
     out["can_clear_with_stale_release"]=bool(
-        clean_exchange and out["stale_reservation_rows"]
-        and not out["unrecoverable_rows"])
-    out["can_clear"]=bool(clean_exchange and not rows)
+        flat and out["stale_reservation_rows"]
+        and not out["flat_reconciled_rows"] and not out["unrecoverable_rows"])
+    out["can_clear_with_flat_release"]=bool(
+        flat and rows and not out["unrecoverable_rows"])
+    out["can_clear"]=bool(flat and not rows)
     return out
 
 def clear_halt(con, client=None, reason="OPERATOR_RECONCILED_CLEAR",
-               release_stale_reservations=False):
+               release_stale_reservations=False,
+               release_flat_reconciled=False):
     """Clear the persistent HALT ONLY after a clean authenticated reconciliation.
 
-    This is the missing counterpart to halt(). It never clears on a flat account
-    alone: it re-reads the live exchange inventory and refuses unless the
-    reconciliation reports no untracked positions, orders or triggers and no
-    unresolved ledger rows. Any ambiguity leaves the HALT in place.
+    This never clears on a flat account alone: it re-reads the live exchange
+    inventory and refuses unless the account itself reports no open position,
+    no open order and no resting trigger. Any ambiguity leaves the HALT on.
 
-    release_stale_reservations=True additionally marks provably-unsent
-    RESERVED rows as CLOSED_VERIFIED, so a leftover reservation cannot block
-    the operator forever. It is still refused whenever the exchange reports any
-    position, any open order, any open trigger, an unreadable account, or any
-    ledger row that might have reached the exchange. The safety property is
+    Two independent, explicitly-requested bookkeeping releases exist, because a
+    finished trade can otherwise block the operator forever:
+
+    release_stale_reservations=True
+        closes RESERVED rows that provably never reached the exchange (no order
+        id was ever attached).
+    release_flat_reconciled=True
+        closes rows that DID reach the exchange, but only when the exchange
+        itself now reports zero positions, zero open orders and zero resting
+        triggers across the whole account. The trade is over; only the bot's
+        own record is unfinished.
+
+    Both are refused whenever the exchange reports any position, any open
+    order, any open trigger, or an unreadable account. The safety property is
     unchanged: real exposure always blocks.
     """
     if not isinstance(reason,str) or not reason or len(reason)>200:
         raise LiveSafetyError("Invalid halt-clear reason")
     if type(release_stale_reservations) is not bool:
         raise LiveSafetyError("Invalid stale-reservation release flag")
+    if type(release_flat_reconciled) is not bool:
+        raise LiveSafetyError("Invalid flat-reconciled release flag")
     client=client or GateLiveClient()
     install(con)
     # A clean readback is mandatory; an exception here propagates and the
     # caller must treat the HALT as still active.
     status=inspect(con,client)
-    if (status["reconciliation"]["requires_halt"] or
-        status["untracked_open_orders"] or status["untracked_open_triggers"]):
-        raise LiveSafetyError("Reconciliation still reports unknown or unprotected exposure")
+    # Exchange exposure is the ONLY thing that vetoes unconditionally. When the
+    # account is flat, a reconciliation anomaly can only be about the bot's own
+    # unfinished rows, and those are handled below with an explicit flag.
+    if not _exchange_is_flat(status):
+        raise LiveSafetyError(
+            "Reconciliation still reports unknown or unprotected exposure")
     with con.cursor() as cur:
         cur.execute("SELECT pg_advisory_xact_lock(%s)",(LOCK_ID,))
         cur.execute("""SELECT event_id,contract,state,entry_order_id
@@ -294,26 +353,28 @@ def clear_halt(con, client=None, reason="OPERATOR_RECONCILED_CLEAR",
                        WHERE state <> 'CLOSED_VERIFIED'""")
         open_rows=[dict(r) for r in cur.fetchall()]
         released=[]
+        reconciled=[]
         if open_rows:
-            if not release_stale_reservations:
+            stale=[r for r in open_rows if _is_never_sent(r)]
+            sent=[r for r in open_rows if not _is_never_sent(r)]
+            if not release_stale_reservations and not release_flat_reconciled:
                 # Name the blocker instead of a generic refusal, so the
                 # operator knows whether to look at Gate.io or at the ledger.
                 raise LiveSafetyError(
                     "Unresolved execution rows block halt clear: "
-                    + ", ".join(str(r["event_id"]) + "/" + str(r["contract"])
-                                + "/" + str(r["state"]) for r in open_rows[:5])
-                    + (" (+" + str(len(open_rows)-5) + " more)" if len(open_rows)>5 else ""))
-            # Only rows that provably never reached the exchange may be closed.
-            unsafe=[r for r in open_rows
-                    if r["state"] != STALE_RESERVATION_STATE or r["entry_order_id"]]
-            if unsafe:
+                    + _blocker_line(open_rows))
+            if stale and not release_stale_reservations:
                 raise LiveSafetyError(
-                    "Halt clear refused: " + str(len(unsafe))
-                    + " execution row(s) may have reached the exchange and need"
-                    " manual exchange review (" + ", ".join(
-                        str(r["event_id"]) + "/" + str(r["state"])
-                        for r in unsafe[:5]) + ")")
-            for r in open_rows:
+                    "Halt clear refused: " + str(len(stale))
+                    + " reservation(s) were never sent and need the stale"
+                    " reservation release (" + _blocker_line(stale) + ")")
+            if sent and not release_flat_reconciled:
+                raise LiveSafetyError(
+                    "Halt clear refused: " + str(len(sent))
+                    + " execution row(s) reached the exchange and need the"
+                    " flat-account release (" + _blocker_line(sent) + ")")
+            # Never-sent reservations: no order id was ever attached.
+            for r in stale:
                 cur.execute("""UPDATE luxalgo_prod_execution_ledger
                                SET state='CLOSED_VERIFIED',
                                    detail=COALESCE(detail,'{}'::jsonb) || %s::jsonb,
@@ -328,6 +389,28 @@ def clear_halt(con, client=None, reason="OPERATOR_RECONCILED_CLEAR",
                 if cur.rowcount != 1:
                     raise LiveSafetyError("Stale reservation release was not atomic")
                 released.append(r["event_id"])
+            # Rows that DID reach the exchange: only when it is now flat.
+            for r in sent:
+                cur.execute("""UPDATE luxalgo_prod_execution_ledger
+                               SET state='CLOSED_VERIFIED',
+                                   detail=COALESCE(detail,'{}'::jsonb) || %s::jsonb,
+                                   updated_at=NOW()
+                               WHERE event_id=%s
+                                 AND state=%s""",
+                            (json.dumps({"flat_account_reconciled":True,
+                                         "reconciled_reason":reason,
+                                         "previous_state":r["state"],
+                                         "entry_order_id":r["entry_order_id"],
+                                         "exchange_position":0,
+                                         "exchange_open_orders":0,
+                                         "exchange_open_triggers":0,
+                                         "release_note":"exchange reported no"
+                                                       " position, open order or"
+                                                       " resting trigger"}),
+                             r["event_id"], r["state"]))
+                if cur.rowcount != 1:
+                    raise LiveSafetyError("Flat-account reconciliation was not atomic")
+                reconciled.append(r["event_id"])
         cur.execute("""SELECT COUNT(*)::int AS unresolved
                        FROM luxalgo_prod_execution_ledger
                        WHERE state <> 'CLOSED_VERIFIED'""")
@@ -339,12 +422,20 @@ def clear_halt(con, client=None, reason="OPERATOR_RECONCILED_CLEAR",
                        WHERE id=1""",(reason,))
         if cur.rowcount!=1:
             raise LiveSafetyError("Halt clear database update failed")
+    notes=[]
+    if released:
+        notes.append(str(len(released)) + " provably-unsent stale reservation(s)"
+                     " released")
+    if reconciled:
+        notes.append(str(len(reconciled)) + " finished trade record(s) reconciled"
+                     " against a flat Gate.io account")
     return {"halted":False,"reason":reason,"reconciled":True,
             "untracked_open_orders":0,"untracked_open_triggers":0,
+            "exchange_flat":True,
             "stale_reservations_released":released,
+            "flat_account_reconciled":reconciled,
             "note":("HALT cleared after a clean authenticated reconciliation"
-                    + (" and " + str(len(released)) + " provably-unsent stale"
-                       " reservation(s) released" if released else ""))}
+                    + (" and " + " and ".join(notes) if notes else ""))}
 
 def status_fallback(reason):
     """Explicitly distinguish unknown account state from an empty account."""
