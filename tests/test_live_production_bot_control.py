@@ -69,7 +69,7 @@ class ProductionBotTests(unittest.TestCase):
                         html.index('GATE.IO FUTURES RADAR <span'))
         self.assertLess(html.index('id="productionBotOff"'),
                         html.index('GATE.IO FUTURES RADAR <span'))
-        for x in ("radarBody","scannerBody","advancedScanBody","newsStack","productionPositionCards"):
+        for x in ("radarBody","scannerBody","advancedScanBody","newsStack","gatePositionsBody"):
             self.assertIn('id="'+x+'"',html)
         self.assertIn("'/terminal/production-bot-control'",html)
 

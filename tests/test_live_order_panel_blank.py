@@ -65,7 +65,7 @@ class LiveOrdersPanelCleanupTests(unittest.TestCase):
         self.assertNotIn('id="btcAcceptancePanel"',page)
         self.assertNotIn('BTC_USDT · ONE-CONTRACT LIVE ACCEPTANCE TEST',page)
         self.assertNotIn("'/terminal/acceptance-test/status'",page)
-        self.assertIn('id="productionPositionCards"',page)
+        self.assertIn('id="openPositionPanel"',page)
         self.assertIn('id="productionBotOff"',page)
         self.assertIn('INCOMING LUXALGO SIGNALS · NOT EXCHANGE ORDERS',page)
         self.assertNotIn('INCOMING LUXALGO ORDERS · WEBHOOK SIGNALS',page)
