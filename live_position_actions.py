@@ -30,7 +30,7 @@ from decimal import Decimal, InvalidOperation
 from live_futures_engine import (
     PREFIX, LiveSafetyError, AckUnknown, GateLiveClient, ORDER_RE,
     build_protective_trigger, evaluate_protection, dec, price_geometry,
-    account_position_mode, active_positions,
+    account_position_mode, active_positions, CONTRACT_RE,
 )
 
 
@@ -108,19 +108,13 @@ def resolve_event_for_contract(con, contract):
         row = cur.fetchone()
         if row:
             return row["event_id"]
-        # No record at all: create a minimal, clearly-labelled one so the
-        # reduce-only close has an identity to work from.
-        event_id = "opc-" + contract.lower().replace("_", "-")[:40]
-        cur.execute("""INSERT INTO luxalgo_prod_execution_ledger(
-                        event_id,client_text,contract,side,timeframe,position_mode,
-                        state,risk_usdt,entry_price,stop_loss,take_profit,contracts,detail)
-                       VALUES (%s,%s,%s,'LONG','MANUAL','single','RESERVED',0,0,0,0,0,%s)
-                       ON CONFLICT (event_id) DO NOTHING""",
-                    (event_id, "t-opc-" + contract[:20], contract,
-                     json.dumps({"origin": "OPERATOR_TERMINAL_CLOSE_BY_CONTRACT",
-                                 "note": "Created only to close an untracked "
-                                         "exchange position; never an entry."})))
-    return event_id
+        # No record at all. Do NOT invent one: the ledger enforces
+        # CHECK(risk_usdt>0) and CHECK(contracts>0), so a placeholder row with
+        # zeros raised CheckViolation, the route caught it and returned 409, and
+        # the operator's Market Close click did nothing at all. A position with
+        # no ledger row is closed by CONTRACT instead (close_position_by_contract),
+        # which needs no fabricated identity.
+        return None
 
 
 def _halted(con):
@@ -131,23 +125,16 @@ def _halted(con):
 # ---------------------------------------------------------------------------
 # 1. MARKET CLOSE
 # ---------------------------------------------------------------------------
-def close_position(con, event_id, client=None):
-    """Reduce-only market close of the exact live position. Verified by readback.
+def _close_contract(con, contract, client, *, event_id=None, ledger_state=None):
+    """Reduce-only market close of ONE contract. Verified by readback.
 
-    Allowed while halted: closing reduces risk and must never be blocked by the
-    same gate that stops new entries.
+    Shared by the ledger-identified path and the contract-only path so both
+    behave identically: same reduce-only order, same readback proof, same
+    exchange-derived close record. Closing reduces risk, so it is allowed while
+    the bot is halted.
     """
-    client = client or GateLiveClient()
-    row = _ledger_row(con, event_id)
-    if not row:
-        raise LiveSafetyError("Unknown bot execution record")
-    # A CLOSED_VERIFIED ledger row is bookkeeping, NOT proof the exchange is
-    # flat. When the two disagree the EXCHANGE wins: the operator is looking at
-    # a live position and must be able to close it. Returning "already closed"
-    # here without asking the exchange is what left a real position with four
-    # dead buttons.
-    position, snap = _live_position(client, row["contract"])
-    if row["state"] == "CLOSED_VERIFIED" and position is None:
+    position, snap = _live_position(client, contract)
+    if ledger_state == "CLOSED_VERIFIED" and position is None:
         return {"state": "ALREADY_CLOSED", "orders_sent": 0,
                 "detail": "This trade is already recorded as closed and the "
                           "exchange reports no open position."}
@@ -171,9 +158,10 @@ def close_position(con, event_id, client=None):
         raise LiveSafetyError("Fractional position; close manually at Gate.io")
 
     side = "LONG" if size > 0 else "SHORT"
-    order = {"contract": row["contract"], "size": int(qty) * (-1 if side == "LONG" else 1),
+    tag = str(event_id or contract)[:20]
+    order = {"contract": contract, "size": int(qty) * (-1 if side == "LONG" else 1),
              "price": "0", "tif": "ioc", "reduce_only": True,
-             "text": "t-mc-" + str(event_id)[:20]}
+             "text": "t-mc-" + tag}
     if mode == "single":
         order["close"] = True
 
@@ -183,15 +171,14 @@ def close_position(con, event_id, client=None):
 
     # Verify: the position must be gone and the order must be finished.
     deadline = time.time() + 12
-    last = None
+    after = None
     while time.time() < deadline:
         try:
-            after, snap2 = _live_position(client, row["contract"])
+            after, _snap2 = _live_position(client, contract)
         except LiveSafetyError:
             after = "UNKNOWN"
         if after is None:
             break
-        last = after
         time.sleep(1.5)
     if after is not None:
         return {"state": "CLOSE_NOT_VERIFIED", "orders_sent": 1,
@@ -205,6 +192,47 @@ def close_position(con, event_id, client=None):
     detect_and_record_closes(con, client)
     return {"state": "CLOSED_VERIFIED", "orders_sent": 1,
             "detail": "Position closed and verified flat at the exchange."}
+
+
+def close_position(con, event_id, client=None):
+    """Reduce-only market close of the exact live position. Verified by readback.
+
+    Allowed while halted: closing reduces risk and must never be blocked by the
+    same gate that stops new entries.
+    """
+    client = client or GateLiveClient()
+    row = _ledger_row(con, event_id)
+    if not row:
+        raise LiveSafetyError("Unknown bot execution record")
+    # A CLOSED_VERIFIED ledger row is bookkeeping, NOT proof the exchange is
+    # flat. When the two disagree the EXCHANGE wins: the operator is looking at
+    # a live position and must be able to close it. Returning "already closed"
+    # here without asking the exchange is what left a real position with four
+    # dead buttons.
+    return _close_contract(con, row["contract"], client,
+                           event_id=event_id, ledger_state=row["state"])
+
+
+def close_position_by_contract(con, contract, client=None):
+    """Reduce-only market close of a position that has no usable ledger row.
+
+    Why this exists
+    ---------------
+    A position can be open at Gate.io with no matching bot ledger row: opened
+    manually, opened before the ledger existed, or whose row was already marked
+    closed. The dashboard used to disable every button in that case, and the
+    fallback that tried to invent a ledger row raised CheckViolation on the
+    ledger's CHECK(risk_usdt>0) / CHECK(contracts>0) constraints, so the click
+    returned 409 and did nothing at all.
+
+    This closes the position that is ACTUALLY at the exchange, identified by
+    contract alone. It is reduce-only and verified by readback, so a wrong
+    identity cannot open a trade - it can only close what is really there.
+    """
+    if not isinstance(contract, str) or not CONTRACT_RE.fullmatch(contract):
+        raise LiveSafetyError("A valid contract is required to close by contract")
+    client = client or GateLiveClient()
+    return _close_contract(con, contract, client)
 
 
 # ---------------------------------------------------------------------------

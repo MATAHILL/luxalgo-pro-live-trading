@@ -665,6 +665,11 @@ h2{font-size:15px;font-weight:850;letter-spacing:.3px}
 .gloss-pnl-loss{color:#ff9db0!important;text-shadow:0 0 10px #ff3d6a55,0 1px 0 #3d0010;font-weight:850}
 .gloss-pnl-neutral{color:#d7e9fa!important;font-weight:800}
 .position-card-refresh{background:linear-gradient(150deg,#2f5f86,#1b3d5c);border-color:#4d7fa8;font-size:11px;padding:5px 9px;font-weight:750}
+.position-chart-toggle{background:linear-gradient(150deg,#2f5f86,#1b3d5c);border-color:#4d7fa8;font-size:11px;padding:6px 11px;font-weight:750;line-height:1}
+.position-chart-box{max-height:0;overflow:hidden;transition:max-height .3s ease;border-top:0 solid #2b435e;background:#0b1a2b}
+.position-chart-box[data-chart-open="true"]{max-height:470px;border-top:1px solid #2b435e}
+.position-chart-frame{width:100%;height:450px;border:0;display:block;background:#0b1a2b}
+.ot-serial{color:#9fb5cf;font-variant-numeric:tabular-nums;font-weight:700}
 @media(max-width:500px){.position-card>summary{align-items:flex-start}.position-symbol{font-size:13px}.position-summary-pnl{font-size:13px}}
 
 /* Distinct high-gloss RED Delete action; isolated from other signal buttons. */
@@ -830,7 +835,7 @@ header.terminal-header{border-radius:17px!important}
 <div class="metric"><small>PROTECTIVE TRIGGERS (SL/TP)</small><strong id="orderTableTriggerCount">—</strong><span>Resting close-position triggers</span></div>
 <div class="metric"><small>OPEN POSITIONS</small><strong id="orderTablePositionCount">—</strong><span>Verified Gate.io positions</span></div>
 </div>
-<div class="tablewrap"><table style="min-width:900px;width:100%"><thead><tr><th>TYPE</th><th>CONTRACT</th><th>SIDE</th><th>QTY</th><th>REMAINING</th><th>PRICE</th><th>STATUS</th><th>CREATED (IST)</th><th>ORDER ID</th></tr></thead><tbody id="orderTableBody"><tr><td colspan="9">Loading…</td></tr></tbody></table></div>
+<div class="tablewrap"><table style="min-width:900px;width:100%"><thead><tr><th>S/N</th><th>TYPE</th><th>CONTRACT</th><th>SIDE</th><th>QTY</th><th>REMAINING</th><th>PRICE</th><th>STATUS</th><th>CREATED (IST)</th><th>ORDER ID</th></tr></thead><tbody id="orderTableBody"><tr><td colspan="10">Loading…</td></tr></tbody></table></div>
 <p class="light">Read-only. An empty table means Gate.io genuinely reports no open orders, triggers or positions — never a failed read. A failed read is shown as an error above, not as an empty table.</p></section>
 <section class="panel" id="v4Workspace" aria-label="Gate.io Testnet individual position cards">
 <div class="v4-head"><div><strong>LUXALGO PRO · TESTNET POSITION CARDS</strong><p class="light">Gate.io Testnet exchange positions only. Unrealized P&amp;L comes from the exchange; real-money trading is OFF.</p></div>
@@ -875,7 +880,13 @@ header.terminal-header{border-radius:17px!important}
 <div class="panel-heading"><span id="incomingLuxInfo" class="light" role="status">Loading fresh signals from zero…</span><div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn" id="incomingLuxClear" type="button" title="Clear displayed signals, not exchange orders or safety logs">Clear Visible History</button><button class="btn gloss-action" id="incomingLuxRefresh" type="button">↻ Refresh</button></div></div>
 <div class="market-tabs" id="incomingLuxFilters" aria-label="Filter incoming LuxAlgo signals by verified status"><button class="btn selected" type="button" data-lux-filter="ALL">ALL</button><button class="btn" type="button" data-lux-filter="LIVE">● LIVE</button><button class="btn" type="button" data-lux-filter="CLOSED">✓ CLOSED</button><button class="btn" type="button" data-lux-filter="WAITING FOR EXECUTION">◷ WAITING</button><button class="btn" type="button" data-lux-filter="NOT EXECUTED">NOT EXECUTED</button><button class="btn" type="button" data-lux-filter="UNSUPPORTED ON TESTNET">UNSUPPORTED MARKET</button><button class="btn" type="button" data-lux-filter="VERIFY EXCHANGE">VERIFY EXCHANGE</button></div>
 <div class="tablewrap incoming-lux-scroll" id="incomingLuxScroll" tabindex="0" role="region" aria-label="Incoming LuxAlgo signals, latest 25, scroll vertically after row 10"><table style="min-width:1000px;width:100%"><thead><tr><th>S/N</th><th>RECEIVED (IST)</th><th>COIN</th><th>SIGNAL</th><th>TF</th><th>ORDER TYPE</th><th>ENTRY</th><th>STOP LOSS</th><th>TAKE PROFIT</th><th>CURRENT STATUS · CLICK TO REFRESH</th><th>DETAIL</th></tr></thead><tbody id="incomingLuxRows"><tr><td colspan="11">Loading…</td></tr></tbody></table></div>
-</details><div class="market-grid">
+</details><section class="panel advanced-panel" id="advancedScannerPanel"><div class="panel-heading"><h2>LUXALGO PRO · ADVANCED FUTURES OPPORTUNITY SCANNER <span class="gloss-cyan">● MARKET INTELLIGENCE</span></h2><button class="btn gloss-action" id="advancedRefresh" type="button">↻ Scan All Pairs</button></div>
+<p class="light">Gate.io USDT perpetuals · 5m + 15m completed candles · volume / trend / structure screening · up to five watchlist candidates. ATR-based technical levels are estimates only; only genuine stored LuxAlgo alerts confirm SL1/TP1. NEVER PLACES ORDERS.</p>
+<div class="adv-controls"><strong id="advancedScanStatus" class="adv-summary">Ready to inspect markets…</strong><span id="advancedEquityInfo" class="light">Equity risk sizing: verifying read-only account</span></div>
+<div class="adv-table"><table><thead><tr><th>PAIR</th><th>DIRECTION</th><th>TIMEFRAME</th><th>LUXALGO</th><th>ENTRY REF.</th><th>SL1</th><th>TP1</th><th>R:R</th><th>0.5% RISK / SIZE</th><th>STATUS / REASON</th></tr></thead><tbody id="advancedScanBody"><tr><td colspan="10" class="light">Waiting for scan results.</td></tr></tbody></table></div>
+<p class="light">Technical watchlist is NOT a LuxAlgo signal or recommendation. Technical entry/SL1/TP1 are non-executable previews. No verified LuxAlgo SL1/TP1 = NO TRADE. Capital figures are account-read-only; sizes are indicative BASE-asset quantities, not validated Gate.io contract quantities. Live execution remains BLOCKED.</p>
+</section>
+<div class="market-grid">
 <section class="panel market-panel"><div class="panel-heading"><h2>GATE.IO FUTURES RADAR <span class="gloss-gold">● MARKET LIVE</span></h2><button class="btn gloss-action" id="radarRefresh" type="button">↻ Refresh</button></div>
 <p class="light">All available Gate.io USDT perpetual tickers · 24h rankings · public market data.</p>
 <div class="market-tabs" id="radarTabs"><button class="btn selected" data-radar="gainers">TOP GAINERS</button><button class="btn" data-radar="losers">TOP LOSERS</button><button class="btn" data-radar="volume">TOP VOLUME</button><button class="btn" data-radar="all">ALL PAIRS</button></div>
@@ -891,12 +902,6 @@ header.terminal-header{border-radius:17px!important}
 <div class="tablewrap market-scroll"><table><thead><tr><th>PAIR · CHART ↗</th><th>BIAS</th><th>SCORE</th><th>RSI</th><th>VOL RATIO</th></tr></thead><tbody id="scannerBody"><tr><td colspan="5">Scanning…</td></tr></tbody></table></div>
 <p class="light">Technical labels reflect EMA trend, RSI, recent price-range break and candle volume. They are not LuxAlgo orders.</p>
 </section></div>
-<section class="panel advanced-panel" id="advancedScannerPanel"><div class="panel-heading"><h2>LUXALGO PRO · ADVANCED FUTURES OPPORTUNITY SCANNER <span class="gloss-cyan">● MARKET INTELLIGENCE</span></h2><button class="btn gloss-action" id="advancedRefresh" type="button">↻ Scan All Pairs</button></div>
-<p class="light">Gate.io USDT perpetuals · 5m + 15m completed candles · volume / trend / structure screening · up to five watchlist candidates. ATR-based technical levels are estimates only; only genuine stored LuxAlgo alerts confirm SL1/TP1. NEVER PLACES ORDERS.</p>
-<div class="adv-controls"><strong id="advancedScanStatus" class="adv-summary">Ready to inspect markets…</strong><span id="advancedEquityInfo" class="light">Equity risk sizing: verifying read-only account</span></div>
-<div class="adv-table"><table><thead><tr><th>PAIR</th><th>DIRECTION</th><th>TIMEFRAME</th><th>LUXALGO</th><th>ENTRY REF.</th><th>SL1</th><th>TP1</th><th>R:R</th><th>0.5% RISK / SIZE</th><th>STATUS / REASON</th></tr></thead><tbody id="advancedScanBody"><tr><td colspan="10" class="light">Waiting for scan results.</td></tr></tbody></table></div>
-<p class="light">Technical watchlist is NOT a LuxAlgo signal or recommendation. Technical entry/SL1/TP1 are non-executable previews. No verified LuxAlgo SL1/TP1 = NO TRADE. Capital figures are account-read-only; sizes are indicative BASE-asset quantities, not validated Gate.io contract quantities. Live execution remains BLOCKED.</p>
-</section>
 <div class="bottom-grid"><section class="panel performance-panel"><div class="panel-heading"><h2>PERFORMANCE ANALYTICS</h2><span class="label-muted" id="perfStatus">VERIFIED FILLS ONLY</span></div><div class="perf-grid"><div><span>Total Closed Trades</span><strong id="perfClosed">—</strong></div><div><span>Winning Trades</span><strong id="perfWins">—</strong></div><div><span>Losing Trades</span><strong id="perfLosses">—</strong></div><div><span>Win Rate</span><strong id="perfWinRate">—</strong></div><div><span>Losing Rate</span><strong id="perfLosingRate">—</strong></div><div><span>Total Close Rate</span><strong id="perfCloseRate">—</strong></div><div><span>Total Realized P&amp;L (USDT)</span><strong id="perfRealized">—</strong></div><div><span>Unrealized P&amp;L (USDT)</span><strong id="perfUnrealized">—</strong></div></div><p class="light" id="perfNote">Waiting for authenticated position and fill synchronization. No synthetic P&amp;L or win statistics.</p></section></div><section class="panel"><div class="panel-heading"><h2>COMPLETED TRADES · EXIT RECORD</h2><span class="label-muted" id="completedTradesStatus">LOADING…</span></div><div class="tablewrap"><table><thead><tr><th>TIME (IST)</th><th>PAIR</th><th>DIRECTION</th><th>ENTRY FILL</th><th>EXIT FILL</th><th>EXIT QTY</th><th>EXIT TIME (IST)</th><th>FEES</th><th>NET REALIZED P&amp;L</th><th>RESULT</th></tr></thead><tbody id="completedTradesBody"><tr><td colspan="10" class="empty-state">Loading closed bot trades…</td></tr></tbody></table></div><p class="light">Closed bot trades only. A row appears here once the exchange reports the position, its open orders and its resting SL/TP triggers all gone. Exit fill, quantity and net P&amp;L come from Gate.io's own closing fills, with fees subtracted; partial closes are summed. A dash means the exchange has not returned that figure — never an estimate.</p></section><section class="panel legacy-paper-panel"><div class="panel-heading"><h2>PAPER TRADE MONITOR <span class="tag">SIMULATION ONLY</span></h2><button class="btn gloss-action" id="paperRefresh" type="button">↻ Check Paper Trades</button></div><p class="light" id="paperStatus" role="status" aria-live="polite">Checks queued simulated orders when the dashboard is open; historical outcomes remain estimates, not fills.</p><div class="tablewrap"><table><thead><tr><th>CREATED (IST)</th><th>PAIR</th><th>SIDE</th><th>SIM ENTRY</th><th>SIM SL</th><th>SIM TP</th><th>STATE</th><th>LAST PRICE</th><th>UNREALIZED P&amp;L</th><th>EST. CLOSED P&amp;L</th></tr></thead><tbody id="paperBody"><tr><td colspan="10">No simulated positions loaded.</td></tr></tbody></table></div><p id="paperOpenPnlTotal" class="light" role="status" aria-live="polite">Open paper unrealized P&amp;L: not yet available.</p><p class="light">Simulation outcomes assume the reference entry was achievable and exclude fees, slippage and funding. If both SL and TP are touched in one candle, SL is assumed first. Historical-data gaps are not guessed. Simulated P&amp;L is never included in verified real-trade analytics.</p></section><div class="foot">LUXALGO PRO · Private terminal · Market data is public Gate.io data. Scanners are technical watchlists, not LuxAlgo entry signals. No account positions, fills, profit or loss are available until authenticated exchange sync is implemented. Live order placement is controlled by the PRODUCTION BOT switch above: when it reads BOT ON, enabled signals are sent to Gate.io and the panels above show the real result; when it reads BOT OFF or a gate is listed, no orders are placed.</div></div><script>
 
 // Read-only advanced watchlist: uses completed 5m/15m public candles and validated LuxAlgo receipt records.
@@ -1271,7 +1276,35 @@ function openGateTradingView(symbol){
  if(!/^[A-Z0-9]{2,25}USDT$/.test(pair))return;
  window.open('https://www.tradingview.com/chart/?symbol='+encodeURIComponent('GATEIO:'+pair+'.P'),'_blank','noopener,noreferrer');
 }
-window.openGateTradingView=openGateTradingView;;
+window.openGateTradingView=openGateTradingView;
+// The real TradingView advanced chart, embedded. This is the same chart engine
+// TradingView itself serves, so it is smooth and fast by construction rather
+// than a redrawn imitation. RSI and a moving average are preloaded so it is an
+// indicator chart, not a bare price line.
+function tradingViewEmbedUrl(symbol){
+ const pair=String(symbol||'').toUpperCase().replace('_','').trim();
+ if(!/^[A-Z0-9]{2,25}USDT$/.test(pair))return 'about:blank';
+ const q=new URLSearchParams({
+  symbol:'GATEIO:'+pair+'.P', interval:'15', theme:'dark', style:'1',
+  locale:'en', timezone:'Asia/Kolkata', withdateranges:'1', hidesidetoolbar:'0',
+  symboledit:'1', saveimage:'1', showpopupbutton:'1',
+  studies:JSON.stringify(['RSI@tv-basicstudies','MASimple@tv-basicstudies']),
+  enabled_features:'[]', disabled_features:'[]'
+ });
+ return 'https://s.tradingview.com/widgetembed/?'+q.toString();
+}
+window.tradingViewEmbedUrl=tradingViewEmbedUrl;
+// Clicking anywhere outside an open chart closes it. Registered once, and it
+// never touches a chart the click landed inside.
+document.addEventListener('click',e=>{
+ if(e.target.closest('.position-chart-box')||e.target.closest('.position-chart-toggle'))return;
+ document.querySelectorAll('.position-chart-box[data-chart-open="true"]').forEach(box=>{
+  box.dataset.chartOpen='false';
+  box.setAttribute('aria-hidden','true');
+  const t=box.closest('.position-card')&&box.closest('.position-card').querySelector('.position-chart-toggle');
+  if(t)t.setAttribute('aria-expanded','false');
+ });
+});
 
 
 
@@ -1511,6 +1544,34 @@ function renderPositions(positions){
   };
   actions.append(mk('Set TP/SL','protection'),mk('Reverse Position','reverse'),
                  mk('Market Close','close'));
+  // Down-arrow beside Market Close: opens a real TradingView chart BELOW this
+  // card. Clicking outside the chart closes it. Each card owns its own chart
+  // element, so one card's chart never affects another.
+  const chartToggle=element('button','btn position-chart-toggle','\u25be');
+  chartToggle.type='button';
+  chartToggle.title='Open a TradingView chart below this card';
+  chartToggle.setAttribute('aria-expanded','false');
+  actions.append(chartToggle);
+  const chartBox=element('div','position-chart-box');
+  chartBox.dataset.chartOpen='false';
+  chartBox.setAttribute('aria-hidden','true');
+  chartToggle.addEventListener('click',e=>{
+   e.stopPropagation();
+   const opening=chartBox.dataset.chartOpen!=='true';
+   if(opening&&!chartBox.dataset.loaded){
+    chartBox.dataset.loaded='1';
+    const f=document.createElement('iframe');
+    f.className='position-chart-frame';
+    f.setAttribute('loading','lazy');
+    f.setAttribute('allowfullscreen','');
+    f.setAttribute('title','TradingView chart for '+p.contract.replace('_','/'));
+    f.src=window.tradingViewEmbedUrl(p.contract);
+    chartBox.append(f);
+   }
+   chartBox.dataset.chartOpen=opening?'true':'false';
+   chartBox.setAttribute('aria-hidden',opening?'false':'true');
+   chartToggle.setAttribute('aria-expanded',opening?'true':'false');
+  });
   const stale=!!(ledger&&ledger.ledger_state_stale);
   inner.append(actions,element('p','position-readonly-hint',
    ledger?(stale?'This position is open at Gate.io but its bot record was already '
@@ -1521,7 +1582,7 @@ function renderPositions(positions){
    :'This position has no bot execution record. Market Close is still available: '
      +'the close is resolved by contract against Gate.io and is reduce-only. '
      +'Set TP/SL and Reverse need an exact bot record and will say so if refused.'));
-  card.append(inner);body.append(card);
+  card.append(inner,chartBox);body.append(card);
  });
  window.__positionCardsInitialized=true;
 }
@@ -1666,17 +1727,20 @@ async function otLoad(){
   }
   if(!rows.length){
    const tr=otBody.insertRow(),td=tr.insertCell();
-   td.colSpan=9;td.className='empty-state';
+   td.colSpan=10;td.className='empty-state';
    td.textContent='Gate.io reports no open orders, no resting protective triggers and no open positions.';
   }else{
-   for(const row of rows){
+   // Serial number 1,2,3... in front of every row, so the operator can refer
+   // to a specific order unambiguously.
+   rows.forEach((row,idx)=>{
     const tr=otBody.insertRow();
+    otCell(tr,String(idx+1),'ot-serial');
     row.forEach((v,i)=>{
      let cls='';
      if(i===2)cls=v==='BUY'?'positive':v==='SELL'?'negative':'';
      otCell(tr,v,cls);
     });
-   }
+   });
   }
   otStatus.textContent=orders.length+' open order(s) · '+triggers.length+' trigger(s) ('
     +d.protective_trigger_count+' protective) · '+positions.length+' position(s) · '
@@ -1686,7 +1750,7 @@ async function otLoad(){
   // table for a failed read.
   otBody.replaceChildren();
   const tr=otBody.insertRow(),td=tr.insertCell();
-  td.colSpan=9;td.className='negative';
+  td.colSpan=10;td.className='negative';
   td.textContent='Order table unavailable: '+String(e.message).slice(0,120);
   otPut('orderTableOrderCount','—');otPut('orderTableTriggerCount','—');otPut('orderTablePositionCount','—');
   otStatus.textContent='Gate.io order read failed. This is NOT an empty account — the data could not be read.';
@@ -3695,9 +3759,32 @@ def terminal_position_close():
                 event_id = resolve_event_for_contract(con, contract)
         except Exception:
             app.logger.exception('Could not resolve execution record for contract')
-            return jsonify(state='REFUSED',
-                           error='No bot execution record could be resolved for '
-                                 'this contract. Close it at Gate.io directly.'), 409
+            event_id = None
+        if not event_id:
+            # No ledger row exists for this contract. Close the position that is
+            # ACTUALLY at the exchange, identified by contract alone. The old
+            # fallback tried to invent a ledger row, which violated the ledger's
+            # CHECK(risk_usdt>0)/CHECK(contracts>0) constraints and returned 409,
+            # so the operator's Market Close click silently did nothing.
+            try:
+                from live_position_actions import close_position_by_contract
+                from live_futures_engine import LiveSafetyError, AckUnknown
+                with _db_connect() as con:
+                    result = close_position_by_contract(con, contract)
+                code = 200 if result.get('state') in ('CLOSED_VERIFIED', 'ALREADY_CLOSED') else 409
+                response = jsonify(**result)
+                response.headers['Cache-Control'] = 'private, no-store'
+                return response, code
+            except AckUnknown as exc:
+                return jsonify(state='CLOSE_OUTCOME_UNKNOWN', error=str(exc),
+                               detail='The close may have been accepted. Inspect '
+                                      'Gate.io before any retry.'), 503
+            except LiveSafetyError as exc:
+                return jsonify(state='REFUSED', error=str(exc)), 409
+            except (psycopg.Error, RuntimeError, OSError, ValueError, TypeError, KeyError):
+                app.logger.exception('Position close by contract failed')
+                return jsonify(state='CLOSE_OUTCOME_UNKNOWN',
+                               error='Close could not be confirmed; inspect Gate.io'), 503
     try:
         from live_position_actions import close_position
         from live_futures_engine import LiveSafetyError, AckUnknown
