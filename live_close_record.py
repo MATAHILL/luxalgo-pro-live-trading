@@ -33,6 +33,7 @@ Anything else stays open and keeps the HALT latched. Unknown is never closed.
 from __future__ import annotations
 
 import json
+from datetime import datetime, timezone
 from decimal import Decimal, InvalidOperation
 
 from live_futures_engine import PREFIX, LiveSafetyError, GateLiveClient
@@ -55,40 +56,6 @@ def _contract_exposure(snapshot, contract):
         if initial.get("contract") == contract:
             triggers.append(o)
     return positions, orders, triggers
-
-
-def _realized_pnl(client, contract, entry_order_id):
-    """Exchange-authoritative realized P&L from the closing fills.
-
-    Gate's ``/my_trades`` reports a ``pnl`` per fill. We sum only the fills that
-    are NOT the entry order, so the entry's own zero-pnl row cannot dilute the
-    result. Returns ``None`` when the exchange cannot answer, never a guess.
-    """
-    try:
-        trades = client.request("GET", PREFIX + "/my_trades",
-                                params={"contract": contract, "limit": 100})
-    except Exception:
-        return None
-    if not isinstance(trades, list):
-        return None
-    total = Decimal("0")
-    found = False
-    for t in trades:
-        if not isinstance(t, dict):
-            continue
-        if str(t.get("contract")) != contract:
-            continue
-        if str(t.get("order_id") or "") == str(entry_order_id or ""):
-            continue
-        try:
-            pnl = Decimal(str(t.get("pnl")))
-        except (InvalidOperation, TypeError, ValueError):
-            continue
-        if not pnl.is_finite():
-            continue
-        total += pnl
-        found = True
-    return total if found else None
 
 
 def _close_fill_price(client, contract, entry_order_id):
@@ -116,6 +83,44 @@ def _close_fill_price(client, contract, entry_order_id):
         if price.is_finite() and price > 0:
             return price
     return None
+
+
+def _verified_exit(client, contract, entry_order_id):
+    """The exchange's own closing-fill record for one contract.
+
+    Returns a dict with the exit fill price, the final executed quantity, the
+    exit timestamp, gross P&L, fees and NET realized P&L, or ``None`` when the
+    exchange cannot answer.
+
+    This replaces the old gross-only sum. Two things were wrong before:
+
+      * fees were never subtracted, so the panel showed a number the account
+        never actually kept;
+      * a trade closed in several pieces (partial closes) was reported from a
+        single order row, so the exit price and quantity were wrong.
+
+    ``aggregate_fills`` de-duplicates by Gate's trade id and sums every closing
+    fill, which is what makes partial closes correct.
+    """
+    from live_analytics import aggregate_fills, fetch_contract_fills
+    fills = fetch_contract_fills(client, contract)
+    agg = aggregate_fills(fills, entry_order_id)
+    if agg is None:
+        return None
+    exit_price = agg.get("avg_price")
+    if exit_price is None:
+        # Fall back to the finished-order readback only when the fill average
+        # is unavailable; still never a guess.
+        exit_price = _close_fill_price(client, contract, entry_order_id)
+    return {
+        "exit_fill_price": exit_price,
+        "exit_quantity": agg.get("qty"),
+        "exit_timestamp": agg.get("last_ts"),
+        "gross_realized_pnl_usdt": agg.get("pnl"),
+        "fees_usdt": agg.get("fees"),
+        "net_realized_pnl_usdt": agg.get("net"),
+        "closing_fill_count": agg.get("fill_count"),
+    }
 
 
 def detect_and_record_closes(con, client=None):
@@ -150,18 +155,44 @@ def detect_and_record_closes(con, client=None):
                             "triggers": len(triggers)})
             continue
 
-        realized = _realized_pnl(client, contract, row.get("entry_order_id"))
-        exit_price = _close_fill_price(client, contract, row.get("entry_order_id"))
-        detail = {
-            "close_detected_by": "EXCHANGE_FLAT_READBACK",
-            "close_note": ("exchange reported no position, no open order and no "
-                           "resting trigger for this contract"),
-            "realized_pnl_usdt": (str(realized) if realized is not None else None),
-            "realized_pnl_source": ("GATE_MY_TRADES" if realized is not None
-                                    else "UNAVAILABLE"),
-            "exit_fill_price": (str(exit_price) if exit_price is not None else None),
-            "previous_state": row.get("state"),
-        }
+        # The exchange's own closing fills: exit price, final quantity, exit
+        # time, gross P&L, fees and NET P&L. Partial closes are summed and
+        # de-duplicated inside _verified_exit.
+        verified = _verified_exit(client, contract, row.get("entry_order_id"))
+        if verified is not None:
+            realized = verified["net_realized_pnl_usdt"]
+            exit_price = verified["exit_fill_price"]
+            detail = {
+                "close_detected_by": "EXCHANGE_FLAT_READBACK",
+                "close_note": ("exchange reported no position, no open order and no "
+                               "resting trigger for this contract"),
+                "realized_pnl_usdt": str(realized),
+                "net_realized_pnl_usdt": str(realized),
+                "gross_realized_pnl_usdt": str(verified["gross_realized_pnl_usdt"]),
+                "fees_usdt": str(verified["fees_usdt"]),
+                "realized_pnl_source": "GATE_MY_TRADES",
+                "exit_fill_price": (str(exit_price) if exit_price is not None else None),
+                "exit_quantity": str(verified["exit_quantity"]),
+                "exit_timestamp": verified["exit_timestamp"],
+                "closing_fill_count": verified["closing_fill_count"],
+                "previous_state": row.get("state"),
+            }
+        else:
+            # The exchange could not answer. Record the close (the position is
+            # provably gone) but leave the money fields explicitly unknown
+            # rather than writing a zero the operator would read as break-even.
+            detail = {
+                "close_detected_by": "EXCHANGE_FLAT_READBACK",
+                "close_note": ("exchange reported no position, no open order and no "
+                               "resting trigger for this contract"),
+                "realized_pnl_usdt": None,
+                "net_realized_pnl_usdt": None,
+                "realized_pnl_source": "UNAVAILABLE",
+                "exit_fill_price": None,
+                "exit_quantity": None,
+                "exit_timestamp": None,
+                "previous_state": row.get("state"),
+            }
         with con.cursor() as cur:
             cur.execute("""UPDATE luxalgo_prod_execution_ledger
                            SET state='CLOSED_VERIFIED',
@@ -223,11 +254,29 @@ def read_completed_trades(con, limit=150):
                 detail = json.loads(detail)
             except (ValueError, TypeError):
                 detail = {}
-        realized = detail.get("realized_pnl_usdt")
+        realized = detail.get("net_realized_pnl_usdt")
+        if realized is None:
+            realized = detail.get("realized_pnl_usdt")
         try:
             realized_num = float(realized) if realized is not None else None
         except (TypeError, ValueError):
             realized_num = None
+        gross = detail.get("gross_realized_pnl_usdt")
+        try:
+            gross_num = float(gross) if gross is not None else None
+        except (TypeError, ValueError):
+            gross_num = None
+        fees = detail.get("fees_usdt")
+        try:
+            fees_num = float(fees) if fees is not None else None
+        except (TypeError, ValueError):
+            fees_num = None
+        exit_ts = detail.get("exit_timestamp")
+        try:
+            exit_iso = (datetime.fromtimestamp(int(exit_ts), timezone.utc).isoformat()
+                        if exit_ts is not None else None)
+        except (TypeError, ValueError, OSError, OverflowError):
+            exit_iso = None
         out.append(dict(
             event_id=r.get("event_id"),
             contract=r.get("contract"),
@@ -237,10 +286,16 @@ def read_completed_trades(con, limit=150):
             contracts=str(r.get("contracts")),
             entry_price=str(r.get("entry_price")),
             exit_price=detail.get("exit_fill_price"),
+            exit_quantity=detail.get("exit_quantity"),
+            exit_timestamp=exit_iso,
             stop_loss=str(r.get("stop_loss")),
             take_profit=str(r.get("take_profit")),
             realized_pnl_usdt=realized_num,
+            gross_realized_pnl_usdt=gross_num,
+            fees_usdt=fees_num,
+            net_realized_pnl_usdt=realized_num,
             realized_pnl_source=detail.get("realized_pnl_source", "UNAVAILABLE"),
+            closing_fill_count=detail.get("closing_fill_count"),
             close_reason=detail.get("close_detected_by") or detail.get("release_note")
                          or detail.get("recovery_close_order_id") and "RECOVERY_CLOSE"
                          or "CLOSED",

@@ -620,28 +620,36 @@ h2{font-size:15px;font-weight:850;letter-spacing:.3px}
 @media(max-width:670px){.futures-liquidity .liquidity-grid{grid-template-columns:1fr;gap:9px;padding:10px}}
 
 /* Individual read-only position cards; each position is independently expandable. */
-.position-card-list{display:grid;gap:13px;margin-top:13px}
-.position-card{border:1px solid #345c83;border-radius:13px;background:linear-gradient(150deg,#142d49,#0b1c31);box-shadow:inset 0 1px 0 #ffffff12,0 8px 20px #0003;overflow:hidden}
-.position-card>summary{list-style:none;cursor:pointer;padding:15px 17px;display:flex;justify-content:space-between;align-items:center;gap:10px}
+/* Three readable cards per row on desktop; responsive stacking below. */
+.position-card-list{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:13px;margin-top:13px;align-items:start}
+@media(max-width:1180px){.position-card-list{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:760px){.position-card-list{grid-template-columns:1fr}}
+.position-card{border:1px solid #345c83;border-radius:13px;background:linear-gradient(150deg,#142d49,#0b1c31);box-shadow:inset 0 1px 0 #ffffff12,0 8px 20px #0003;overflow:hidden;min-width:0}
+.position-card>summary{list-style:none;cursor:pointer;padding:12px 14px;display:flex;justify-content:space-between;align-items:center;gap:8px}
 .position-card>summary::-webkit-details-marker{display:none}
 .position-card>summary:focus-visible{outline:2px solid #66e6ff;outline-offset:-3px}
-.position-head{display:flex;align-items:center;gap:9px;flex-wrap:wrap;min-width:0}
-.position-symbol{font-size:17px;font-weight:850;color:#e8f7ff}
-.position-side{font-size:12px;font-weight:850;border-radius:5px;padding:4px 7px}
+.position-head{display:flex;align-items:center;gap:7px;flex-wrap:wrap;min-width:0}
+.position-symbol{font-size:15px;font-weight:850;color:#e8f7ff}
+.position-side{font-size:11px;font-weight:850;border-radius:5px;padding:3px 6px}
 .position-side.long{background:#17765c;color:#d9fff1}.position-side.short{background:#9b3453;color:#fff0f3}
-.position-leverage{font-size:12px;background:#223e5c;border:1px solid #42688c;color:#d7e9fa;padding:4px 8px;border-radius:5px}
-.position-summary-pnl{font-weight:850;font-size:17px;white-space:nowrap}
-.position-card-inner{padding:0 17px 17px}
-.position-facts{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}
-.position-fact{background:#0b2037;border:1px solid #234969;border-radius:8px;padding:10px;min-width:0}
-.position-fact small{display:block;color:#9eb9d1;font-size:11px;margin-bottom:3px}
-.position-fact strong{font-size:15px;overflow-wrap:anywhere}
-.position-card-actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}
+.position-leverage{font-size:11px;background:#223e5c;border:1px solid #42688c;color:#d7e9fa;padding:3px 7px;border-radius:5px}
+.position-summary-pnl{font-weight:850;font-size:15px;white-space:nowrap}
+.position-card-inner{padding:0 14px 14px}
+.position-facts{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+.position-fact{background:#0b2037;border:1px solid #234969;border-radius:8px;padding:8px;min-width:0}
+.position-fact small{display:block;color:#9eb9d1;font-size:10px;margin-bottom:2px}
+.position-fact strong{font-size:13px;overflow-wrap:anywhere}
+.position-card-actions{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
+.position-card-actions button{font-size:11px;padding:6px 9px}
 .position-card-actions button:disabled{opacity:.44;cursor:not-allowed;filter:grayscale(.35)}
 .position-chart-action{background:linear-gradient(150deg,#63d6ff,#227bb0 53%,#104d89 54%,#319bd0);border-color:#83deff;font-weight:750}
-.position-readonly-hint{font-size:11px;color:#afc3d9;margin-top:10px}
-@media(max-width:970px){.position-facts{grid-template-columns:repeat(2,minmax(0,1fr))}}
-@media(max-width:500px){.position-card>summary{align-items:flex-start}.position-facts{grid-template-columns:repeat(2,minmax(0,1fr))}.position-symbol{font-size:14px}.position-summary-pnl{font-size:14px}}
+.position-readonly-hint{font-size:10.5px;color:#afc3d9;margin-top:8px;line-height:1.45}
+/* Glossy exchange realized P&L: green for profit, red for loss, neutral otherwise. */
+.gloss-pnl-profit{color:#7dffc4!important;text-shadow:0 0 10px #2bff9e66,0 1px 0 #003d24;font-weight:850}
+.gloss-pnl-loss{color:#ff9db0!important;text-shadow:0 0 10px #ff3d6a55,0 1px 0 #3d0010;font-weight:850}
+.gloss-pnl-neutral{color:#d7e9fa!important;font-weight:800}
+.position-card-refresh{background:linear-gradient(150deg,#2f5f86,#1b3d5c);border-color:#4d7fa8;font-size:11px;padding:5px 9px;font-weight:750}
+@media(max-width:500px){.position-card>summary{align-items:flex-start}.position-symbol{font-size:13px}.position-summary-pnl{font-size:13px}}
 
 /* Distinct high-gloss RED Delete action; isolated from other signal buttons. */
 .bottom-grid>section:first-child td:last-child .btn.delete-recent-signal {
@@ -784,17 +792,30 @@ header.terminal-header{border-radius:17px!important}
 <div class="metric equity-metric"><small>LIVE FUTURES EQUITY · USDT</small><strong class="gloss-cyan" id="futuresEquity">—</strong><span id="futuresEquityUpdated">Verifying Gate.io account…</span></div>
 <div class="metric"><small>AVAILABLE FUTURES · USDT</small><strong id="futuresAvailable">—</strong><span>Exchange-reported trading availability</span></div>
 <div class="metric"><small>FUTURES BALANCE · USDT</small><strong id="futuresBalance">—</strong><span>Account balance before unrealized P&amp;L</span></div>
+<div class="metric"><small>TOTAL REALIZED P&amp;L · USDT</small><strong id="liquidityRealizedPnl">—</strong><span id="liquidityRealizedPnlNote">Verified closed trades, net of fees</span></div>
+<div class="metric"><small>WIN RATE</small><strong id="liquidityWinRate">—</strong><span id="liquidityWinRateNote">Winning ÷ decided closed trades</span></div>
+<div class="metric"><small>UNREALIZED P&amp;L · USDT</small><strong id="liquidityUnrealizedPnl">—</strong><span id="liquidityUnrealizedPnlNote">Open positions, from Gate.io</span></div>
 </div></details>
 <details class="panel" style="margin:12px 0" id="liveReadinessPanel"><summary style="font-weight:850;cursor:pointer;color:#ffcf89">LIVE EXECUTION READINESS · SAFETY CHECK (READ ONLY)</summary><p class="light">This panel checks safeguards only. It cannot start trading or enable Gate.io API writes.</p><button class="btn" type="button" id="readinessRefresh">Check readiness</button><button class="btn gloss-action" type="button" id="guardTestButton" style="margin-left:8px">Test Duplicate Order Guard</button><button class="btn gloss-action" type="button" id="riskCheckButton" style="margin-left:8px">Check Account Risk Limits</button><button class="btn gloss-action" type="button" id="stage2GateTestButton" style="margin-left:8px">Test Stage 2 Risk Gate</button><button class="btn gloss-action" type="button" id="stage3ContractTestButton" style="margin-left:8px">Test Stage 3 Contract Sizing</button><button class="btn gloss-action" type="button" id="stage4ProtectiveTestButton" style="margin-left:8px">Test Stage 4 SL/TP</button><button class="btn gloss-action" type="button" id="stage5LedgerTestButton" style="margin-left:8px">Test Stage 5 Ledger</button><button class="btn gloss-action" type="button" id="stage6HaltTestButton" style="margin-left:8px">Test Stage 6 Halt &amp; Recovery</button><button class="btn gloss-action" type="button" id="stage7AuditButton" style="margin-left:8px">Test Stage 7 Readiness Audit</button><button class="btn gloss-action" type="button" id="stage8AckTestButton" style="margin-left:8px">Test Stage 8 Ack Recovery</button><button class="btn gloss-action" type="button" id="stage9ReconcileTestButton" style="margin-left:8px">Test Stage 9 Reconciliation</button><button class="btn gloss-action" type="button" id="stage10ProtectionTestButton" style="margin-left:8px">Test Stage 10 SL/TP Coverage</button><button class="btn gloss-action" type="button" id="stage11RiskTestButton" style="margin-left:8px">Test Stage 11 Atomic Risk</button><button class="btn gloss-action" type="button" id="stage12ReadOnlyTestButton" style="margin-left:8px">Test Stage 12 Gate.io Read-Only</button><button class="btn gloss-action" type="button" id="stage13RecoveryTestButton" style="margin-left:8px">Test Stage 13 Recovery &amp; Failures</button><button class="btn gloss-action" type="button" id="stage14FinalTestButton" style="margin-left:8px">Test Stage 14 Final Paper Audit</button><button class="btn gloss-action" type="button" id="stage15IntegrationTestButton" style="margin-left:8px">Test Stage 15 Real Alert Paper Audit</button><button class="btn gloss-action" type="button" id="stage15InspectButton" style="margin-left:8px">Inspect Stage 15 Record Issues</button><button class="btn btn-danger" type="button" id="stage6EmergencyHalt" style="margin-left:8px">EMERGENCY HALT · PAPER &amp; FUTURE EXECUTION</button><p class="light" id="riskCheckResult" role="status" aria-live="polite">Read-only risk inspection available. Never authorizes a trade.</p><p class="light" id="guardTestResult">Test only: all candidates are BLOCKED; no exchange orders.</p><p class="light" id="stage2GateTestResult" role="status" aria-live="polite">Stage 2 PostgreSQL concurrency test not yet run.</p><p class="light" id="stage3ContractTestResult" role="status" aria-live="polite">Stage 3 read-only sizing diagnostic not yet run.</p><p class="light" id="stage4ProtectiveTestResult" role="status" aria-live="polite">Stage 4 protective-price validation not yet run. No protective orders exist.</p><p class="light" id="stage5LedgerTestResult" role="status" aria-live="polite">Stage 5 PostgreSQL simulated lifecycle test not yet run. No exchange writes.</p><p class="light" id="stage6HaltTestResult" role="status" aria-live="polite">Stage 6 persistent halt diagnostic not yet run. No exchange writes.</p><p class="light" id="stage7AuditResult" role="status" aria-live="polite">Stage 7 read-only readiness audit not yet run. All exchange execution blocked.</p><p class="light" id="stage8AckTestResult" role="status" aria-live="polite">Stage 8 unknown-acknowledgment quarantine not yet tested. No exchange write.</p><p class="light" id="stage9ReconcileTestResult" role="status" aria-live="polite">Stage 9 fixture-only reconciliation test not yet run. Real Gate.io orders are not reconciled.</p><p class="light" id="stage10ProtectionTestResult" role="status" aria-live="polite">Stage 10 protective-order fixture audit not yet run. No exchange protections verified.</p><p class="light" id="stage11RiskTestResult" role="status" aria-live="polite">Stage 11 account-wide risk fixture not yet tested. Exchange orders disabled.</p><p class="light" id="stage12ReadOnlyTestResult" role="status" aria-live="polite">Stage 12 read-only exchange snapshot not yet run. Live order reconciliation is NOT implemented.</p><p class="light" id="stage13RecoveryTestResult" role="status" aria-live="polite">Stage 13 restart/failure diagnostic not yet run. No exchange writes.</p><p class="light" id="stage14FinalTestResult" role="status" aria-live="polite">Stage 14 final simulated paper-trading audit not yet run. Live execution remains blocked.</p><p class="light" id="stage15IntegrationTestResult" role="status" aria-live="polite">Stage 15 real-alert paper audit not yet run. Requires genuine TradingView alerts; no test order placed.</p><pre id="stage15InspectResult" role="status" aria-live="polite" style="display:none;white-space:pre-wrap;overflow-wrap:anywhere;background:#081b2e;border:1px solid #345c83;border-radius:9px;padding:12px;color:#d9ecff;max-height:440px;overflow:auto">No read-only breakdown requested.</pre><p class="light" id="stage6HaltState" role="status" aria-live="polite">Future execution stays HALTED; checking database status…</p><div id="readinessOutput" role="status" aria-live="polite" style="margin-top:10px;color:#fdbfbf">Live execution BLOCKED until all critical safeguards are implemented and tested.</div></details>
 <div class="grid metric-grid">
 <div class="metric"><small>GATE.IO ACCOUNT MONITOR</small><strong class="gloss-cyan">CONNECTED · POSITION MONITOR</strong><span id="gatePositionStatus">Checking position feed…</span></div>
 <div class="metric"><small>OPEN POSITIONS</small><strong id="openPositionCount">—</strong><span>Verified Gate.io positions only</span></div>
 <div class="metric"><small>UNREALIZED P&amp;L (USDT)</small><strong id="unrealizedPositionPnl">—</strong><span>Read-only, refreshed every 30s</span></div>
-<div class="metric"><small>TOTAL REALIZED P&amp;L</small><strong>—</strong><span>Verified fills not available</span></div>
-<div class="metric"><small>WIN RATE</small><strong>—</strong><span>Requires completed trades</span></div>
+<div class="metric"><small>TOTAL REALIZED P&amp;L</small><strong id="metricRealizedPnl">—</strong><span id="metricRealizedPnlNote">Verified closed trades, net of fees</span></div>
+<div class="metric"><small>WIN RATE</small><strong id="metricWinRate">—</strong><span id="metricWinRateNote">Winning ÷ decided closed trades</span></div>
 <div class="metric"><small>DATABASE SIGNALS</small><strong>{{ count }}</strong><span>Webhook: {{ 'configured' if configured else 'not configured' }}</span></div>
-</div><section class="panel position-panel"><div class="panel-heading"><h2>OPEN POSITIONS <span class="gloss-cyan">· GATE.IO FUTURES</span></h2><button class="btn gloss-action" id="positionRefresh" type="button">↻ Refresh Positions</button></div>
-<div id="gatePositionsBody" class="position-card-list" aria-live="polite"><p class="light">Checking read-only Gate.io open positions…</p></div><p id="gatePositionsUpdated" class="light">Read-only Gate.io account data; manual close disabled. SL/TP order status is not synchronized.</p></section>
+</div><section class="panel position-panel" id="openPositionPanel"><div class="panel-heading"><h2>Open Position <span class="gloss-cyan">– Gate.io Futures</span></h2><button class="btn gloss-action" id="positionRefresh" type="button">↻ Refresh Positions</button></div>
+<div id="gatePositionsBody" class="position-card-list" aria-live="polite"><p class="light">Checking read-only Gate.io open positions…</p></div><p id="gatePositionsUpdated" class="light">Read-only Gate.io account data. Each card refreshes itself from the exchange. SL/TP status is read from Gate.io's resting triggers.</p></section>
+<section class="panel" id="liveFuturesOrderTable" aria-label="Live futures order table">
+<div class="panel-heading"><h2>LIVE FUTURES ORDER TABLE <span class="gloss-cyan">· GATE.IO FUTURES</span></h2><button class="btn gloss-action" id="orderTableRefresh" type="button">↻ Refresh Orders</button></div>
+<p class="light" id="orderTableStatus" role="status" aria-live="polite">Reading open orders, protective triggers and positions from Gate.io…</p>
+<div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(150px,1fr));margin-bottom:12px">
+<div class="metric"><small>OPEN EXCHANGE ORDERS</small><strong id="orderTableOrderCount">—</strong><span>Unfilled orders at Gate.io</span></div>
+<div class="metric"><small>PROTECTIVE TRIGGERS (SL/TP)</small><strong id="orderTableTriggerCount">—</strong><span>Resting close-position triggers</span></div>
+<div class="metric"><small>OPEN POSITIONS</small><strong id="orderTablePositionCount">—</strong><span>Verified Gate.io positions</span></div>
+</div>
+<div class="tablewrap"><table style="min-width:900px;width:100%"><thead><tr><th>TYPE</th><th>CONTRACT</th><th>SIDE</th><th>QTY</th><th>REMAINING</th><th>PRICE</th><th>STATUS</th><th>CREATED (IST)</th><th>ORDER ID</th></tr></thead><tbody id="orderTableBody"><tr><td colspan="9">Loading…</td></tr></tbody></table></div>
+<p class="light">Read-only. An empty table means Gate.io genuinely reports no open orders, triggers or positions — never a failed read. A failed read is shown as an error above, not as an empty table.</p></section>
 <section class="panel" id="v4Workspace" aria-label="Gate.io Testnet individual position cards">
 <div class="v4-head"><div><strong>LUXALGO PRO · TESTNET POSITION CARDS</strong><p class="light">Gate.io Testnet exchange positions only. Unrealized P&amp;L comes from the exchange; real-money trading is OFF.</p></div>
 <button id="v4DemoToggle" type="button">SHOW SAMPLE LAYOUT</button></div>
@@ -860,7 +881,7 @@ header.terminal-header{border-radius:17px!important}
 <div class="adv-table"><table><thead><tr><th>PAIR</th><th>DIRECTION</th><th>TIMEFRAME</th><th>LUXALGO</th><th>ENTRY REF.</th><th>SL1</th><th>TP1</th><th>R:R</th><th>0.5% RISK / SIZE</th><th>STATUS / REASON</th></tr></thead><tbody id="advancedScanBody"><tr><td colspan="10" class="light">Waiting for scan results.</td></tr></tbody></table></div>
 <p class="light">Technical watchlist is NOT a LuxAlgo signal or recommendation. Technical entry/SL1/TP1 are non-executable previews. No verified LuxAlgo SL1/TP1 = NO TRADE. Capital figures are account-read-only; sizes are indicative BASE-asset quantities, not validated Gate.io contract quantities. Live execution remains BLOCKED.</p>
 </section>
-<div class="bottom-grid"><section class="panel performance-panel"><div class="panel-heading"><h2>PERFORMANCE ANALYTICS</h2><span class="label-muted">VERIFIED FILLS ONLY</span></div><div class="perf-grid"><div><span>Total Closed Trades</span><strong>—</strong></div><div><span>Winning Trades</span><strong>—</strong></div><div><span>Losing Trades</span><strong>—</strong></div><div><span>Win Rate</span><strong>—</strong></div><div><span>Total Realized P&amp;L</span><strong>—</strong></div><div><span>Unrealized P&amp;L</span><strong>—</strong></div></div><p class="light">Waiting for authenticated position and fill synchronization. No synthetic P&amp;L or win statistics.</p></section></div><section class="panel"><div class="panel-heading"><h2>COMPLETED TRADES · EXIT RECORD</h2><span class="label-muted" id="completedTradesStatus">LOADING…</span></div><div class="tablewrap"><table><thead><tr><th>TIME (IST)</th><th>PAIR</th><th>DIRECTION</th><th>ENTRY FILL</th><th>EXIT FILL</th><th>NET REALIZED P&amp;L</th><th>RESULT</th></tr></thead><tbody id="completedTradesBody"><tr><td colspan="7" class="empty-state">Loading closed bot trades…</td></tr></tbody></table></div><p class="light">Closed bot trades only. A row appears here once the exchange reports the position, its open orders and its resting SL/TP triggers all gone. Realized P&amp;L is the exchange's own fill P&amp;L, never an estimate.</p></section><section class="panel legacy-paper-panel"><div class="panel-heading"><h2>PAPER TRADE MONITOR <span class="tag">SIMULATION ONLY</span></h2><button class="btn gloss-action" id="paperRefresh" type="button">↻ Check Paper Trades</button></div><p class="light" id="paperStatus" role="status" aria-live="polite">Checks queued simulated orders when the dashboard is open; historical outcomes remain estimates, not fills.</p><div class="tablewrap"><table><thead><tr><th>CREATED (IST)</th><th>PAIR</th><th>SIDE</th><th>SIM ENTRY</th><th>SIM SL</th><th>SIM TP</th><th>STATE</th><th>LAST PRICE</th><th>UNREALIZED P&amp;L</th><th>EST. CLOSED P&amp;L</th></tr></thead><tbody id="paperBody"><tr><td colspan="10">No simulated positions loaded.</td></tr></tbody></table></div><p id="paperOpenPnlTotal" class="light" role="status" aria-live="polite">Open paper unrealized P&amp;L: not yet available.</p><p class="light">Simulation outcomes assume the reference entry was achievable and exclude fees, slippage and funding. If both SL and TP are touched in one candle, SL is assumed first. Historical-data gaps are not guessed. Simulated P&amp;L is never included in verified real-trade analytics.</p></section><div class="foot">LUXALGO PRO · Private terminal · Market data is public Gate.io data. Scanners are technical watchlists, not LuxAlgo entry signals. No account positions, fills, profit or loss are available until authenticated exchange sync is implemented. Live order placement is controlled by the PRODUCTION BOT switch above: when it reads BOT ON, enabled signals are sent to Gate.io and the panels above show the real result; when it reads BOT OFF or a gate is listed, no orders are placed.</div></div><script>
+<div class="bottom-grid"><section class="panel performance-panel"><div class="panel-heading"><h2>PERFORMANCE ANALYTICS</h2><span class="label-muted" id="perfStatus">VERIFIED FILLS ONLY</span></div><div class="perf-grid"><div><span>Total Closed Trades</span><strong id="perfClosed">—</strong></div><div><span>Winning Trades</span><strong id="perfWins">—</strong></div><div><span>Losing Trades</span><strong id="perfLosses">—</strong></div><div><span>Win Rate</span><strong id="perfWinRate">—</strong></div><div><span>Losing Rate</span><strong id="perfLosingRate">—</strong></div><div><span>Total Close Rate</span><strong id="perfCloseRate">—</strong></div><div><span>Total Realized P&amp;L (USDT)</span><strong id="perfRealized">—</strong></div><div><span>Unrealized P&amp;L (USDT)</span><strong id="perfUnrealized">—</strong></div></div><p class="light" id="perfNote">Waiting for authenticated position and fill synchronization. No synthetic P&amp;L or win statistics.</p></section></div><section class="panel"><div class="panel-heading"><h2>COMPLETED TRADES · EXIT RECORD</h2><span class="label-muted" id="completedTradesStatus">LOADING…</span></div><div class="tablewrap"><table><thead><tr><th>TIME (IST)</th><th>PAIR</th><th>DIRECTION</th><th>ENTRY FILL</th><th>EXIT FILL</th><th>EXIT QTY</th><th>EXIT TIME (IST)</th><th>FEES</th><th>NET REALIZED P&amp;L</th><th>RESULT</th></tr></thead><tbody id="completedTradesBody"><tr><td colspan="10" class="empty-state">Loading closed bot trades…</td></tr></tbody></table></div><p class="light">Closed bot trades only. A row appears here once the exchange reports the position, its open orders and its resting SL/TP triggers all gone. Exit fill, quantity and net P&amp;L come from Gate.io's own closing fills, with fees subtracted; partial closes are summed. A dash means the exchange has not returned that figure — never an estimate.</p></section><section class="panel legacy-paper-panel"><div class="panel-heading"><h2>PAPER TRADE MONITOR <span class="tag">SIMULATION ONLY</span></h2><button class="btn gloss-action" id="paperRefresh" type="button">↻ Check Paper Trades</button></div><p class="light" id="paperStatus" role="status" aria-live="polite">Checks queued simulated orders when the dashboard is open; historical outcomes remain estimates, not fills.</p><div class="tablewrap"><table><thead><tr><th>CREATED (IST)</th><th>PAIR</th><th>SIDE</th><th>SIM ENTRY</th><th>SIM SL</th><th>SIM TP</th><th>STATE</th><th>LAST PRICE</th><th>UNREALIZED P&amp;L</th><th>EST. CLOSED P&amp;L</th></tr></thead><tbody id="paperBody"><tr><td colspan="10">No simulated positions loaded.</td></tr></tbody></table></div><p id="paperOpenPnlTotal" class="light" role="status" aria-live="polite">Open paper unrealized P&amp;L: not yet available.</p><p class="light">Simulation outcomes assume the reference entry was achievable and exclude fees, slippage and funding. If both SL and TP are touched in one candle, SL is assumed first. Historical-data gaps are not guessed. Simulated P&amp;L is never included in verified real-trade analytics.</p></section><div class="foot">LUXALGO PRO · Private terminal · Market data is public Gate.io data. Scanners are technical watchlists, not LuxAlgo entry signals. No account positions, fills, profit or loss are available until authenticated exchange sync is implemented. Live order placement is controlled by the PRODUCTION BOT switch above: when it reads BOT ON, enabled signals are sent to Gate.io and the panels above show the real result; when it reads BOT OFF or a gate is listed, no orders are placed.</div></div><script>
 
 // Read-only advanced watchlist: uses completed 5m/15m public candles and validated LuxAlgo receipt records.
 (function(){
@@ -1266,7 +1287,69 @@ async function loadFuturesEquity(){
   document.getElementById('futuresEquityUpdated').textContent='Gate.io verified · '+new Date(d.fetched_at*1000).toLocaleTimeString('en-IN',{timeZone:'Asia/Kolkata',hour12:true})+' IST';
  }catch(e){clearEquity('Cannot verify: '+e.message);}finally{equityBusy=false;}
 }
+/* Six Futures Liquidity summary boxes, from verified records only.
+   Realized P&L and Win Rate come from the server, which counts each trade
+   once and subtracts fees. A null figure renders as "—" with the reason. */
+async function loadLiquiditySummary(){
+ const put=(id,v)=>{const el=document.getElementById(id);if(el)el.textContent=v;};
+ const note=(id,v)=>{const el=document.getElementById(id);if(el)el.textContent=v;};
+ try{
+  const r=await fetch('/terminal/futures-liquidity-summary',{cache:'no-store'});
+  const d=await r.json();
+  if(!r.ok)throw Error(d.error||('HTTP '+r.status));
+  const pnlEl=document.getElementById('liquidityRealizedPnl');
+  if(d.total_realized_pnl_usdt===null||d.total_realized_pnl_usdt===undefined){
+   put('liquidityRealizedPnl','—');
+   note('liquidityRealizedPnlNote','No verified closed trade P&L yet');
+   if(pnlEl)pnlEl.className='gloss-pnl-neutral';
+   put('metricRealizedPnl','—');
+   note('metricRealizedPnlNote','No verified closed trade P&L yet');
+  }else{
+   const v=Number(d.total_realized_pnl_usdt);
+   put('liquidityRealizedPnl',(v>0?'+':'')+money(v));
+   if(pnlEl)pnlEl.className=pnlClass(v);
+   note('liquidityRealizedPnlNote',d.total_closed_trades+' closed trade(s), net of fees');
+   put('metricRealizedPnl',(v>0?'+':'')+money(v));
+   note('metricRealizedPnlNote',d.total_closed_trades+' closed trade(s), net of fees');
+   const mEl=document.getElementById('metricRealizedPnl');
+   if(mEl)mEl.className=pnlClass(v);
+  }
+  const wrEl=document.getElementById('liquidityWinRate');
+  if(d.win_rate_pct===null||d.win_rate_pct===undefined){
+   put('liquidityWinRate','—');
+   note('liquidityWinRateNote','No decided closed trades yet');
+   if(wrEl)wrEl.className='gloss-pnl-neutral';
+   put('metricWinRate','—');
+   note('metricWinRateNote','No decided closed trades yet');
+  }else{
+   put('liquidityWinRate',Number(d.win_rate_pct).toFixed(1)+'%');
+   if(wrEl)wrEl.className=Number(d.win_rate_pct)>=50?'gloss-pnl-profit':'gloss-pnl-loss';
+   note('liquidityWinRateNote',d.winning_trades+'W / '+d.losing_trades+'L of '+d.total_closed_trades);
+   put('metricWinRate',Number(d.win_rate_pct).toFixed(1)+'%');
+   note('metricWinRateNote',d.winning_trades+'W / '+d.losing_trades+'L of '+d.total_closed_trades);
+   const mwEl=document.getElementById('metricWinRate');
+   if(mwEl)mwEl.className=Number(d.win_rate_pct)>=50?'gloss-pnl-profit':'gloss-pnl-loss';
+  }
+  const unEl=document.getElementById('liquidityUnrealizedPnl');
+  if(d.unrealized_pnl_usdt===null||d.unrealized_pnl_usdt===undefined){
+   put('liquidityUnrealizedPnl','—');
+   note('liquidityUnrealizedPnlNote','No open position P&L available');
+   if(unEl)unEl.className='gloss-pnl-neutral';
+  }else{
+   const v=Number(d.unrealized_pnl_usdt);
+   put('liquidityUnrealizedPnl',(v>0?'+':'')+money(v));
+   if(unEl)unEl.className=pnlClass(v);
+   note('liquidityUnrealizedPnlNote',d.open_positions+' open position(s), from Gate.io');
+  }
+ }catch(e){
+  put('liquidityRealizedPnl','—');put('liquidityWinRate','—');put('liquidityUnrealizedPnl','—');
+  note('liquidityRealizedPnlNote','Summary unavailable: '+String(e.message).slice(0,60));
+  note('liquidityWinRateNote','Summary unavailable');
+  note('liquidityUnrealizedPnlNote','Summary unavailable');
+ }
+}
 function field(grid,label,value,colorClass){const x=element('div','position-fact');x.append(element('small','',label),element('strong',colorClass||'',value));grid.append(x);}
+function pnlClass(v){return v===null||v===undefined?'gloss-pnl-neutral':v>0?'gloss-pnl-profit':v<0?'gloss-pnl-loss':'gloss-pnl-neutral';}
 function renderPositions(positions){
  body.replaceChildren();
  if(!positions.length){body.append(element('p','light','Gate.io reports no open USDT perpetual positions. This terminal remains READ ONLY.'));return;}
@@ -1274,16 +1357,17 @@ function renderPositions(positions){
  positions.forEach((p,i)=>{
   const id=p.contract+'|'+p.position_mode;seen.add(id);
   const card=element('details','position-card');card.open=expanded.has(id)||!window.__positionCardsInitialized;
+  card.dataset.contract=p.contract;
   card.addEventListener('toggle',()=>{if(card.open)expanded.add(id);else expanded.delete(id);});
   const heading=element('summary');const left=element('div','position-head');
   left.append(element('span','position-side '+(p.side==='LONG'?'long':'short'),p.side==='LONG'?'L':'S'),
               element('span','position-symbol',p.contract.replace('_','/')),
               element('span','position-leverage',p.leverage_label));
-  const right=element('span','position-summary-pnl '+(p.unrealized_pnl>=0?'positive':'negative'),(p.unrealized_pnl>=0?'+':'')+money(p.unrealized_pnl)+' USDT ⌄');
+  const right=element('span','position-summary-pnl '+pnlClass(p.unrealized_pnl),(p.unrealized_pnl>=0?'+':'')+money(p.unrealized_pnl)+' USDT ⌄');
   heading.append(left,right);card.append(heading);
   const inner=element('div','position-card-inner'),grid=element('div','position-facts');
-  field(grid,'Unrealized P&L (USDT)',(p.unrealized_pnl>=0?'+':'')+money(p.unrealized_pnl),p.unrealized_pnl>=0?'positive':'negative');
-  field(grid,'ROI (based on reported margin)',p.roi_percent===null?'—':(p.roi_percent>=0?'+':'')+p.roi_percent.toFixed(2)+'%',p.roi_percent===null?'':p.roi_percent>=0?'positive':'negative');
+  field(grid,'Unrealized P&L (USDT)',(p.unrealized_pnl>=0?'+':'')+money(p.unrealized_pnl),pnlClass(p.unrealized_pnl));
+  field(grid,'ROI (based on reported margin)',p.roi_percent===null?'—':(p.roi_percent>=0?'+':'')+p.roi_percent.toFixed(2)+'%',p.roi_percent===null?'':pnlClass(p.roi_percent));
   field(grid,'Position size (USDT)',p.position_value_usdt===null?'—':money(p.position_value_usdt));
   field(grid,'Margin (USDT)',p.margin_usdt===null?'—':money(p.margin_usdt));
   field(grid,'Contracts',String(p.size_contracts));
@@ -1296,6 +1380,29 @@ function renderPositions(positions){
   chart.addEventListener('click',()=>{
    window.openGateTradingView(p.contract);
   });actions.append(chart);
+  // Per-card refresh: re-reads this one contract from Gate.io.
+  const refresh=element('button','btn position-card-refresh','↻ Refresh');refresh.type='button';
+  refresh.addEventListener('click',async()=>{
+   if(refresh.disabled)return;refresh.disabled=true;
+   const hint=card.querySelector('.position-readonly-hint');
+   const say=t=>{if(hint)hint.textContent=t;};
+   say('Refreshing this position from Gate.io…');
+   try{
+    const r=await fetch('/terminal/position/refresh?contract='+encodeURIComponent(p.contract),{cache:'no-store'});
+    const d=await r.json();
+    if(!r.ok)throw Error(d.error||('HTTP '+r.status));
+    if(!d.position){say('⚠ Gate.io no longer reports this position. It may have closed; refreshing the list.');setTimeout(()=>{loadPositions();loadFuturesEquity();},900);return;}
+    const np=d.position;
+    const pnlEl=card.querySelector('.position-summary-pnl');
+    if(pnlEl){pnlEl.textContent=(np.unrealized_pnl>=0?'+':'')+money(np.unrealized_pnl)+' USDT ⌄';
+      pnlEl.className='position-summary-pnl '+pnlClass(np.unrealized_pnl);}
+    say('✓ Refreshed · '+(d.protected?'SL/TP resting at Gate.io':'no protective trigger found')
+        +' · '+d.open_orders+' open order(s) · '
+        +new Date(d.fetched_at*1000).toLocaleTimeString('en-IN',{timeZone:'Asia/Kolkata',hour12:true})+' IST');
+   }catch(err){say('⚠ Refresh failed · '+String(err.message).slice(0,90));}
+   finally{refresh.disabled=false;}
+  });
+  actions.append(refresh);
   // Live operator actions. Each one is an explicit click that re-reads the
   // exchange before acting; nothing here is reachable from a signal.
   const ledger=window.__liveLedgerByContract&&window.__liveLedgerByContract[p.contract];
@@ -1307,7 +1414,7 @@ function renderPositions(positions){
      +'A position opened outside the bot cannot be managed from here.';}
    return b;
   };
-  actions.append(mk('Set TP/SL','protection'),mk('Reverse','reverse'),
+  actions.append(mk('Set TP/SL','protection'),mk('Reverse Position','reverse'),
                  mk('Market Close','close'));
   const stale=!!(ledger&&ledger.ledger_state_stale);
   inner.append(actions,element('p','position-readonly-hint',
@@ -1345,7 +1452,7 @@ async function loadPositions(){
  }catch(e){count.textContent='—';pnl.textContent='—';pnl.classList.remove('positive','negative');connection.textContent='Feed unavailable: '+String(e.message).slice(0,110);body.replaceChildren(element('p','light','Unable to verify positions: '+e.message));updated.textContent='Position data unavailable; no empty positions assumed.';}
  finally{busy=false;button.disabled=false;}
 }
-button.addEventListener('click',()=>{loadPositions();loadFuturesEquity();});
+button.addEventListener('click',()=>{loadPositions();loadFuturesEquity();loadLiquiditySummary();});
 // Operator position actions: close / protection / reverse.
 body.addEventListener('click',async e=>{
  const b=e.target.closest('[data-pos-action]');
@@ -1399,11 +1506,93 @@ body.addEventListener('click',async e=>{
       +' \u00b7 Check Gate.io before any retry.');
  }finally{all.forEach(x=>x.disabled=false);}
 });
-loadPositions();loadFuturesEquity();setInterval(()=>{if(!document.hidden){loadPositions();loadFuturesEquity();}},30000);
+loadPositions();loadFuturesEquity();loadLiquiditySummary();setInterval(()=>{if(!document.hidden){loadPositions();loadFuturesEquity();loadLiquiditySummary();}},30000);
 })();
-
-
-
+</script>
+<script>
+/* LIVE FUTURES ORDER TABLE v1 — open orders, protective triggers and positions.
+   Reads Gate.io directly. A failed read is an explicit error, never an empty
+   table, so "no rows" always means the exchange genuinely has none. */
+(function(){
+'use strict';
+const otBody=document.getElementById('orderTableBody');
+const otStatus=document.getElementById('orderTableStatus');
+const otButton=document.getElementById('orderTableRefresh');
+if(!otBody||!otStatus||!otButton)return;
+const otPut=(id,v)=>{const el=document.getElementById(id);if(el)el.textContent=v;};
+const otIst=ts=>{
+ if(!ts)return '—';
+ const n=Number(ts);
+ if(!Number.isFinite(n)||n<=0)return '—';
+ return new Date(n*1000).toLocaleString('en-IN',{timeZone:'Asia/Kolkata',hour12:true});
+};
+const otCell=(tr,value,cls)=>{
+ const td=document.createElement('td');
+ td.textContent=value===null||value===undefined||value===''?'—':String(value);
+ if(cls)td.className=cls;
+ tr.appendChild(td);return td;
+};
+let otBusy=false;
+async function otLoad(){
+ if(otBusy||document.hidden)return;otBusy=true;otButton.disabled=true;
+ try{
+  const r=await fetch('/terminal/exchange-orders',{cache:'no-store'});
+  const d=await r.json();
+  if(!r.ok)throw Error(d.error||('HTTP '+r.status));
+  const orders=Array.isArray(d.orders)?d.orders:[];
+  const triggers=Array.isArray(d.triggers)?d.triggers:[];
+  const positions=Array.isArray(d.positions)?d.positions:[];
+  otPut('orderTableOrderCount',String(d.order_count??orders.length));
+  otPut('orderTableTriggerCount',String(d.protective_trigger_count??0));
+  otPut('orderTablePositionCount',String(d.position_count??positions.length));
+  otBody.replaceChildren();
+  const rows=[];
+  for(const o of orders){
+   rows.push(['ORDER',o.contract,o.side,o.size,o.remaining,o.price,o.status,otIst(o.created_at),o.order_id]);
+  }
+  for(const t of triggers){
+   rows.push([t.protective?'SL/TP TRIGGER':'TRIGGER',t.contract,t.side,t.size,'—',t.price,
+              (t.status||'')+(t.order_type?' · '+t.order_type:''),otIst(t.created_at),t.order_id]);
+  }
+  for(const p of positions){
+   rows.push(['POSITION',p.contract,p.side,p.size,'—',p.mark_price,
+              'OPEN · mark '+p.mark_price,otIst(null),'—']);
+  }
+  if(!rows.length){
+   const tr=otBody.insertRow(),td=tr.insertCell();
+   td.colSpan=9;td.className='empty-state';
+   td.textContent='Gate.io reports no open orders, no resting protective triggers and no open positions.';
+  }else{
+   for(const row of rows){
+    const tr=otBody.insertRow();
+    row.forEach((v,i)=>{
+     let cls='';
+     if(i===2)cls=v==='BUY'?'positive':v==='SELL'?'negative':'';
+     otCell(tr,v,cls);
+    });
+   }
+  }
+  otStatus.textContent=orders.length+' open order(s) · '+triggers.length+' trigger(s) ('
+    +d.protective_trigger_count+' protective) · '+positions.length+' position(s) · '
+    +new Date(d.fetched_at*1000).toLocaleTimeString('en-IN',{timeZone:'Asia/Kolkata',hour12:true})+' IST';
+ }catch(e){
+  // Never leave a stale table looking authoritative, and never show an empty
+  // table for a failed read.
+  otBody.replaceChildren();
+  const tr=otBody.insertRow(),td=tr.insertCell();
+  td.colSpan=9;td.className='negative';
+  td.textContent='Order table unavailable: '+String(e.message).slice(0,120);
+  otPut('orderTableOrderCount','—');otPut('orderTableTriggerCount','—');otPut('orderTablePositionCount','—');
+  otStatus.textContent='Gate.io order read failed. This is NOT an empty account — the data could not be read.';
+ }finally{otBusy=false;otButton.disabled=false;}
+}
+otButton.addEventListener('click',otLoad);
+otLoad();
+setInterval(()=>{if(!document.hidden)otLoad();},30000);
+document.addEventListener('visibilitychange',()=>{if(!document.hidden)otLoad();});
+})();
+</script>
+<script>
 (function(){
 'use strict';
 const radarBody=document.getElementById('radarBody'), radarStatus=document.getElementById('radarStatus');
@@ -1803,6 +1992,78 @@ document.addEventListener('visibilitychange',()=>{if(!document.hidden)syncTestne
 })();
 </script>
 <script>
+/* PERFORMANCE ANALYTICS v1 — computed server-side from verified records.
+   Counting happens once on the server and is de-duplicated by event_id, so a
+   re-render or a second tab cannot double count a trade. */
+(function(){
+'use strict';
+const status=document.getElementById('perfStatus');
+const note=document.getElementById('perfNote');
+if(!status||!note)return;
+const put=(id,v)=>{const el=document.getElementById(id);if(el)el.textContent=v;};
+const setCls=(id,cls)=>{const el=document.getElementById(id);if(el)el.className=cls;};
+const money2=v=>Number(v).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2});
+let busy=false;
+async function load(){
+ if(busy||document.hidden)return;busy=true;
+ try{
+  const r=await fetch('/terminal/performance-analytics',{cache:'no-store'});
+  const d=await r.json();
+  if(!r.ok)throw Error(d.error||('HTTP '+r.status));
+  put('perfClosed',d.total_closed_trades??0);
+  put('perfWins',d.winning_trades??0);
+  put('perfLosses',d.losing_trades??0);
+  if(d.win_rate_pct===null||d.win_rate_pct===undefined){
+   put('perfWinRate','—');setCls('perfWinRate','');
+  }else{
+   put('perfWinRate',Number(d.win_rate_pct).toFixed(1)+'%');
+   setCls('perfWinRate',Number(d.win_rate_pct)>=50?'gloss-pnl-profit':'gloss-pnl-loss');
+  }
+  if(d.losing_rate_pct===null||d.losing_rate_pct===undefined){
+   put('perfLosingRate','—');setCls('perfLosingRate','');
+  }else{
+   put('perfLosingRate',Number(d.losing_rate_pct).toFixed(1)+'%');
+   setCls('perfLosingRate',Number(d.losing_rate_pct)>50?'gloss-pnl-loss':'gloss-pnl-neutral');
+  }
+  put('perfCloseRate',d.total_close_rate_pct===null||d.total_close_rate_pct===undefined
+      ?'—':Number(d.total_close_rate_pct).toFixed(1)+'%');
+  if(d.total_realized_pnl_usdt===null||d.total_realized_pnl_usdt===undefined){
+   put('perfRealized','—');setCls('perfRealized','');
+  }else{
+   const v=Number(d.total_realized_pnl_usdt);
+   put('perfRealized',(v>0?'+':'')+money2(v));
+   setCls('perfRealized',v>0?'gloss-pnl-profit':v<0?'gloss-pnl-loss':'gloss-pnl-neutral');
+  }
+  if(d.unrealized_pnl_usdt===null||d.unrealized_pnl_usdt===undefined){
+   put('perfUnrealized','—');setCls('perfUnrealized','');
+  }else{
+   const v=Number(d.unrealized_pnl_usdt);
+   put('perfUnrealized',(v>0?'+':'')+money2(v));
+   setCls('perfUnrealized',v>0?'gloss-pnl-profit':v<0?'gloss-pnl-loss':'gloss-pnl-neutral');
+  }
+  status.textContent='VERIFIED FILLS ONLY · '+new Date().toLocaleTimeString('en-IN',{timeZone:'Asia/Kolkata',hour12:true})+' IST';
+  let text='Counted once per trade, de-duplicated by event id. Realized P&L is net of Gate.io fees.';
+  if(d.realized_pnl_trades_unknown){
+   text+=' '+d.realized_pnl_trades_unknown+' closed trade(s) have no exchange fill record yet and are excluded from P&L.';
+  }
+  if(d.open_executed_trades){
+   text+=' '+d.open_executed_trades+' executed trade(s) still open.';
+  }
+  note.textContent=text;
+ }catch(e){
+  ['perfClosed','perfWins','perfLosses','perfWinRate','perfLosingRate',
+   'perfCloseRate','perfRealized','perfUnrealized'].forEach(id=>put(id,'—'));
+  status.textContent='ANALYTICS UNAVAILABLE';
+  note.textContent='Performance analytics could not be read: '+String(e.message).slice(0,90)
+    +'. No figures are shown rather than showing wrong ones.';
+ }finally{busy=false;}
+}
+load();
+setInterval(()=>{if(!document.hidden)load();},60000);
+document.addEventListener('visibilitychange',()=>{if(!document.hidden)load();});
+})();
+</script>
+<script>
 /* COMPLETED TRADES v1 — read-only closed bot trades from the execution ledger. */
 (function(){
 'use strict';
@@ -1823,26 +2084,35 @@ async function load(){
   body.replaceChildren();
   if(!rows.length){
    const tr=body.insertRow(),td=tr.insertCell();
-   td.colSpan=7;td.className='empty-state';
+   td.colSpan=10;td.className='empty-state';
    td.textContent='No closed bot trades yet. A trade appears here after the exchange reports the position fully closed.';
   }else{
    for(const t of rows){
     const tr=body.insertRow();
-    const pnl=Number(t.realized_pnl_usdt);
-    const hasPnl=t.realized_pnl_usdt!==null&&t.realized_pnl_usdt!==undefined&&Number.isFinite(pnl);
+    const pnl=Number(t.net_realized_pnl_usdt!==null&&t.net_realized_pnl_usdt!==undefined
+                      ?t.net_realized_pnl_usdt:t.realized_pnl_usdt);
+    const hasPnl=((t.net_realized_pnl_usdt!==null&&t.net_realized_pnl_usdt!==undefined)
+                  ||(t.realized_pnl_usdt!==null&&t.realized_pnl_usdt!==undefined))
+                 &&Number.isFinite(pnl);
+    const fees=Number(t.fees_usdt);
+    const hasFees=t.fees_usdt!==null&&t.fees_usdt!==undefined&&Number.isFinite(fees);
     const cells=[
      ist(t.closed_at),
      String(t.symbol||'').replace('USDT','/USDT'),
      t.side||'\u2014',
      num(t.entry_price),
      t.exit_price===null||t.exit_price===undefined?'\u2014':num(t.exit_price),
+     t.exit_quantity===null||t.exit_quantity===undefined?'\u2014':num(t.exit_quantity),
+     t.exit_timestamp?ist(t.exit_timestamp):'\u2014',
+     hasFees?((fees>0?'+':'')+num(fees)):'\u2014',
      hasPnl?((pnl>0?'+':'')+num(pnl)):'\u2014',
      hasPnl?(pnl>0?'WIN':pnl<0?'LOSS':'FLAT'):'CLOSED'
     ];
     cells.forEach((v,i)=>{
      const td=tr.insertCell();td.textContent=v;
-     if(i===5&&hasPnl)td.className=pnl>0?'positive':pnl<0?'negative':'';
-     if(i===6&&hasPnl)td.className=pnl>0?'positive':pnl<0?'negative':'';
+     if(i===7&&hasFees)td.className=fees>0?'positive':'negative';
+     if(i===8&&hasPnl)td.className=pnl>0?'gloss-pnl-profit':pnl<0?'gloss-pnl-loss':'gloss-pnl-neutral';
+     if(i===9&&hasPnl)td.className=pnl>0?'positive':pnl<0?'negative':'';
     });
    }
   }
@@ -1930,14 +2200,17 @@ document.addEventListener('visibilitychange',()=>{if(!document.hidden)load();});
      const slot=addCell(row,'');
      const statusButton=document.createElement('button');
      statusButton.type='button';statusButton.className='btn';
-     statusButton.textContent=s.status_label||'VERIFY EXCHANGE';
+     statusButton.textContent=s.status_label||'PENDING';
      statusButton.title='Click to refresh the latest exchange-backed status';
      statusButton.style.fontWeight='800';
-     statusButton.style.color=s.status_label==='LIVE'?'#6cf3ba':
-       s.status_label==='CLOSED'?'#8ed7ff':s.status_label==='WAITING FOR EXECUTION'?'#ffd28a':'#ffadad';
+     statusButton.style.color=s.status_label==='EXECUTED'?'#6cf3ba':
+       s.status_label==='CLOSED'?'#8ed7ff':
+       s.status_label==='PENDING'?'#ffd28a':
+       s.status_label==='PARTIALLY_FILLED'||s.status_label==='PROTECTION PENDING'?'#ffd28a':
+       s.status_label==='REJECTED'||s.status_label==='FAILED'||s.status_label==='HALTED'?'#ffadad':'#ffadad';
      statusButton.addEventListener('click',()=>refresh());
      slot.appendChild(statusButton);
-     addCell(row,s.reason);tbody.appendChild(row);
+     addCell(row,(s.exchange_order_id?'Order '+s.exchange_order_id+' · ':'')+(s.reason||''));tbody.appendChild(row);
    }
    if(!matches.length){
      const tr=document.createElement('tr'),td=document.createElement('td');
@@ -2999,6 +3272,249 @@ def api_completed_trades():
     except (psycopg.Error, RuntimeError, OSError, ValueError, TypeError, KeyError):
         return jsonify(trades=[], count=0,
                        error='Completed trade record unavailable'), 503
+
+
+@app.get('/terminal/futures-liquidity-summary')
+def terminal_futures_liquidity_summary():
+    """The six Futures Liquidity boxes, from verified records only.
+
+    Read-only. Every figure is either Gate.io's own account/fill data or the
+    bot's own ledger. A figure the exchange cannot answer is returned as null
+    so the panel shows "—" instead of a fabricated zero.
+    """
+    if not _terminal_permitted():
+        return _terminal_guard()
+    try:
+        from live_analytics import liquidity_summary
+        from live_execution_coordinator import install
+        from live_futures_engine import GateLiveClient
+        client = None
+        try:
+            client = GateLiveClient()
+        except Exception:
+            client = None
+        with _db_connect() as con:
+            install(con)
+            summary = liquidity_summary(con, client)
+        response = jsonify(summary)
+        response.headers['Cache-Control'] = 'private, no-store'
+        return response
+    except (psycopg.Error, RuntimeError, OSError, ValueError, TypeError, KeyError):
+        return jsonify(error='Liquidity summary unavailable',
+                       equity_usdt=None, available_usdt=None, balance_usdt=None,
+                       total_realized_pnl_usdt=None, win_rate_pct=None,
+                       unrealized_pnl_usdt=None), 503
+
+
+@app.get('/terminal/performance-analytics')
+def terminal_performance_analytics():
+    """Performance Analytics, computed once server-side from verified records.
+
+    Counting happens here, not in the browser, so a re-render or a second tab
+    cannot double count a trade. De-duplicated by event_id.
+    """
+    if not _terminal_permitted():
+        return _terminal_guard()
+    try:
+        from live_analytics import compute_analytics
+        from live_execution_coordinator import install
+        from live_futures_engine import GateLiveClient
+        client = None
+        try:
+            client = GateLiveClient()
+        except Exception:
+            client = None
+        with _db_connect() as con:
+            install(con)
+            analytics = compute_analytics(con, client)
+        # Unrealized P&L comes from the live account, not the ledger.
+        try:
+            positions = _gate_read_only_positions()
+            parts = [p.get('unrealized_pnl') for p in positions]
+            analytics['unrealized_pnl_usdt'] = (round(sum(parts), 8)
+                                                if parts and all(v is not None for v in parts)
+                                                else None)
+            analytics['open_positions'] = len(positions)
+        except Exception:
+            analytics['unrealized_pnl_usdt'] = None
+            analytics['open_positions'] = None
+        response = jsonify(analytics)
+        response.headers['Cache-Control'] = 'private, no-store'
+        return response
+    except (psycopg.Error, RuntimeError, OSError, ValueError, TypeError, KeyError):
+        return jsonify(error='Performance analytics unavailable'), 503
+
+
+@app.get('/terminal/exchange-orders')
+def terminal_exchange_orders():
+    """Open exchange orders, resting protective triggers and open positions.
+
+    This is the data behind the Live Futures Order Table. It reads Gate.io
+    directly (authenticated GET only) and never writes.
+
+    The table used to render empty even when the exchange held records, because
+    nothing ever fetched orders or triggers. A failure here returns an explicit
+    error state so the table can say "unavailable" instead of showing a
+    misleading empty list.
+    """
+    if not _terminal_permitted():
+        return _terminal_guard()
+    try:
+        from live_futures_engine import GateLiveClient, PREFIX
+        client = GateLiveClient()
+        orders = client.request('GET', PREFIX + '/orders',
+                                params={'status': 'open', 'limit': 100})
+        triggers = client.request('GET', PREFIX + '/price_orders',
+                                  params={'status': 'open', 'limit': 100})
+        if not isinstance(orders, list) or not isinstance(triggers, list):
+            raise ValueError('Incomplete exchange order inventory')
+        positions = _gate_read_only_positions()
+
+        def num(value):
+            try:
+                result = float(value)
+                return result if math.isfinite(result) else None
+            except (TypeError, ValueError):
+                return None
+
+        clean_orders = []
+        for o in orders:
+            if not isinstance(o, dict):
+                continue
+            clean_orders.append(dict(
+                kind='ORDER',
+                contract=str(o.get('contract') or ''),
+                order_id=str(o.get('id_string') or o.get('id') or ''),
+                side=('BUY' if num(o.get('size')) is not None and num(o.get('size')) > 0
+                      else 'SELL'),
+                size=str(o.get('size') or ''),
+                remaining=str(o.get('left') or ''),
+                price=str(o.get('price') or ''),
+                fill_price=str(o.get('fill_price') or ''),
+                status=str(o.get('status') or ''),
+                is_reduce_only=bool(o.get('is_reduce_only')),
+                created_at=str(o.get('create_time') or ''),
+                finish_as=str(o.get('finish_as') or '')))
+
+        clean_triggers = []
+        for t in triggers:
+            if not isinstance(t, dict):
+                continue
+            initial = t.get('initial') or {}
+            trigger = t.get('trigger') or {}
+            if not isinstance(initial, dict):
+                initial = {}
+            if not isinstance(trigger, dict):
+                trigger = {}
+            order_type = str(t.get('order_type') or '')
+            # Gate names protective triggers close-long-position /
+            # close-short-position. Anything else is not a protective SL/TP.
+            protective = 'close-long' in order_type or 'close-short' in order_type
+            clean_triggers.append(dict(
+                kind='TRIGGER',
+                contract=str(initial.get('contract') or ''),
+                order_id=str(t.get('id_string') or t.get('id') or ''),
+                side=('SELL' if 'close-long' in order_type else
+                      'BUY' if 'close-short' in order_type else '—'),
+                size=str(initial.get('size') or ''),
+                price=str(trigger.get('price') or ''),
+                rule=str(trigger.get('rule') or ''),
+                order_type=order_type,
+                protective=protective,
+                status=str(t.get('status') or ''),
+                created_at=str(t.get('create_time') or '')))
+
+        clean_positions = []
+        for p in positions:
+            clean_positions.append(dict(
+                kind='POSITION',
+                contract=str(p.get('contract') or ''),
+                side=str(p.get('side') or ''),
+                size=str(p.get('size_contracts') or ''),
+                entry_price=str(p.get('entry_price') if p.get('entry_price') is not None else ''),
+                mark_price=str(p.get('mark_price') if p.get('mark_price') is not None else ''),
+                unrealized_pnl=p.get('unrealized_pnl'),
+                liquidation_price=str(p.get('liquidation_price')
+                                      if p.get('liquidation_price') is not None else '')))
+
+        response = jsonify(orders=clean_orders, triggers=clean_triggers,
+                           positions=clean_positions,
+                           order_count=len(clean_orders),
+                           trigger_count=len(clean_triggers),
+                           position_count=len(clean_positions),
+                           protective_trigger_count=sum(1 for t in clean_triggers
+                                                        if t['protective']),
+                           fetched_at=int(time.time()),
+                           orders_enabled=False, live_trading=False)
+        response.headers['Cache-Control'] = 'private, no-store'
+        return response
+    except RuntimeError:
+        return jsonify(error='Gate.io read-only credentials unavailable',
+                       orders=[], triggers=[], positions=[],
+                       orders_enabled=False), 503
+    except HTTPError as exc:
+        app.logger.warning('Exchange orders HTTP status %s', exc.code)
+        return jsonify(error=('Gate.io rejected the order read (HTTP ' + str(exc.code) + ')'),
+                       orders=[], triggers=[], positions=[],
+                       orders_enabled=False), 502
+    except (URLError, TimeoutError, OSError):
+        return jsonify(error='Gate.io order request timed out or network failed',
+                       orders=[], triggers=[], positions=[],
+                       orders_enabled=False), 502
+    except (ValueError, KeyError, TypeError):
+        return jsonify(error='Gate.io order response incompatible with current parser',
+                       orders=[], triggers=[], positions=[],
+                       orders_enabled=False), 502
+
+
+@app.get('/terminal/position/refresh')
+def terminal_position_refresh():
+    """Per-card refresh: one contract's live position and its protection.
+
+    Read-only. Returns the position, its open orders and its resting triggers
+    for a single contract, so a card can refresh itself without re-reading the
+    whole account.
+    """
+    if not _terminal_permitted():
+        return _terminal_guard()
+    contract = (request.args.get('contract') or '').strip().upper()
+    if not re.fullmatch(r'[A-Z0-9]{2,28}_USDT', contract):
+        return jsonify(error='Invalid contract'), 400
+    try:
+        from live_futures_engine import GateLiveClient, PREFIX
+        client = GateLiveClient()
+        positions = [p for p in _gate_read_only_positions()
+                     if p.get('contract') == contract]
+        orders = client.request('GET', PREFIX + '/orders',
+                                params={'status': 'open', 'limit': 100})
+        triggers = client.request('GET', PREFIX + '/price_orders',
+                                  params={'status': 'open', 'limit': 100})
+        contract_orders = [o for o in (orders or [])
+                           if isinstance(o, dict) and o.get('contract') == contract]
+        contract_triggers = []
+        for t in (triggers or []):
+            if not isinstance(t, dict):
+                continue
+            initial = t.get('initial') or {}
+            if isinstance(initial, dict) and initial.get('contract') == contract:
+                contract_triggers.append(t)
+        protective = [t for t in contract_triggers
+                      if 'close-long' in str(t.get('order_type') or '')
+                      or 'close-short' in str(t.get('order_type') or '')]
+        response = jsonify(contract=contract,
+                           position=positions[0] if positions else None,
+                           open_orders=len(contract_orders),
+                           resting_triggers=len(contract_triggers),
+                           protective_triggers=len(protective),
+                           protected=bool(positions and protective),
+                           fetched_at=int(time.time()),
+                           orders_enabled=False)
+        response.headers['Cache-Control'] = 'private, no-store'
+        return response
+    except RuntimeError:
+        return jsonify(error='Gate.io read-only credentials unavailable'), 503
+    except (HTTPError, URLError, TimeoutError, OSError, ValueError, KeyError, TypeError):
+        return jsonify(error='Position refresh unavailable'), 502
 
 
 @app.post('/terminal/position/close')
@@ -6257,6 +6773,20 @@ def terminal_incoming_signals():
                                    +', '.join(_live_gates).replace('_',' ').lower()
                                    +'. No exchange order was sent.')
             signals=[]
+            # The ledger is the authority on whether a signal actually became
+            # an order. Before this, every row was hardcoded to
+            # state='NOT EXECUTED', so a signal that had genuinely filled was
+            # still labelled "Not Executed" on screen.
+            try:
+                from live_analytics import signal_execution_state
+                from live_execution_coordinator import read_rows as _read_ledger
+                with _db_connect() as _lcon:
+                    _ledger_rows = _read_ledger(_lcon)
+                _ledger_by_event = {r.get('event_id'): r for r in _ledger_rows
+                                    if r.get('event_id')}
+            except Exception:
+                signal_execution_state = None
+                _ledger_by_event = {}
             for r in rows:
                 level=r['level_status'] or 'MISSING'
                 has_handoff=bool(r['handoff_event_id'])
@@ -6285,15 +6815,29 @@ def terminal_incoming_signals():
                     reason=('Refused at '+str(r.get('refusal_stage') or 'DISPATCH')
                             +': '+str(r['refusal_reason'])
                             +(' \u00b7 '+str(r['refusal_detail']) if r.get('refusal_detail') else ''))
+                # Truthful execution state from the ledger, not a constant.
+                _ledger_row=_ledger_by_event.get(r['event_id'])
+                if signal_execution_state is not None:
+                    _exec_state,_exec_label,_exec_detail=signal_execution_state(
+                        _ledger_row, r.get('refusal_reason'), r.get('refusal_stage'))
+                else:
+                    _exec_state,_exec_label,_exec_detail=('PENDING','PENDING',
+                        'Execution state unavailable; ledger could not be read.')
                 signals.append(dict(event_id=r['event_id'],time=r['received_at'].isoformat(),
                      symbol=r['symbol'],side=r['side'],timeframe=r['timeframe'],
                      entry=str(r['entry_price']) if r['entry_price'] is not None else None,
                      stop_loss=str(r['stop_loss']) if r['stop_loss'] is not None else None,
                      take_profit=str(r['take_profit']) if r['take_profit'] is not None else None,
-                     order_type=r['order_type'] or 'UNDECLARED',state='NOT EXECUTED',
-                     status_label='NOT EXECUTED',reason=reason,level_status=level,
+                     order_type=r['order_type'] or 'UNDECLARED',
+                     state=_exec_state,status_label=_exec_label,
+                     reason=(_exec_detail if _exec_state in ('EXECUTED','PARTIALLY_FILLED',
+                                                             'REJECTED','FAILED')
+                             else reason),
+                     level_status=level,
                      refusal_reason=r.get('refusal_reason'),
                      refusal_stage=r.get('refusal_stage'),
+                     exchange_order_id=(_ledger_row.get('entry_order_id')
+                                        if _ledger_row else None),
                      source_bar_verified=stable_bar,execution_qualification=qualification))
             response=jsonify(signals=signals,count=len(signals),display_limit=25,
                              display_since=cutoff.isoformat(),mode='PRODUCTION_SIGNAL_ONLY',
