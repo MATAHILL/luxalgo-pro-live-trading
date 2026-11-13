@@ -172,6 +172,61 @@ def inspect(con, client=None):
             "exchange_source":snap["source"],
             "fetched_at":snap["fetched_at"]}
 
+# Halt reasons this module latches AUTOMATICALLY from a reconciliation pass.
+# Only these may be released automatically, and only when a later pass proves
+# the condition that caused them is gone. An operator halt is never in this
+# set: a human pressing HALT must always require a human to clear it.
+AUTO_LATCHED_HALT_REASONS = (
+    "UNPROTECTED_OR_UNKNOWN_EXCHANGE_EXPOSURE",
+    "EXCHANGE_RECONCILIATION_FAILED",
+)
+
+
+def _release_auto_latched_halt(con, status):
+    """Clear a halt this module set, once the risk it reported is provably gone.
+
+    The bug this fixes: a trade closing normally leaves its sibling protective
+    trigger resting for a few seconds while Gate cancels it. The 60-second
+    reconciler saw "position gone, trigger still there", latched
+    UNPROTECTED_OR_UNKNOWN_EXCHANGE_EXPOSURE, and NOTHING ever re-checked that
+    decision. Even after the account was completely flat and the ledger row had
+    reached CLOSED_VERIFIED, the halt stayed latched forever, so the bot could
+    trade exactly once and then needed a human to clear it.
+
+    This is not a bypass. It re-runs the SAME proof the halt-clear button uses:
+    the exchange must report zero positions, zero open orders and zero resting
+    triggers, with no untracked order or trigger anywhere. If any of that is
+    untrue, or the account cannot be read, the halt stays exactly where it is.
+    """
+    if not _exchange_is_flat(status):
+        return None
+    if status.get("reconciliation", {}).get("requires_halt"):
+        return None
+    with con.cursor() as cur:
+        cur.execute("SELECT pg_advisory_xact_lock(%s)", (LOCK_ID,))
+        cur.execute("SELECT halted,reason FROM luxalgo_prod_execution_control WHERE id=1")
+        row = cur.fetchone()
+        if not row or row["halted"] is not True:
+            return None
+        if row["reason"] not in AUTO_LATCHED_HALT_REASONS:
+            # Operator or acceptance halt: never auto-released.
+            return None
+        cur.execute("""SELECT COUNT(*)::int AS unresolved
+                       FROM luxalgo_prod_execution_ledger
+                       WHERE state <> 'CLOSED_VERIFIED'""")
+        unresolved = cur.fetchone()
+        if not unresolved or unresolved["unresolved"] != 0:
+            # A row is still open: the trade is not finished, keep the halt.
+            return None
+        cur.execute("""UPDATE luxalgo_prod_execution_control
+                       SET halted=FALSE,reason=%s,updated_at=NOW()
+                       WHERE id=1 AND halted=TRUE AND reason=%s""",
+                    ("AUTO_RELEASED_EXPOSURE_RESOLVED", row["reason"]))
+        if cur.rowcount != 1:
+            return None
+    return {"auto_released": True, "previous_reason": row["reason"]}
+
+
 def reconcile_and_halt_if_needed(con, client=None):
     """Run at restart and on periodic refresh; persist halt on any anomaly.
 
@@ -199,6 +254,16 @@ def reconcile_and_halt_if_needed(con, client=None):
     if (status["reconciliation"]["requires_halt"] or
         status["untracked_open_orders"] or status["untracked_open_triggers"]):
         halt(con,"UNPROTECTED_OR_UNKNOWN_EXCHANGE_EXPOSURE")
+    else:
+        # The account is provably clean on THIS pass. If an earlier pass
+        # latched a halt for exposure that has since resolved, release it now
+        # instead of leaving the bot dead until a human intervenes.
+        released=_release_auto_latched_halt(con,status)
+        if released:
+            status=dict(status)
+            status["halted"]=False
+            status["halt_reason"]="AUTO_RELEASED_EXPOSURE_RESOLVED"
+            status["auto_released_halt"]=released
     return status
 
 # A ledger row in this state was written by risk_reserve() and never advanced.

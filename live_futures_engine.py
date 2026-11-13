@@ -632,6 +632,23 @@ def verify_ledger_position(item, position, trigger_orders):
         return {'verified': False, 'reason': 'MALFORMED_POSITION_OR_LEDGER'}
 
 
+def _contract_has_resting_trigger(contract, trigger_orders):
+    """True when the exchange still lists any trigger for this contract.
+
+    Used only to tell "position closed, sibling trigger not yet cancelled"
+    apart from "position vanished and nothing explains it".
+    """
+    if not isinstance(trigger_orders, list):
+        return False
+    for o in trigger_orders:
+        if not isinstance(o, dict):
+            continue
+        initial = o.get("initial") or {}
+        if initial.get("contract") == contract:
+            return True
+    return False
+
+
 def reconcile_ledger(ledger_rows,positions,trigger_orders):
     """Read-only restart comparison; unknown exposure is never called CLOSED."""
     if not isinstance(ledger_rows,list):
@@ -665,6 +682,23 @@ def reconcile_ledger(ledger_rows,positions,trigger_orders):
                             "reason":"UNVERIFIED_LEDGER_LIFECYCLE_STATE"})
             continue
         if len(same)!=1:
+            # A position that has just closed leaves its sibling protective
+            # trigger resting until Gate cancels it asynchronously. That is a
+            # NORMAL transient state, not unprotected exposure: with no open
+            # position there is nothing left to protect, and a reduce-only
+            # trigger cannot open one. Treating it as an anomaly latched
+            # EMERGENCY_HALT after every single trade, which is why the bot
+            # could never trade continuously.
+            #
+            # It is deliberately NOT marked closed here. The row stays open
+            # until the exchange reports the trigger gone, so the exit record
+            # is never written before the trade has actually finished.
+            if not same and _contract_has_resting_trigger(item.get("contract"),
+                                                          trigger_orders):
+                results.append({"event_id":item.get("event_id"),
+                                "state":"CLOSE_PENDING_CLEANUP",
+                                "reason":"POSITION_CLOSED_TRIGGER_AWAITING_CANCEL"})
+                continue
             results.append({"event_id":item.get("event_id"),"state":"HALT_RECONCILIATION",
                             "reason":"POSITION_MISSING_OR_AMBIGUOUS"})
             continue
