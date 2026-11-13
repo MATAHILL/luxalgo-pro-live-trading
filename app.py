@@ -1309,9 +1309,13 @@ function renderPositions(positions){
   };
   actions.append(mk('Set TP/SL','protection'),mk('Reverse','reverse'),
                  mk('Market Close','close'));
+  const stale=!!(ledger&&ledger.ledger_state_stale);
   inner.append(actions,element('p','position-readonly-hint',
-   canAct?'Actions re-read Gate.io before sending and verify the result. '
-     +'Market Close is reduce-only. Reverse is blocked while the bot is halted.'
+   canAct?(stale?'This position is open at Gate.io but its bot record was already '
+     +'marked closed. The buttons still work: Market Close will close the real '
+     +'position and correct the record. '
+     :'Actions re-read Gate.io before sending and verify the result. '
+     +'Market Close is reduce-only. Reverse is blocked while the bot is halted.')
    :'Read-only Gate.io account snapshot. No bot execution record matches this '
      +'contract, so the action buttons are disabled. ROI excludes fees and funding.'));
   card.append(inner);body.append(card);
@@ -1620,7 +1624,7 @@ function card(d){
  const state=testnet?(d.feedStale?'STALE FEED · P&L NOT CURRENT':('Native SL/TP: '+String(d.protection||'UNVERIFIED')+' · '+String(d.origin||'TESTNET'))):(demo?'DEMO — simulated values':'Paper quote refresh runs automatically');
  const canClose=testnet&&d.protection==='EXCHANGE_VERIFIED'&&d.signalId&&/^[0-9]+$/.test(String(d.entryOrderId||''));
  const controls=testnet?('<button type="button" data-v45-inspect="1">VIEW TP/SL</button>'+
-   '<button disabled title="Reversal requires a new opposite protected order with user-approved SL/TP">Reverse · LOCKED</button>'+
+   '<button disabled title="Testnet card only. Reverse is available on the live Gate.io position cards above, where it closes and re-protects.">Reverse (testnet only)</button>'+
    '<button type="button" data-v45-close="market" '+(canClose?'':'disabled title="Verified exchange-linked position required"')+'>Market Close</button>'+
    '<button type="button" data-v45-close="close" '+(canClose?'':'disabled title="Verified exchange-linked position required"')+'>Close</button>'):
    '<button disabled>TP/SL</button><button disabled>Reverse</button><button disabled>Market Close</button><button disabled>Close</button>';
@@ -2266,7 +2270,7 @@ a{color:#94d9ff}nav{display:flex;flex-wrap:wrap;gap:16px;margin-top:20px}
 <p>Live trading requires a confirmed, protected acceptance order and verified recovery behavior before the operator can enable automated execution. A successful sign-in does not enable real-money orders.</p>
 <nav><a href="/">Open trading dashboard</a>
 <a href="/terminal/acceptance">Review one bounded acceptance test</a>
-<a href="/terminal/live-execution/unlock-readiness">View detailed readiness data</a></nav>
+<a href="/terminal/live-execution/unlock-readiness">View detailed readiness data</a> · <a href="/api/live/release-status">View the ordered release path (read-only)</a></nav>
 <p class="small">If this page works but direct readiness links do not, use the links above in the same browser. Cookies must be enabled for this site.</p>
 </main></body></html>'''
 
@@ -2847,11 +2851,20 @@ def health():
         gates = status.get('safety_gates') or []
     except (psycopg.Error, RuntimeError, OSError, ValueError, TypeError, KeyError):
         pass
+    # Build identity: which commit is ACTUALLY running. Without this the
+    # operator could not tell a deployed fix from an older build, and two
+    # pages of the same site could disagree with no way to check either.
+    try:
+        from build_marker import BUILD as _BUILD
+        build_fields = dict(_BUILD)
+    except Exception:
+        build_fields = {'build': 'UNKNOWN', 'build_full': 'UNKNOWN',
+                        'build_source': 'UNAVAILABLE', 'build_branch': 'UNKNOWN'}
     response = jsonify(status='ok', live_trading=live_trading,
                        orders_enabled=orders_enabled,
                        kind=('live_trading_enabled' if orders_enabled
                              else 'signal_receiver_with_readonly_exchange_checks'),
-                       safety_gates=gates)
+                       safety_gates=gates, **build_fields)
     response.headers['Cache-Control'] = 'no-store'
     return response
 
@@ -2937,8 +2950,12 @@ def api_trades():
         return guard
     try:
         from live_execution_coordinator import install, read_rows
+        from live_close_record import record_closes_safely
         with _db_connect() as con:
             install(con)
+            # A row whose position already closed must not keep offering
+            # buttons that can only fail. Record the close first.
+            record_closes_safely(con)
             rows = read_rows(con)
         trades = []
         for r in rows:
@@ -2967,10 +2984,14 @@ def api_completed_trades():
     if guard:
         return guard
     try:
-        from live_close_record import read_completed_trades
+        from live_close_record import read_completed_trades, record_closes_safely
         from live_execution_coordinator import install
         with _db_connect() as con:
             install(con)
+            # Self-healing read: record any position the exchange has already
+            # closed BEFORE listing, so a finished trade appears here without
+            # waiting for the reconciliation worker to be enabled.
+            record_closes_safely(con)
             trades = read_completed_trades(con)
         response = jsonify(trades=trades, count=len(trades))
         response.headers['Cache-Control'] = 'private, no-store'
@@ -3089,12 +3110,28 @@ def terminal_live_positions():
         return _terminal_guard()
     try:
         from live_execution_coordinator import install, read_rows
+        from live_close_record import record_closes_safely
         with _db_connect() as con:
             install(con)
+            # A row whose position already closed must not keep offering
+            # buttons that can only fail. Record the close first.
+            record_closes_safely(con)
             rows = read_rows(con)
+        # Which contracts does the exchange actually report as open right now?
+        # A ledger row marked CLOSED_VERIFIED while the exchange still holds the
+        # position is exactly the state that left the operator with a live
+        # position and four dead buttons. Such a row is surfaced as actionable
+        # rather than hidden, so the position can always be closed from here.
+        open_contracts = set()
+        try:
+            for p in _gate_read_only_positions():
+                if p.get('contract'):
+                    open_contracts.add(p['contract'])
+        except Exception:
+            open_contracts = set()
         out = []
         for r in rows:
-            if r.get('state') == 'CLOSED_VERIFIED':
+            if r.get('state') == 'CLOSED_VERIFIED' and r.get('contract') not in open_contracts:
                 continue
             out.append(dict(
                 event_id=r.get('event_id'), contract=r.get('contract'),
@@ -3107,6 +3144,8 @@ def terminal_live_positions():
                 stop_order_id=r.get('stop_order_id'),
                 take_order_id=r.get('take_order_id'),
                 protected=bool(r.get('stop_order_id') and r.get('take_order_id')),
+                ledger_state_stale=(r.get('state') == 'CLOSED_VERIFIED'
+                                    and r.get('contract') in open_contracts),
                 created_at=(r['created_at'].isoformat() if r.get('created_at') else None)))
         response = jsonify(positions=out, count=len(out))
         response.headers['Cache-Control'] = 'private, no-store'
@@ -3114,6 +3153,83 @@ def terminal_live_positions():
     except (psycopg.Error, RuntimeError, OSError, ValueError, TypeError, KeyError):
         return jsonify(positions=[], count=0,
                        error='Live position records unavailable'), 503
+
+
+@app.get('/api/live/release-status')
+def api_live_release_status():
+    """The ordered release path, in the order it must be performed.
+
+    Why this exists: the five gates were only ever reported as a flat list of
+    names. An operator could see "SOURCE_LOCKED" and have no idea whether that
+    was a code switch, an environment variable, a database row or a button, nor
+    which one to do first. This reports each gate with its OWNER (code / env /
+    database / operator), its current value, and the exact next action.
+
+    Read-only. It never releases, arms, certifies or clears anything.
+    """
+    guard = _live_api_guard()
+    if guard:
+        return guard
+    try:
+        from production_bot_control import state as _state
+        from live_futures_engine import EXCHANGE_WRITE_RELEASE
+        from live_execution_orchestrator import AUTOMATIC_WORKER_RELEASE
+        with _db_connect() as con:
+            st = _state(con)
+        gates = list(st.get('safety_gates') or [])
+        env_ok = all(os.getenv(k, 'false') == 'true' for k in
+                     ('LIVE_TRADING_ENABLED', 'ORDERS_ENABLED',
+                      'LIVE_ORDERS_SEPARATELY_AUTHORIZED'))
+        # Ordered: each step is a prerequisite of the next. Doing them out of
+        # order is what makes an operator think a switch "did not work".
+        steps = [
+            dict(order=1, gate='SOURCE_LOCKED', owner='CODE (environment variable)',
+                 satisfied=bool(EXCHANGE_WRITE_RELEASE and AUTOMATIC_WORKER_RELEASE),
+                 detail=('LUXALGO_EXCHANGE_WRITE_RELEASE=' + str(EXCHANGE_WRITE_RELEASE)
+                         + ', LUXALGO_AUTOMATIC_WORKER_RELEASE=' + str(AUTOMATIC_WORKER_RELEASE)),
+                 next_action=('Set both variables to true in Render and redeploy'
+                              if not (EXCHANGE_WRITE_RELEASE and AUTOMATIC_WORKER_RELEASE)
+                              else 'Nothing to do')),
+            dict(order=2, gate='ENVIRONMENT_LOCKED', owner='ENVIRONMENT (Render variables)',
+                 satisfied=env_ok,
+                 detail='LIVE_TRADING_ENABLED / ORDERS_ENABLED / LIVE_ORDERS_SEPARATELY_AUTHORIZED',
+                 next_action=('Set all three to true in Render and redeploy'
+                              if not env_ok else 'Nothing to do')),
+            dict(order=3, gate='EMERGENCY_HALT', owner='DATABASE (halt row)',
+                 satisfied=not st.get('halt_active'),
+                 detail='halt_reason=' + str(st.get('halt_reason')),
+                 next_action=('Read the halt reason, confirm the exchange is flat and '
+                              'every position is protected, then clear the halt'
+                              if st.get('halt_active') else 'Nothing to do')),
+            dict(order=4, gate='ACCEPTANCE_AND_FINAL_AUTHORIZATION_MISSING',
+                 owner='OPERATOR (certification record)',
+                 satisfied=bool(st.get('certified')),
+                 detail='certified_until=' + str(st.get('certified_until')),
+                 next_action=('Complete one verified acceptance trade with native SL/TP, '
+                              'then record the certification'
+                              if not st.get('certified') else 'Nothing to do')),
+            dict(order=5, gate='OPERATOR_OFF', owner='OPERATOR (BOT ON button)',
+                 satisfied=bool(st.get('operator_requested_on')),
+                 detail='operator_reason=' + str(st.get('operator_reason')),
+                 next_action=('Press BOT ON once steps 1-4 are satisfied'
+                              if not st.get('operator_requested_on') else 'Nothing to do')),
+        ]
+        first_blocking = next((x for x in steps if not x['satisfied']), None)
+        response = jsonify(
+            read_only=True, orders_enabled=bool(st.get('orders_enabled')),
+            live_trading=bool(st.get('live_trading')),
+            safety_gates=gates, steps=steps,
+            next_step=(first_blocking['order'] if first_blocking else None),
+            next_action=(first_blocking['next_action'] if first_blocking
+                         else 'All gates satisfied; the bot may send orders.'),
+            note=('Steps must be completed in this order. A later step cannot '
+                  'satisfy an earlier one, and no button can lift a code or '
+                  'environment lock.'))
+        response.headers['Cache-Control'] = 'private, no-store'
+        return response
+    except (psycopg.Error, RuntimeError, OSError, ValueError, TypeError, KeyError):
+        return jsonify(read_only=True, error='Release status unavailable',
+                       orders_enabled=False), 503
 
 
 @app.post('/api/live/arm')

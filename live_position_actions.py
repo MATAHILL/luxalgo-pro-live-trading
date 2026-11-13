@@ -94,11 +94,16 @@ def close_position(con, event_id, client=None):
     row = _ledger_row(con, event_id)
     if not row:
         raise LiveSafetyError("Unknown bot execution record")
-    if row["state"] == "CLOSED_VERIFIED":
-        return {"state": "ALREADY_CLOSED", "orders_sent": 0,
-                "detail": "This trade is already recorded as closed."}
-
+    # A CLOSED_VERIFIED ledger row is bookkeeping, NOT proof the exchange is
+    # flat. When the two disagree the EXCHANGE wins: the operator is looking at
+    # a live position and must be able to close it. Returning "already closed"
+    # here without asking the exchange is what left a real position with four
+    # dead buttons.
     position, snap = _live_position(client, row["contract"])
+    if row["state"] == "CLOSED_VERIFIED" and position is None:
+        return {"state": "ALREADY_CLOSED", "orders_sent": 0,
+                "detail": "This trade is already recorded as closed and the "
+                          "exchange reports no open position."}
     if position is None:
         # Exchange is flat: record the close rather than sending anything.
         from live_close_record import detect_and_record_closes
@@ -168,9 +173,8 @@ def modify_protection(con, event_id, stop_loss, take_profit, client=None):
     row = _ledger_row(con, event_id)
     if not row:
         raise LiveSafetyError("Unknown bot execution record")
-    if row["state"] == "CLOSED_VERIFIED":
-        raise LiveSafetyError("This trade is closed; there is nothing to protect")
-
+    # Ask the exchange first. A stale CLOSED_VERIFIED row must not block
+    # re-protecting a position that is genuinely still open.
     position, snap = _live_position(client, row["contract"])
     if position is None:
         raise LiveSafetyError("No open exchange position for this trade")

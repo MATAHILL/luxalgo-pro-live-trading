@@ -181,6 +181,29 @@ def detect_and_record_closes(con, client=None):
             "orders_sent": 0}
 
 
+def record_closes_safely(con, client=None):
+    """Best-effort close detection for READ endpoints.
+
+    The COMPLETED TRADES panel and the position cards are read-only views, but
+    they are also the only places an operator looks. Before this wrapper, close
+    detection ran ONLY from the reconciliation worker, which is started only
+    when PRODUCTION_TERMINAL_VIEW=true. On a deployment where that variable was
+    unset, a position that closed on the exchange was never recorded: the exit
+    list stayed empty AND the stale PROTECTED row kept the EMERGENCY_HALT
+    latched, blocking every later signal.
+
+    Calling this from the read path makes the panel self-healing. It is
+    READ-ONLY against the exchange and writes only the bot's own ledger row.
+    Any failure is swallowed: a read view must never 500 because the exchange
+    was briefly unreachable, and a failure here can only leave a gate CLOSED.
+    """
+    try:
+        return detect_and_record_closes(con, client)
+    except Exception:
+        return {"recorded": [], "skipped": [], "recorded_count": 0,
+                "skipped_count": 0, "orders_sent": 0, "unavailable": True}
+
+
 def read_completed_trades(con, limit=150):
     """Closed bot trades with their realized P&L, newest first."""
     with con.cursor() as cur:
