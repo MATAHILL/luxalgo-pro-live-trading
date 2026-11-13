@@ -115,7 +115,26 @@ class ResolveEventTests(unittest.TestCase):
         src = inspect.getsource(resolve_event_for_contract)
         self.assertNotIn('reduce_only', src)
         self.assertNotIn('/orders', src)
-        self.assertIn('OPERATOR_TERMINAL_CLOSE_BY_CONTRACT', src)
+        # The resolver must never fabricate a ledger row: the ledger enforces
+        # CHECK(risk_usdt>0)/CHECK(contracts>0), so a zero placeholder raised
+        # CheckViolation and the operator's Market Close click did nothing.
+        # A position with no row is closed by contract instead.
+        self.assertNotIn('INSERT INTO luxalgo_prod_execution_ledger', src)
+        self.assertIn('return None', src)
+
+    def test_close_by_contract_exists_and_is_reduce_only(self):
+        import inspect
+        from live_position_actions import close_position_by_contract
+        self.assertTrue(callable(close_position_by_contract))
+        src = inspect.getsource(close_position_by_contract)
+        self.assertIn('CONTRACT_RE.fullmatch', src)
+        # It must delegate to the shared, reduce-only close core.
+        self.assertIn('_close_contract', src)
+        core = inspect.getsource(
+            __import__('live_position_actions')._close_contract)
+        self.assertIn('reduce_only', core)
+        self.assertIn('CONTRACT_RE', inspect.getsource(
+            __import__('live_position_actions')))
 
 
 if __name__ == '__main__':
