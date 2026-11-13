@@ -139,7 +139,11 @@ class WebhookSafeIntegration(unittest.TestCase):
                         res=client.get("/terminal/incoming-signals?production=1")
                     self.assertEqual(res.status_code,200)
                     self.assertEqual(res.json["signals"][0]["execution_qualification"],expected)
-                    self.assertEqual(res.json["signals"][0]["status_label"],"NOT EXECUTED")
+                    # A signal with no ledger row has not executed. The label is
+                    # now the truthful PENDING rather than the old hardcoded
+                    # "NOT EXECUTED", which was applied even to filled trades.
+                    self.assertEqual(res.json["signals"][0]["status_label"],"PENDING")
+                    self.assertEqual(res.json["signals"][0]["state"],"PENDING")
                     self.assertFalse(res.json["orders_enabled"])
                     self.assertFalse(res.json["live_trading"])
 
