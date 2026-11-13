@@ -76,6 +76,53 @@ def _require_operator(con):
     require_operator_on(con)
 
 
+def resolve_event_for_contract(con, contract):
+    """Return a ledger event_id that identifies this contract's live position.
+
+    Why this exists
+    ---------------
+    A position can be open at Gate.io with no matching bot ledger row: opened
+    manually, opened before the ledger existed, or whose row was already marked
+    closed. The dashboard used to disable every button in that case, which left
+    a real position that could not be closed from the terminal.
+
+    This resolves the identity the close path needs WITHOUT inventing exposure:
+    it prefers the newest non-closed row for the contract, then the newest row
+    at all, and only as a last resort creates a minimal record that is clearly
+    marked as operator-originated. The close itself is still reduce-only and
+    still verified against the exchange, so a wrong identity cannot open a
+    trade - it can only close the position that is actually there.
+    """
+    if not isinstance(contract, str) or not contract:
+        raise LiveSafetyError("Contract required to resolve an execution record")
+    with con.cursor() as cur:
+        cur.execute("""SELECT event_id FROM luxalgo_prod_execution_ledger
+                       WHERE contract=%s AND state<>'CLOSED_VERIFIED'
+                       ORDER BY created_at DESC LIMIT 1""", (contract,))
+        row = cur.fetchone()
+        if row:
+            return row["event_id"]
+        cur.execute("""SELECT event_id FROM luxalgo_prod_execution_ledger
+                       WHERE contract=%s ORDER BY created_at DESC LIMIT 1""",
+                    (contract,))
+        row = cur.fetchone()
+        if row:
+            return row["event_id"]
+        # No record at all: create a minimal, clearly-labelled one so the
+        # reduce-only close has an identity to work from.
+        event_id = "opc-" + contract.lower().replace("_", "-")[:40]
+        cur.execute("""INSERT INTO luxalgo_prod_execution_ledger(
+                        event_id,client_text,contract,side,timeframe,position_mode,
+                        state,risk_usdt,entry_price,stop_loss,take_profit,contracts,detail)
+                       VALUES (%s,%s,%s,'LONG','MANUAL','single','RESERVED',0,0,0,0,0,%s)
+                       ON CONFLICT (event_id) DO NOTHING""",
+                    (event_id, "t-opc-" + contract[:20], contract,
+                     json.dumps({"origin": "OPERATOR_TERMINAL_CLOSE_BY_CONTRACT",
+                                 "note": "Created only to close an untracked "
+                                         "exchange position; never an entry."})))
+    return event_id
+
+
 def _halted(con):
     from live_execution_coordinator import control
     return control(con)["halted"] is not False

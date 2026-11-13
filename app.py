@@ -620,14 +620,30 @@ h2{font-size:15px;font-weight:850;letter-spacing:.3px}
 @media(max-width:670px){.futures-liquidity .liquidity-grid{grid-template-columns:1fr;gap:9px;padding:10px}}
 
 /* Individual read-only position cards; each position is independently expandable. */
-/* Three readable cards per row on desktop; responsive stacking below. */
-.position-card-list{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:13px;margin-top:13px;align-items:start}
-@media(max-width:1180px){.position-card-list{grid-template-columns:repeat(2,minmax(0,1fr))}}
-@media(max-width:760px){.position-card-list{grid-template-columns:1fr}}
+/* TWO readable cards per row on desktop; responsive stacking below. */
+.position-card-list{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:13px;margin-top:13px;align-items:start}
+@media(max-width:900px){.position-card-list{grid-template-columns:1fr}}
 .position-card{border:1px solid #345c83;border-radius:13px;background:linear-gradient(150deg,#142d49,#0b1c31);box-shadow:inset 0 1px 0 #ffffff12,0 8px 20px #0003;overflow:hidden;min-width:0}
-.position-card>summary{list-style:none;cursor:pointer;padding:12px 14px;display:flex;justify-content:space-between;align-items:center;gap:8px}
-.position-card>summary::-webkit-details-marker{display:none}
-.position-card>summary:focus-visible{outline:2px solid #66e6ff;outline-offset:-3px}
+.position-card-head{padding:12px 14px;display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap}
+.position-card-head:focus-visible{outline:2px solid #66e6ff;outline-offset:-3px}
+/* Token name toggles this card's own indicator table; it does not collapse the card. */
+.position-token-toggle{border:0;background:transparent;color:#a9e9ff;font:inherit;font-weight:850;
+ padding:2px 1px;cursor:pointer;text-decoration:underline;text-underline-offset:3px;display:inline-flex;align-items:center;gap:5px}
+.position-token-toggle:hover{color:#e6fdff}
+.position-token-toggle:focus-visible{outline:2px solid #66e6ff;outline-offset:3px;border-radius:4px}
+.position-token-toggle[aria-expanded="true"]{color:#78edc7}
+.position-token-caret{font-size:10px;transition:transform .22s ease;display:inline-block}
+.position-token-toggle[aria-expanded="true"] .position-token-caret{transform:rotate(180deg)}
+/* Slide-down indicator panel, per card, collapses on the second click. */
+.position-indicators{overflow:hidden;max-height:0;opacity:0;margin-top:0;
+ transition:max-height .30s ease,opacity .22s ease,margin-top .30s ease}
+.position-indicators[data-ind-open="true"]{max-height:900px;opacity:1;margin-top:10px}
+.position-indicators table{min-width:0;width:100%;border-collapse:collapse;font-size:11.5px}
+.position-indicators th,.position-indicators td{padding:6px 7px;border-bottom:1px solid #26445f;text-align:left;vertical-align:top}
+.position-indicators th{color:#9fb5cf;font-size:10px;letter-spacing:.04em;text-transform:uppercase}
+.position-indicators td{color:#dceaf8;font-weight:650;overflow-wrap:anywhere}
+.position-indicators .ind-note{font-size:10.5px;color:#8fa8c2;margin:8px 0 0;line-height:1.5}
+.position-indicators .ind-loading{font-size:11px;color:#a8bed6;padding:7px 0}
 .position-head{display:flex;align-items:center;gap:7px;flex-wrap:wrap;min-width:0}
 .position-symbol{font-size:15px;font-weight:850;color:#e8f7ff}
 .position-side{font-size:11px;font-weight:850;border-radius:5px;padding:3px 6px}
@@ -1350,18 +1366,66 @@ async function loadLiquiditySummary(){
 }
 function field(grid,label,value,colorClass){const x=element('div','position-fact');x.append(element('small','',label),element('strong',colorClass||'',value));grid.append(x);}
 function pnlClass(v){return v===null||v===undefined?'gloss-pnl-neutral':v>0?'gloss-pnl-profit':v<0?'gloss-pnl-loss':'gloss-pnl-neutral';}
+/* Builds the per-card indicator table from a server response. Every figure is
+   a verified server value; a missing one prints a dash, never a guess. */
+function buildIndicatorTable(d){
+ const f=(v,dp)=>{
+  if(v===null||v===undefined||!Number.isFinite(Number(v)))return '\u2014';
+  const n=Number(v);
+  return dp===undefined?String(n):n.toLocaleString(undefined,{minimumFractionDigits:dp,maximumFractionDigits:dp});
+ };
+ const rows=[
+  ['Timeframe',d.timeframe||'\u2014'],
+  ['Last price',f(d.reference_price)],
+  ['EMA 9',f(d.ema9)],
+  ['EMA 21',f(d.ema21)],
+  ['RSI (14)',f(d.rsi,1)],
+  ['ATR (14)',f(d.atr14)],
+  ['Support (20)',f(d.support)],
+  ['Resistance (20)',f(d.resistance)],
+  ['Volume ratio',d.volume_ratio===null||d.volume_ratio===undefined?'\u2014':f(d.volume_ratio,2)+'x'],
+  ['Bias',(d.bias||'\u2014').toString().toUpperCase()],
+  ['Score',f(d.score,0)]
+ ];
+ const table=element('table');
+ const thead=document.createElement('thead'),tr=document.createElement('tr');
+ for(const h of ['Indicator','Value']){const th=document.createElement('th');th.textContent=h;tr.appendChild(th);}
+ thead.appendChild(tr);table.appendChild(thead);
+ const tb=document.createElement('tbody');
+ for(const [k,v] of rows){
+  const r=document.createElement('tr');
+  const kc=document.createElement('td');kc.textContent=k;
+  const vc=document.createElement('td');vc.textContent=v;
+  if(k==='Bias')vc.className=/BULL/i.test(v)?'positive':/BEAR/i.test(v)?'negative':'';
+  r.append(kc,vc);tb.appendChild(r);
+ }
+ table.appendChild(tb);
+ const wrap=element('div','');wrap.appendChild(table);
+ const note=element('p','ind-note','Technical indicators from completed Gate.io candles \u00b7 '
+  +(d.candle_at?new Date(d.candle_at*1000).toLocaleTimeString('en-IN',{timeZone:'Asia/Kolkata',hour12:true})+' IST':'time unavailable')
+  +' \u00b7 rule-based, not a prediction \u00b7 display only, never an order.');
+ wrap.appendChild(note);
+ return wrap;
+}
 function renderPositions(positions){
  body.replaceChildren();
  if(!positions.length){body.append(element('p','light','Gate.io reports no open USDT perpetual positions. This terminal remains READ ONLY.'));return;}
  const seen=new Set();
  positions.forEach((p,i)=>{
   const id=p.contract+'|'+p.position_mode;seen.add(id);
-  const card=element('details','position-card');card.open=expanded.has(id)||!window.__positionCardsInitialized;
+  const card=element('div','position-card');
   card.dataset.contract=p.contract;
-  card.addEventListener('toggle',()=>{if(card.open)expanded.add(id);else expanded.delete(id);});
-  const heading=element('summary');const left=element('div','position-head');
+  const heading=element('div','position-card-head');const left=element('div','position-head');
+  // The token name is a BUTTON that slides THIS card's indicator table down.
+  // It never collapses the card, so the action buttons stay reachable.
+  const token=element('button','position-token-toggle');
+  token.type='button';
+  token.setAttribute('aria-expanded','false');
+  token.title="Show or hide this position's indicators below the card";
+  token.append(element('span','position-symbol',p.contract.replace('_','/')));
+  token.append(element('span','position-token-caret','\u25be'));
   left.append(element('span','position-side '+(p.side==='LONG'?'long':'short'),p.side==='LONG'?'L':'S'),
-              element('span','position-symbol',p.contract.replace('_','/')),
+              token,
               element('span','position-leverage',p.leverage_label));
   const right=element('span','position-summary-pnl '+pnlClass(p.unrealized_pnl),(p.unrealized_pnl>=0?'+':'')+money(p.unrealized_pnl)+' USDT ⌄');
   heading.append(left,right);card.append(heading);
@@ -1375,6 +1439,31 @@ function renderPositions(positions){
   field(grid,'Mark price',price(p.mark_price));
   field(grid,'Liquidation price',price(p.liquidation_price));
   grid && inner.append(grid);
+  // Per-card indicator table. Each card owns its own element, so opening one
+  // never affects another. Nothing here is shared or global.
+  const ind=element('div','position-indicators');
+  ind.dataset.indOpen='false';
+  ind.setAttribute('aria-hidden','true');
+  inner.append(ind);
+  let indLoaded=false;
+  token.addEventListener('click',async ()=>{
+   const opening=ind.dataset.indOpen!=='true';
+   ind.dataset.indOpen=opening?'true':'false';
+   ind.setAttribute('aria-hidden',opening?'false':'true');
+   token.setAttribute('aria-expanded',opening?'true':'false');
+   if(!opening||indLoaded)return;
+   indLoaded=true;
+   ind.replaceChildren(element('p','ind-loading','Loading indicators for '+p.contract.replace('_','/')+'\u2026'));
+   try{
+    const r=await fetch('/terminal/position/indicators?contract='+encodeURIComponent(p.contract),{cache:'no-store'});
+    const d=await r.json();
+    if(!r.ok)throw Error(d.error||('HTTP '+r.status));
+    ind.replaceChildren(buildIndicatorTable(d));
+   }catch(err){
+    indLoaded=false;
+    ind.replaceChildren(element('p','ind-note','\u26a0 Indicators unavailable \u00b7 '+String(err.message).slice(0,110)));
+   }
+  });
   const actions=element('div','position-card-actions');
   const chart=element('button','btn position-chart-action','View Chart');chart.type='button';
   chart.addEventListener('click',()=>{
@@ -1406,28 +1495,34 @@ function renderPositions(positions){
   // Live operator actions. Each one is an explicit click that re-reads the
   // exchange before acting; nothing here is reachable from a signal.
   const ledger=window.__liveLedgerByContract&&window.__liveLedgerByContract[p.contract];
-  const canAct=!!ledger;
+  // Every card gets working buttons. A position with no bot ledger row is
+  // closed by CONTRACT, and the server resolves (or creates) the exact record
+  // it needs before sending anything. Nothing is enabled blindly: the server
+  // still re-reads Gate.io and still refuses on any ambiguity.
+  const canAct=true;
   const mk=(label,kind)=>{
    const b=element('button','btn btn-danger',label);b.type='button';
-   b.dataset.posAction=kind;b.dataset.eventId=ledger?ledger.event_id:'';
-   if(!canAct){b.disabled=true;b.title='No bot execution record for this contract. '
-     +'A position opened outside the bot cannot be managed from here.';}
+   b.dataset.posAction=kind;
+   b.dataset.eventId=ledger?ledger.event_id:'';
+   b.dataset.contract=p.contract;
+   b.title=ledger?'Exact bot execution record: '+ledger.event_id
+     :'No bot record for this contract; the close is resolved by contract at Gate.io.';
    return b;
   };
   actions.append(mk('Set TP/SL','protection'),mk('Reverse Position','reverse'),
                  mk('Market Close','close'));
   const stale=!!(ledger&&ledger.ledger_state_stale);
   inner.append(actions,element('p','position-readonly-hint',
-   canAct?(stale?'This position is open at Gate.io but its bot record was already '
+   ledger?(stale?'This position is open at Gate.io but its bot record was already '
      +'marked closed. The buttons still work: Market Close will close the real '
      +'position and correct the record. '
      :'Actions re-read Gate.io before sending and verify the result. '
      +'Market Close is reduce-only. Reverse is blocked while the bot is halted.')
-   :'Read-only Gate.io account snapshot. No bot execution record matches this '
-     +'contract, so the action buttons are disabled. ROI excludes fees and funding.'));
+   :'This position has no bot execution record. Market Close is still available: '
+     +'the close is resolved by contract against Gate.io and is reduce-only. '
+     +'Set TP/SL and Reverse need an exact bot record and will say so if refused.'));
   card.append(inner);body.append(card);
  });
- for(const key of expanded){if(!seen.has(key))expanded.delete(key);}
  window.__positionCardsInitialized=true;
 }
 async function loadPositions(){
@@ -1457,20 +1552,31 @@ button.addEventListener('click',()=>{loadPositions();loadFuturesEquity();loadLiq
 body.addEventListener('click',async e=>{
  const b=e.target.closest('[data-pos-action]');
  if(!b||b.disabled)return;
- const kind=b.dataset.posAction,eventId=b.dataset.eventId;
- if(!eventId)return;
+ const kind=b.dataset.posAction,eventId=b.dataset.eventId||'';
  const card=b.closest('.position-card');
+ const contract=b.dataset.contract||(card?card.dataset.contract:'');
+ // A card with no bot ledger row is still manageable: the close is resolved by
+ // CONTRACT at the exchange. Only an action that genuinely has no identity is
+ // refused, and it says so instead of failing silently.
+ if(!eventId&&!contract){return;}
  const hint=card&&card.querySelector('.position-readonly-hint');
  const say=t=>{if(hint)hint.textContent=t;};
  const csrf=document.querySelector('input[name="csrf_token"]')?.value;
  if(!csrf){say('No valid terminal session token. Refresh and sign in again.');return;}
  let body_=null,label='';
  if(kind==='close'){
-  if(!window.confirm('Send ONE reduce-only market close for this position? '
+  if(!window.confirm('Send ONE reduce-only market close for '
+    +(contract?contract.replace('_','/'):'this position')+'? '
     +'This closes the real position at Gate.io.'))return;
-  body_={event_id:eventId};label='Closing position\u2026';
+  body_={event_id:eventId,contract:contract};label='Closing position\u2026';
  }else{
-  const cur=window.__liveLedgerByContract?.[card?.querySelector('.position-symbol')?.textContent?.replace('/','_')||''];
+  if(!eventId){
+   say('\u26a0 Set TP/SL and Reverse need an exact bot execution record. '
+     +'This position has none, so the server would refuse. Use Market Close, '
+     +'or manage SL/TP directly at Gate.io.');
+   return;
+  }
+  const cur=window.__liveLedgerByContract?.[contract||''];
   const sl=window.prompt('New STOP LOSS price (must be on the losing side of entry):',
                          cur?cur.stop_loss:'');
   if(sl===null)return;
@@ -3467,6 +3573,53 @@ def terminal_exchange_orders():
                        orders_enabled=False), 502
 
 
+@app.get('/terminal/position/indicators')
+def terminal_position_indicators():
+    """Per-card indicator table for one contract. Read-only, no orders.
+
+    Reuses the same completed-candle technical calculation the scanner uses, so
+    the numbers on a position card are the same numbers the scanner reports.
+    A failure returns an explicit error; it never returns invented values.
+    """
+    if not _terminal_permitted():
+        return _terminal_guard()
+    contract = (request.args.get('contract') or '').strip().upper()
+    if not re.fullmatch(r'[A-Z0-9]{2,28}_USDT', contract):
+        return jsonify(error='Invalid contract'), 400
+    tf = (request.args.get('tf') or '15m').strip()
+    if tf not in ('5m', '15m'):
+        tf = '15m'
+    try:
+        change = 0.0
+        try:
+            tickers = _scan_http_json('/api/v4/futures/usdt/tickers')
+            for t in tickers or []:
+                if isinstance(t, dict) and t.get('contract') == contract:
+                    change = float(t.get('change_percentage') or 0)
+                    break
+        except (HTTPError, URLError, TimeoutError, ValueError, TypeError, OSError):
+            change = 0.0
+        data = _scan_one_pair(contract, tf, change)
+        response = jsonify(contract=contract, timeframe=tf,
+                           reference_price=data.get('reference_price'),
+                           ema9=data.get('ema9'), ema21=data.get('ema21'),
+                           rsi=data.get('rsi'), atr14=data.get('atr14'),
+                           support=data.get('support'),
+                           resistance=data.get('resistance'),
+                           volume_ratio=data.get('volume_ratio'),
+                           bias=data.get('bias'), score=data.get('score'),
+                           candle_at=data.get('candle_at'),
+                           fetched_at=int(time.time()),
+                           orders_enabled=False)
+        response.headers['Cache-Control'] = 'private, no-store'
+        return response
+    except (HTTPError, URLError, TimeoutError, ValueError, KeyError, TypeError,
+            OSError, ZeroDivisionError, RuntimeError):
+        app.logger.warning('Position indicators unavailable', exc_info=True)
+        return jsonify(error='Indicators unavailable for this contract right now',
+                       orders_enabled=False), 502
+
+
 @app.get('/terminal/position/refresh')
 def terminal_position_refresh():
     """Per-card refresh: one contract's live position and its protection.
@@ -3525,15 +3678,31 @@ def terminal_position_close():
     if not _csrf_valid():
         return jsonify(error='Invalid terminal session verification'), 403
     data = request.get_json(silent=True) if request.is_json else None
-    if not isinstance(data, dict) or not isinstance(data.get('event_id'), str):
-        return jsonify(error='Exact bot execution record required'), 400
-    if not re.fullmatch(r'[a-zA-Z0-9_.:-]{8,128}', data['event_id']):
-        return jsonify(error='Invalid execution record id'), 422
+    if not isinstance(data, dict):
+        return jsonify(error='JSON body required'), 400
+    event_id = data.get('event_id')
+    contract = data.get('contract')
+    # A position with no bot ledger row is still closable: resolve the exact
+    # record from the contract, or create a minimal one, so the operator is
+    # never left with a live position and a dead button. The close itself is
+    # still reduce-only and still verified against the exchange.
+    if not (isinstance(event_id, str) and re.fullmatch(r'[a-zA-Z0-9_.:-]{8,128}', event_id)):
+        if not (isinstance(contract, str) and re.fullmatch(r'[A-Z0-9]{2,28}_USDT', contract)):
+            return jsonify(error='Exact bot execution record or contract required'), 400
+        try:
+            from live_position_actions import resolve_event_for_contract
+            with _db_connect() as con:
+                event_id = resolve_event_for_contract(con, contract)
+        except Exception:
+            app.logger.exception('Could not resolve execution record for contract')
+            return jsonify(state='REFUSED',
+                           error='No bot execution record could be resolved for '
+                                 'this contract. Close it at Gate.io directly.'), 409
     try:
         from live_position_actions import close_position
         from live_futures_engine import LiveSafetyError, AckUnknown
         with _db_connect() as con:
-            result = close_position(con, data['event_id'])
+            result = close_position(con, event_id)
         code = 200 if result.get('state') in ('CLOSED_VERIFIED', 'ALREADY_CLOSED') else 409
         response = jsonify(**result)
         response.headers['Cache-Control'] = 'private, no-store'

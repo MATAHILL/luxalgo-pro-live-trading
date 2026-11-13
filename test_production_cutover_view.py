@@ -11,7 +11,6 @@ class ProductionCutoverTests(unittest.TestCase):
         self.assertIn('class="production-view"',p)
         self.assertIn('LUXALGO PRO · LIVE FUTURES TERMINAL',p)
         for part in ('id="incomingLuxPanel"','id="radarBody"','id="scannerBody"',
-                     'id="productionCardsPanel"','id="productionPositionCards"',
                      'id="futuresEquity"','id="positionRefresh"'):
             self.assertIn(part,p,part)
         for retired in ('id="v4Workspace"','id="testnetReadinessPanel"',
@@ -28,7 +27,9 @@ class ProductionCutoverTests(unittest.TestCase):
         self.assertIn("fetch('/terminal/live-execution/snapshot'",p)
         self.assertNotIn('id="btcAcceptancePanel"',p)
         self.assertNotIn('BTC_USDT · ONE-CONTRACT LIVE ACCEPTANCE TEST',p)
-        self.assertIn('Market Close — LOCKED',p)
+        # The legacy locked position card is deleted from the page entirely.
+        self.assertNotIn('id="productionCardsPanel"',p)
+        self.assertNotIn('Market Close — LOCKED',p)
         self.assertIn('STOP LOSS',''.join(p))
         self.assertNotIn('<h1>LUXALGO PRO · TESTNET FUTURES TERMINAL</h1>',p)
         # No production exchange POST or any user-facing live execution authorization.
