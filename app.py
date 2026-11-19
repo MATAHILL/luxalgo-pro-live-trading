@@ -194,6 +194,26 @@ CREATE TABLE IF NOT EXISTS luxalgo_signal_levels (
  take_profit NUMERIC,
  reason TEXT NOT NULL DEFAULT ''
 );
+-- Confluence quality gate. A PASS is permission to CONTINUE through the
+-- existing safety-locked path; it is never an order or an authorization.
+CREATE TABLE IF NOT EXISTS luxalgo_signal_confluence (
+ event_id TEXT PRIMARY KEY,
+ decided_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+ symbol TEXT NOT NULL,
+ side TEXT NOT NULL,
+ timeframe TEXT NOT NULL,
+ decision TEXT NOT NULL CHECK(decision IN ('PASS','BLOCK')),
+ score INTEGER NOT NULL,
+ min_score INTEGER NOT NULL,
+ blockers TEXT NOT NULL DEFAULT '',
+ components JSONB NOT NULL DEFAULT '{}'::jsonb,
+ metrics JSONB NOT NULL DEFAULT '{}'::jsonb
+);
+CREATE INDEX IF NOT EXISTS idx_confluence_recent
+ ON luxalgo_signal_confluence (decided_at DESC);
+CREATE INDEX IF NOT EXISTS idx_confluence_pass_symbol
+ ON luxalgo_signal_confluence (symbol, decided_at DESC)
+ WHERE decision='PASS';
 -- DRY RUN reservation sandbox. Never consumed by an exchange order route.
 CREATE TABLE IF NOT EXISTS luxalgo_risk_gate_simulations (
   event_id TEXT PRIMARY KEY,
@@ -603,21 +623,6 @@ h2{font-size:15px;font-weight:850;letter-spacing:.3px}
 @media(max-width:650px){.btn.gloss-action,.btn.gloss-safe-disabled,.bot-control-actions .btn{padding:9px 11px;font-size:12px}}
 @media(prefers-reduced-motion:reduce){.btn.gloss-action,.bot-control-actions .btn{transition:none}}
 
-/* Live read-only balance indicators. Figures never use a manually-entered balance. */
-.equity-metric{border-color:#3e8fb0;box-shadow:inset 0 1px 0 #a8eeff44,0 0 14px #29a8df20}
-.equity-metric strong{font-size:25px}
-
-/* Only the three Gate.io Futures balance cards are collapsible. */
-.futures-liquidity{margin:13px 0 0;background:linear-gradient(130deg,#112b43,#102039);border:1px solid #376886;border-radius:12px;overflow:hidden}
-.futures-liquidity>summary{cursor:pointer;display:flex;align-items:center;justify-content:space-between;gap:12px;list-style:none;padding:13px 17px;font-weight:850;letter-spacing:.25px;color:#a6f0ff;background:linear-gradient(180deg,#1c4463,#112a43);user-select:none}
-.futures-liquidity>summary::-webkit-details-marker{display:none}
-.futures-liquidity>summary:hover{filter:brightness(1.15)}
-.futures-liquidity>summary:focus-visible{outline:3px solid #93ebff;outline-offset:-3px}
-.futures-liquidity .liquidity-arrow{font-size:19px;line-height:1;transition:transform .2s ease;color:#8bebff}
-.futures-liquidity[open] .liquidity-arrow{transform:rotate(180deg)}
-.futures-liquidity .liquidity-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:11px;padding:13px}
-.futures-liquidity .liquidity-grid .metric{min-width:0}
-@media(max-width:670px){.futures-liquidity .liquidity-grid{grid-template-columns:1fr;gap:9px;padding:10px}}
 
 /* Individual read-only position cards; each position is independently expandable. */
 /* TWO readable cards per row on desktop; responsive stacking below. */
@@ -807,16 +812,6 @@ header.terminal-header{border-radius:17px!important}
  <div class="bot-control-actions"><button class="btn" id="botTurnOn" type="button" title="Controls fresh LuxAlgo testnet signals only; NEVER real-money orders">▶ TESTNET BOT ON</button><button class="btn" id="botTurnOff" type="button" title="Pauses new Testnet entries; does not close existing Testnet positions">■ TESTNET BOT OFF</button></div>
 </section>
 
-<details class="futures-liquidity" id="futuresLiquidityDetails">
-<summary><span>◈ FUTURES LIQUIDITY DETAILS · USDT</span><span class="liquidity-arrow" aria-hidden="true">⌄</span></summary>
-<div class="liquidity-grid">
-<div class="metric equity-metric"><small>LIVE FUTURES EQUITY · USDT</small><strong class="gloss-cyan" id="futuresEquity">—</strong><span id="futuresEquityUpdated">Verifying Gate.io account…</span></div>
-<div class="metric"><small>AVAILABLE FUTURES · USDT</small><strong id="futuresAvailable">—</strong><span>Exchange-reported trading availability</span></div>
-<div class="metric"><small>FUTURES BALANCE · USDT</small><strong id="futuresBalance">—</strong><span>Account balance before unrealized P&amp;L</span></div>
-<div class="metric"><small>TOTAL REALIZED P&amp;L · USDT</small><strong id="liquidityRealizedPnl">—</strong><span id="liquidityRealizedPnlNote">Verified closed trades, net of fees</span></div>
-<div class="metric"><small>WIN RATE</small><strong id="liquidityWinRate">—</strong><span id="liquidityWinRateNote">Winning ÷ decided closed trades</span></div>
-<div class="metric"><small>UNREALIZED P&amp;L · USDT</small><strong id="liquidityUnrealizedPnl">—</strong><span id="liquidityUnrealizedPnlNote">Open positions, from Gate.io</span></div>
-</div></details>
 <details class="panel" style="margin:12px 0" id="liveReadinessPanel"><summary style="font-weight:850;cursor:pointer;color:#ffcf89">LIVE EXECUTION READINESS · SAFETY CHECK (READ ONLY)</summary><p class="light">This panel checks safeguards only. It cannot start trading or enable Gate.io API writes.</p><button class="btn" type="button" id="readinessRefresh">Check readiness</button><button class="btn gloss-action" type="button" id="guardTestButton" style="margin-left:8px">Test Duplicate Order Guard</button><button class="btn gloss-action" type="button" id="riskCheckButton" style="margin-left:8px">Check Account Risk Limits</button><button class="btn gloss-action" type="button" id="stage2GateTestButton" style="margin-left:8px">Test Stage 2 Risk Gate</button><button class="btn gloss-action" type="button" id="stage3ContractTestButton" style="margin-left:8px">Test Stage 3 Contract Sizing</button><button class="btn gloss-action" type="button" id="stage4ProtectiveTestButton" style="margin-left:8px">Test Stage 4 SL/TP</button><button class="btn gloss-action" type="button" id="stage5LedgerTestButton" style="margin-left:8px">Test Stage 5 Ledger</button><button class="btn gloss-action" type="button" id="stage6HaltTestButton" style="margin-left:8px">Test Stage 6 Halt &amp; Recovery</button><button class="btn gloss-action" type="button" id="stage7AuditButton" style="margin-left:8px">Test Stage 7 Readiness Audit</button><button class="btn gloss-action" type="button" id="stage8AckTestButton" style="margin-left:8px">Test Stage 8 Ack Recovery</button><button class="btn gloss-action" type="button" id="stage9ReconcileTestButton" style="margin-left:8px">Test Stage 9 Reconciliation</button><button class="btn gloss-action" type="button" id="stage10ProtectionTestButton" style="margin-left:8px">Test Stage 10 SL/TP Coverage</button><button class="btn gloss-action" type="button" id="stage11RiskTestButton" style="margin-left:8px">Test Stage 11 Atomic Risk</button><button class="btn gloss-action" type="button" id="stage12ReadOnlyTestButton" style="margin-left:8px">Test Stage 12 Gate.io Read-Only</button><button class="btn gloss-action" type="button" id="stage13RecoveryTestButton" style="margin-left:8px">Test Stage 13 Recovery &amp; Failures</button><button class="btn gloss-action" type="button" id="stage14FinalTestButton" style="margin-left:8px">Test Stage 14 Final Paper Audit</button><button class="btn gloss-action" type="button" id="stage15IntegrationTestButton" style="margin-left:8px">Test Stage 15 Real Alert Paper Audit</button><button class="btn gloss-action" type="button" id="stage15InspectButton" style="margin-left:8px">Inspect Stage 15 Record Issues</button><button class="btn btn-danger" type="button" id="stage6EmergencyHalt" style="margin-left:8px">EMERGENCY HALT · PAPER &amp; FUTURE EXECUTION</button><p class="light" id="riskCheckResult" role="status" aria-live="polite">Read-only risk inspection available. Never authorizes a trade.</p><p class="light" id="guardTestResult">Test only: all candidates are BLOCKED; no exchange orders.</p><p class="light" id="stage2GateTestResult" role="status" aria-live="polite">Stage 2 PostgreSQL concurrency test not yet run.</p><p class="light" id="stage3ContractTestResult" role="status" aria-live="polite">Stage 3 read-only sizing diagnostic not yet run.</p><p class="light" id="stage4ProtectiveTestResult" role="status" aria-live="polite">Stage 4 protective-price validation not yet run. No protective orders exist.</p><p class="light" id="stage5LedgerTestResult" role="status" aria-live="polite">Stage 5 PostgreSQL simulated lifecycle test not yet run. No exchange writes.</p><p class="light" id="stage6HaltTestResult" role="status" aria-live="polite">Stage 6 persistent halt diagnostic not yet run. No exchange writes.</p><p class="light" id="stage7AuditResult" role="status" aria-live="polite">Stage 7 read-only readiness audit not yet run. All exchange execution blocked.</p><p class="light" id="stage8AckTestResult" role="status" aria-live="polite">Stage 8 unknown-acknowledgment quarantine not yet tested. No exchange write.</p><p class="light" id="stage9ReconcileTestResult" role="status" aria-live="polite">Stage 9 fixture-only reconciliation test not yet run. Real Gate.io orders are not reconciled.</p><p class="light" id="stage10ProtectionTestResult" role="status" aria-live="polite">Stage 10 protective-order fixture audit not yet run. No exchange protections verified.</p><p class="light" id="stage11RiskTestResult" role="status" aria-live="polite">Stage 11 account-wide risk fixture not yet tested. Exchange orders disabled.</p><p class="light" id="stage12ReadOnlyTestResult" role="status" aria-live="polite">Stage 12 read-only exchange snapshot not yet run. Live order reconciliation is NOT implemented.</p><p class="light" id="stage13RecoveryTestResult" role="status" aria-live="polite">Stage 13 restart/failure diagnostic not yet run. No exchange writes.</p><p class="light" id="stage14FinalTestResult" role="status" aria-live="polite">Stage 14 final simulated paper-trading audit not yet run. Live execution remains blocked.</p><p class="light" id="stage15IntegrationTestResult" role="status" aria-live="polite">Stage 15 real-alert paper audit not yet run. Requires genuine TradingView alerts; no test order placed.</p><pre id="stage15InspectResult" role="status" aria-live="polite" style="display:none;white-space:pre-wrap;overflow-wrap:anywhere;background:#081b2e;border:1px solid #345c83;border-radius:9px;padding:12px;color:#d9ecff;max-height:440px;overflow:auto">No read-only breakdown requested.</pre><p class="light" id="stage6HaltState" role="status" aria-live="polite">Future execution stays HALTED; checking database status…</p><div id="readinessOutput" role="status" aria-live="polite" style="margin-top:10px;color:#fdbfbf">Live execution BLOCKED until all critical safeguards are implemented and tested.</div></details>
 <div class="grid metric-grid">
 <div class="metric"><small>GATE.IO ACCOUNT MONITOR</small><strong class="gloss-cyan">CONNECTED · POSITION MONITOR</strong><span id="gatePositionStatus">Checking position feed…</span></div>
@@ -1314,87 +1309,44 @@ document.addEventListener('click',e=>{
 const body=document.getElementById('gatePositionsBody'),updated=document.getElementById('gatePositionsUpdated');
 const count=document.getElementById('openPositionCount'),pnl=document.getElementById('unrealizedPositionPnl');
 const connection=document.getElementById('gatePositionStatus'),button=document.getElementById('positionRefresh');
-let busy=false,equityBusy=false;
+let busy=false;
 const expanded=new Set();
 function money(value){if(value===null||value===undefined)return '—';const v=Number(value);return Number.isFinite(v)?v.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:4}):'—';}
 function price(value){if(value===null||value===undefined)return '—';const v=Number(value);if(!Number.isFinite(v)||v<=0)return '—';return v.toLocaleString(undefined,{maximumSignificantDigits:10});}
 function element(tag,cl,text){const n=document.createElement(tag);if(cl)n.className=cl;if(text!==undefined)n.textContent=text;return n;}
-function clearEquity(message){
- document.getElementById('futuresEquity').textContent='—';
- document.getElementById('futuresAvailable').textContent='—';
- document.getElementById('futuresBalance').textContent='—';
- document.getElementById('futuresEquityUpdated').textContent=message||'Account figures unavailable';
-}
-async function loadFuturesEquity(){
- if(equityBusy)return;equityBusy=true;
- try{
-  const r=await fetch('/terminal/futures-equity',{cache:'no-store'}),d=await r.json();
-  if(!r.ok)throw Error(d.error||'Futures balance not available');
-  document.getElementById('futuresEquity').textContent=money(d.equity_usdt);
-  document.getElementById('futuresAvailable').textContent=money(d.available_usdt);
-  document.getElementById('futuresBalance').textContent=money(d.balance_usdt);
-  document.getElementById('futuresEquityUpdated').textContent='Gate.io verified · '+new Date(d.fetched_at*1000).toLocaleTimeString('en-IN',{timeZone:'Asia/Kolkata',hour12:true})+' IST';
- }catch(e){clearEquity('Cannot verify: '+e.message);}finally{equityBusy=false;}
-}
-/* Six Futures Liquidity summary boxes, from verified records only.
-   Realized P&L and Win Rate come from the server, which counts each trade
-   once and subtracts fees. A null figure renders as "—" with the reason. */
-async function loadLiquiditySummary(){
+/* Realized P&L and Win Rate for the main metric grid, from verified records
+   only. The server counts each trade once and subtracts fees. A null figure
+   renders as "—" with the reason, never a fabricated zero. */
+async function loadPnlSummary(){
  const put=(id,v)=>{const el=document.getElementById(id);if(el)el.textContent=v;};
  const note=(id,v)=>{const el=document.getElementById(id);if(el)el.textContent=v;};
  try{
   const r=await fetch('/terminal/futures-liquidity-summary',{cache:'no-store'});
   const d=await r.json();
   if(!r.ok)throw Error(d.error||('HTTP '+r.status));
-  const pnlEl=document.getElementById('liquidityRealizedPnl');
   if(d.total_realized_pnl_usdt===null||d.total_realized_pnl_usdt===undefined){
-   put('liquidityRealizedPnl','—');
-   note('liquidityRealizedPnlNote','No verified closed trade P&L yet');
-   if(pnlEl)pnlEl.className='gloss-pnl-neutral';
    put('metricRealizedPnl','—');
    note('metricRealizedPnlNote','No verified closed trade P&L yet');
   }else{
    const v=Number(d.total_realized_pnl_usdt);
-   put('liquidityRealizedPnl',(v>0?'+':'')+money(v));
-   if(pnlEl)pnlEl.className=pnlClass(v);
-   note('liquidityRealizedPnlNote',d.total_closed_trades+' closed trade(s), net of fees');
    put('metricRealizedPnl',(v>0?'+':'')+money(v));
    note('metricRealizedPnlNote',d.total_closed_trades+' closed trade(s), net of fees');
    const mEl=document.getElementById('metricRealizedPnl');
    if(mEl)mEl.className=pnlClass(v);
   }
-  const wrEl=document.getElementById('liquidityWinRate');
   if(d.win_rate_pct===null||d.win_rate_pct===undefined){
-   put('liquidityWinRate','—');
-   note('liquidityWinRateNote','No decided closed trades yet');
-   if(wrEl)wrEl.className='gloss-pnl-neutral';
    put('metricWinRate','—');
    note('metricWinRateNote','No decided closed trades yet');
   }else{
-   put('liquidityWinRate',Number(d.win_rate_pct).toFixed(1)+'%');
-   if(wrEl)wrEl.className=Number(d.win_rate_pct)>=50?'gloss-pnl-profit':'gloss-pnl-loss';
-   note('liquidityWinRateNote',d.winning_trades+'W / '+d.losing_trades+'L of '+d.total_closed_trades);
    put('metricWinRate',Number(d.win_rate_pct).toFixed(1)+'%');
    note('metricWinRateNote',d.winning_trades+'W / '+d.losing_trades+'L of '+d.total_closed_trades);
    const mwEl=document.getElementById('metricWinRate');
    if(mwEl)mwEl.className=Number(d.win_rate_pct)>=50?'gloss-pnl-profit':'gloss-pnl-loss';
   }
-  const unEl=document.getElementById('liquidityUnrealizedPnl');
-  if(d.unrealized_pnl_usdt===null||d.unrealized_pnl_usdt===undefined){
-   put('liquidityUnrealizedPnl','—');
-   note('liquidityUnrealizedPnlNote','No open position P&L available');
-   if(unEl)unEl.className='gloss-pnl-neutral';
-  }else{
-   const v=Number(d.unrealized_pnl_usdt);
-   put('liquidityUnrealizedPnl',(v>0?'+':'')+money(v));
-   if(unEl)unEl.className=pnlClass(v);
-   note('liquidityUnrealizedPnlNote',d.open_positions+' open position(s), from Gate.io');
-  }
  }catch(e){
-  put('liquidityRealizedPnl','—');put('liquidityWinRate','—');put('liquidityUnrealizedPnl','—');
-  note('liquidityRealizedPnlNote','Summary unavailable: '+String(e.message).slice(0,60));
-  note('liquidityWinRateNote','Summary unavailable');
-  note('liquidityUnrealizedPnlNote','Summary unavailable');
+  put('metricRealizedPnl','—');put('metricWinRate','—');
+  note('metricRealizedPnlNote','Summary unavailable: '+String(e.message).slice(0,60));
+  note('metricWinRateNote','Summary unavailable');
  }
 }
 function field(grid,label,value,colorClass){const x=element('div','position-fact');x.append(element('small','',label),element('strong',colorClass||'',value));grid.append(x);}
@@ -1513,7 +1465,7 @@ function renderPositions(positions){
     const r=await fetch('/terminal/position/refresh?contract='+encodeURIComponent(p.contract),{cache:'no-store'});
     const d=await r.json();
     if(!r.ok)throw Error(d.error||('HTTP '+r.status));
-    if(!d.position){say('⚠ Gate.io no longer reports this position. It may have closed; refreshing the list.');setTimeout(()=>{loadPositions();loadFuturesEquity();},900);return;}
+    if(!d.position){say('⚠ Gate.io no longer reports this position. It may have closed; refreshing the list.');setTimeout(()=>{loadPositions();},900);return;}
     const np=d.position;
     const pnlEl=card.querySelector('.position-summary-pnl');
     if(pnlEl){pnlEl.textContent=(np.unrealized_pnl>=0?'+':'')+money(np.unrealized_pnl)+' USDT ⌄';
@@ -1608,7 +1560,7 @@ async function loadPositions(){
  }catch(e){count.textContent='—';pnl.textContent='—';pnl.classList.remove('positive','negative');connection.textContent='Feed unavailable: '+String(e.message).slice(0,110);body.replaceChildren(element('p','light','Unable to verify positions: '+e.message));updated.textContent='Position data unavailable; no empty positions assumed.';}
  finally{busy=false;button.disabled=false;}
 }
-button.addEventListener('click',()=>{loadPositions();loadFuturesEquity();loadLiquiditySummary();});
+button.addEventListener('click',()=>{loadPositions();loadPnlSummary();});
 // Operator position actions: close / protection / reverse.
 body.addEventListener('click',async e=>{
  const b=e.target.closest('[data-pos-action]');
@@ -1667,13 +1619,13 @@ body.addEventListener('click',async e=>{
   say((ok?'\u2713 ':'\u26a0 ')+(out.state||('HTTP '+res.status))
       +(out.detail?' \u00b7 '+out.detail:'')
       +(out.error?' \u00b7 '+out.error:''));
-  if(ok){setTimeout(()=>{loadPositions();loadFuturesEquity();},1200);}
+  if(ok){setTimeout(()=>{loadPositions();},1200);}
  }catch(err){
   say('\u26a0 OUTCOME UNKNOWN \u00b7 '+String(err.message).slice(0,90)
       +' \u00b7 Check Gate.io before any retry.');
  }finally{all.forEach(x=>x.disabled=false);}
 });
-loadPositions();loadFuturesEquity();loadLiquiditySummary();setInterval(()=>{if(!document.hidden){loadPositions();loadFuturesEquity();loadLiquiditySummary();}},30000);
+loadPositions();loadPnlSummary();setInterval(()=>{if(!document.hidden){loadPositions();loadPnlSummary();}},30000);
 })();
 </script>
 <script>
@@ -4327,6 +4279,17 @@ def webhook():
         return jsonify(error='Invalid symbol, LuxAlgo entry direction, or timeframe'), 422
     received_at = datetime.now(timezone.utc)
     tf = '5m' if tf.startswith('5') else '15m'
+    # XRP-ONLY SCOPE. BTC is blocked by policy before any scoring, storage or
+    # dispatch. This is a hard veto, not a preference: an alert for any other
+    # symbol is acknowledged and refused, never silently traded.
+    from testnet_coin_scope import selected_webhook_symbol
+    if not selected_webhook_symbol(symbol):
+        _scope_reason = ('BTC_BLOCKED' if symbol.startswith('BTC')
+                         else 'SYMBOL_NOT_ALLOWED')
+        app.logger.warning('LuxAlgo webhook refused by symbol scope: %s', _scope_reason)
+        return jsonify(status='signal_refused', mode='SIGNAL_ONLY', symbol=symbol,
+                       reason=_scope_reason, allowed_symbols=['XRPUSDT'],
+                       orders_placed=0), 403
     # Missing/invalid LuxAlgo prices never authorize an exchange order.
     # Preserve legacy signal reception but flag missing/invalid levels in audit.
     from decimal import Decimal, InvalidOperation
@@ -4365,6 +4328,42 @@ def webhook():
         input_bar=luxalgo_bar_identity(tf,received_at,data.get('bartime'))
     event_id,source_bar_id=stable_signal_identity(
         symbol,allowed[side],tf,received_at,input_bar)
+    # ---- Confluence quality gate (read-only market data, fail-closed) ----
+    # Runs BEFORE any candidate reservation or dispatch. Missing market data
+    # blocks; it never defaults to PASS. A PASS only permits the existing
+    # safety-locked path to continue.
+    confluence = None
+    try:
+        import signal_confluence as _sc
+        _cfg = _sc.ConfluenceConfig.from_env()
+        _last_pass = None
+        try:
+            with _db_connect() as _con:
+                _ensure_schema(_con)
+                with _con.cursor() as _cur:
+                    _cur.execute("""SELECT EXTRACT(EPOCH FROM MAX(decided_at)) AS last_pass
+                                    FROM luxalgo_signal_confluence
+                                    WHERE symbol=%s AND decision='PASS'""", (symbol,))
+                    _row = _cur.fetchone()
+                    # dict_row cursor: index by column name, never by position.
+                    _val = _row.get('last_pass') if _row else None
+                    _last_pass = float(_val) if _val is not None else None
+        except (psycopg.Error, RuntimeError, OSError, TypeError, ValueError):
+            _last_pass = None
+        _contract = symbol[:-4] + '_USDT'
+        _candles = _sc.fetch_candles(_contract, tf, limit=120, timeout=3.5)
+        _htf = _sc.fetch_candles(_contract, _sc.HTF_FOR[tf], limit=120, timeout=3.5)
+        confluence = _sc.evaluate(
+            symbol=symbol, side=allowed[side], timeframe=tf,
+            entry=entry_price, stop=stop_loss, take_profit=take_profit,
+            candles=_candles, htf_candles=_htf, config=_cfg,
+            now=received_at, last_entry_epoch=_last_pass)
+    except Exception:  # noqa: BLE001 - any gate failure must block, never pass
+        app.logger.exception('Confluence gate unavailable; blocking signal')
+        confluence = {'decision': 'BLOCK', 'score': 0, 'min_score': 0,
+                      'blockers': ['CONFLUENCE_UNAVAILABLE'],
+                      'components': {}, 'metrics': {}, 'summary': 'CONFLUENCE_UNAVAILABLE'}
+    _conf_pass = confluence.get('decision') == 'PASS'
     try:
         duplicate = _db_record(record,event_id)
         with _db_connect() as con:
@@ -4376,6 +4375,17 @@ def webhook():
                 con.execute('''INSERT INTO luxalgo_signal_order_types(event_id,order_type)
                     VALUES (%s,%s) ON CONFLICT (event_id) DO NOTHING''',
                     (event_id,declared_order_type))
+            con.execute("""INSERT INTO luxalgo_signal_confluence
+                (event_id,decided_at,symbol,side,timeframe,decision,score,min_score,
+                 blockers,components,metrics)
+                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s::jsonb,%s::jsonb)
+                ON CONFLICT (event_id) DO NOTHING""",
+                (event_id,received_at,symbol,allowed[side],tf,
+                 confluence.get('decision','BLOCK'),int(confluence.get('score',0)),
+                 int(confluence.get('min_score',0)),
+                 ','.join(confluence.get('blockers') or []),
+                 json.dumps(confluence.get('components') or {}),
+                 json.dumps(confluence.get('metrics') or {})))
     except (psycopg.Error,RuntimeError,OSError):
         app.logger.exception('Cannot durably record incoming LuxAlgo signal')
         return jsonify(error='Signal not stored; retry later',orders_placed=0),503
@@ -4397,7 +4407,7 @@ def webhook():
     # One-trade handoff: durable first-candidate reservation ONLY. Not an order.
     # Preserves existing webhook receipt behavior and does not call exchange APIs.
     one_trade_candidate = 'NOT_ELIGIBLE'
-    if level_status == 'VALID' and not duplicate and tf == '15m':
+    if level_status == 'VALID' and _conf_pass and not duplicate and tf == '15m':
         try:
             with _db_connect() as con:
                 _ensure_schema(con)
@@ -4418,6 +4428,9 @@ def webhook():
         _dispatch_blockers.append('DUPLICATE_IN_CANDLE')
     if level_status!='VALID':
         _dispatch_blockers.append('LEVELS_'+level_status)
+    if not _conf_pass:
+        _dispatch_blockers.append('CONFLUENCE_BLOCK:'+
+                                  (','.join(confluence.get('blockers') or ['UNKNOWN'])))
     if not source_bar_id:
         _dispatch_blockers.append('MISSING_STABLE_BAR_ID')
     if declared_order_type!='MARKET':
@@ -4426,7 +4439,7 @@ def webhook():
                   'LIVE_ORDERS_SEPARATELY_AUTHORIZED'):
         if os.getenv(_name,'false')!='true':
             _dispatch_blockers.append(_name+'_OFF')
-    if (not duplicate and level_status=='VALID' and source_bar_id and
+    if (not duplicate and level_status=='VALID' and _conf_pass and source_bar_id and
         declared_order_type=='MARKET' and
         os.getenv('LIVE_TRADING_ENABLED','false')=='true' and
         os.getenv('ORDERS_ENABLED','false')=='true' and
@@ -4454,6 +4467,10 @@ def webhook():
                    stable_bar_identity=bool(source_bar_id),
                    order_type_qualified=(declared_order_type=='MARKET'),
                    one_trade_candidate=one_trade_candidate,
+                   confluence_decision=confluence.get('decision'),
+                   confluence_score=confluence.get('score'),
+                   confluence_min_score=confluence.get('min_score'),
+                   confluence_blockers=confluence.get('blockers') or [],
                    dispatch_blockers=_dispatch_blockers, orders_placed=0), 200
 
 
@@ -6971,6 +6988,53 @@ def terminal_reset_incoming_signals():
         return response
     except (psycopg.Error,RuntimeError,OSError,ValueError,TypeError):
         return jsonify(error='Visible history reset could not be saved'),503
+
+
+@app.get('/terminal/confluence')
+def terminal_confluence():
+    """Read-only view of the confluence gate: recent decisions and thresholds.
+
+    Never places, modifies or cancels an order. Shows WHY a signal was blocked
+    so the alert setup can be tuned instead of guessed at.
+    """
+    if not _terminal_permitted():
+        return _terminal_guard()
+    try:
+        import signal_confluence as _sc
+        cfg = _sc.ConfluenceConfig.from_env()
+        with _db_connect() as con:
+            _ensure_schema(con)
+            with con.cursor() as cur:
+                cur.execute("""SELECT event_id,decided_at,symbol,side,timeframe,
+                                      decision,score,min_score,blockers,components,metrics
+                               FROM luxalgo_signal_confluence
+                               ORDER BY decided_at DESC LIMIT 50""")
+                rows = cur.fetchall()
+                cur.execute("""SELECT decision,COUNT(*) AS n
+                               FROM luxalgo_signal_confluence
+                               WHERE decided_at > NOW() - INTERVAL '7 days'
+                               GROUP BY decision""")
+                counts = {r['decision']: int(r['n']) for r in cur.fetchall()}
+        out = []
+        for r in rows:
+            out.append({
+                'event_id': r['event_id'],
+                'decided_at': r['decided_at'].isoformat() if r['decided_at'] else None,
+                'symbol': r['symbol'], 'side': r['side'],
+                'timeframe': r['timeframe'], 'decision': r['decision'],
+                'score': int(r['score']), 'min_score': int(r['min_score']),
+                'blockers': [b for b in (r['blockers'] or '').split(',') if b],
+                'components': r['components'], 'metrics': r['metrics'],
+            })
+        response = jsonify(status='READ_ONLY', scope=['XRPUSDT'],
+                           blocked_symbols=sorted(cfg.blocked),
+                           thresholds=cfg.as_dict(),
+                           last_7_days=counts, decisions=out,
+                           orders_placed=0)
+        response.headers['Cache-Control'] = 'private, no-store'
+        return response
+    except (psycopg.Error, RuntimeError, OSError, ValueError, TypeError):
+        return jsonify(error='Confluence audit unavailable'), 503
 
 
 @app.get('/terminal/incoming-signals')

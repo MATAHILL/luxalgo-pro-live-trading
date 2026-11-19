@@ -11,8 +11,15 @@ class ProductionCutoverTests(unittest.TestCase):
         self.assertIn('class="production-view"',p)
         self.assertIn('LUXALGO PRO · LIVE FUTURES TERMINAL',p)
         for part in ('id="incomingLuxPanel"','id="radarBody"','id="scannerBody"',
-                     'id="futuresEquity"','id="positionRefresh"'):
+                     'id="positionRefresh"'):
             self.assertIn(part,p,part)
+        # The Futures Liquidity Details section is removed from the page entirely.
+        for gone in ('id="futuresLiquidityDetails"','id="futuresEquity"',
+                     'id="futuresAvailable"','id="futuresBalance"',
+                     'id="liquidityRealizedPnl"','id="liquidityWinRate"',
+                     'id="liquidityUnrealizedPnl"','FUTURES LIQUIDITY DETAILS',
+                     'class="futures-liquidity"','class="liquidity-grid"'):
+            self.assertNotIn(gone,p,gone)
         for retired in ('id="v4Workspace"','id="testnetReadinessPanel"',
                         'id="gateTestnetPositionPanel"','id="testnetOrdersPanel"',
                         'id="botTurnOn"','id="botTurnOff"'):
