@@ -67,7 +67,7 @@ class LiveOrdersPanelCleanupTests(unittest.TestCase):
         self.assertNotIn("'/terminal/acceptance-test/status'",page)
         self.assertIn('id="openPositionPanel"',page)
         self.assertIn('id="productionBotOff"',page)
-        self.assertIn('INCOMING LUXALGO SIGNALS · NOT EXCHANGE ORDERS',page)
+        self.assertIn('INCOMING LUXALGO SIGNALS STATUS',page)
         self.assertNotIn('INCOMING LUXALGO ORDERS · WEBHOOK SIGNALS',page)
 
     def test_live_inventory_updates_empty_nonempty_and_unknown(self):
