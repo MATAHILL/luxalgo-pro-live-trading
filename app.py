@@ -426,6 +426,7 @@ def terminal_bot_control_post():
         return jsonify(error='Unable to save bot state; treat as OFF',orders_enabled=False),503
 
 SIGNAL_COUNT_RESET_ENV = 'LUXALGO_SIGNAL_COUNT_RESET_UTC'
+SIGNAL_COUNT_RESET_NOW = {'now','1','true','yes','on'}
 
 def _signal_count_baseline(cursor):
     """Resolve the durable watermark for the DATABASE SIGNALS tile.
@@ -449,6 +450,21 @@ def _signal_count_baseline(cursor):
     raw=os.getenv(SIGNAL_COUNT_RESET_ENV,'').strip()
     if not raw:
         return baseline
+    if raw.lower() in SIGNAL_COUNT_RESET_NOW:
+        # "now" rebases to the newest receipt exactly once. The stored baseline
+        # is authoritative afterwards, so later signals still count up from 0.
+        if row is not None:
+            return baseline
+        cursor.execute('SELECT COALESCE(MAX(id),0) AS watermark FROM luxalgo_signal_receipts')
+        seeded=int(cursor.fetchone()['watermark'])
+        if seeded <= 0:
+            return baseline
+        cursor.execute("""INSERT INTO luxalgo_signal_count_baseline(id,baseline_id,reset_at)
+            VALUES(1,%s,clock_timestamp()) ON CONFLICT(id) DO UPDATE
+            SET baseline_id=GREATEST(luxalgo_signal_count_baseline.baseline_id,EXCLUDED.baseline_id),
+                reset_at=GREATEST(luxalgo_signal_count_baseline.reset_at,EXCLUDED.reset_at)
+            RETURNING baseline_id""",(seeded,))
+        return int(cursor.fetchone()['baseline_id'])
     try:
         seeded_at=datetime.fromisoformat(raw.replace('Z','+00:00'))
         if seeded_at.tzinfo is None:
@@ -459,6 +475,12 @@ def _signal_count_baseline(cursor):
     # Baseline is the highest receipt id at or before the requested instant.
     cursor.execute('SELECT COALESCE(MAX(id),0) AS watermark FROM luxalgo_signal_receipts WHERE received_at <= %s',(seeded_at,))
     seeded=int(cursor.fetchone()['watermark'])
+    if seeded <= 0:
+        # A reset instant earlier than every stored receipt would otherwise be a
+        # silent no-op, leaving the tile on its old lifetime total. Resetting to
+        # a time before any signal can only mean "clear the whole count".
+        cursor.execute('SELECT COALESCE(MAX(id),0) AS watermark FROM luxalgo_signal_receipts')
+        seeded=int(cursor.fetchone()['watermark'])
     if seeded <= baseline:
         return baseline
     cursor.execute("""INSERT INTO luxalgo_signal_count_baseline(id,baseline_id,reset_at)
@@ -866,7 +888,7 @@ header.terminal-header{border-radius:17px!important}
 <div class="metric"><small>UNREALIZED P&amp;L (USDT)</small><strong id="unrealizedPositionPnl">—</strong><span>Read-only, refreshed every 30s</span></div>
 <div class="metric"><small>TOTAL REALIZED P&amp;L</small><strong id="metricRealizedPnl">—</strong><span id="metricRealizedPnlNote">Verified closed trades, net of fees</span></div>
 <div class="metric"><small>WIN RATE</small><strong id="metricWinRate">—</strong><span id="metricWinRateNote">Winning ÷ decided closed trades</span></div>
-<div class="metric"><small>DATABASE SIGNALS</small><strong>{{ count }}</strong><span>Webhook: {{ 'configured' if configured else 'not configured' }}</span></div>
+<div class="metric"><small>DATABASE SIGNALS</small><strong id="databaseSignalCount">{{ count }}</strong><span>Webhook: {{ 'configured' if configured else 'not configured' }}</span><button class="btn gloss-action" type="button" id="resetSignalCount" style="margin-top:8px;font-size:11px;padding:4px 10px">↺ RESET TO 0</button><span id="resetSignalCountStatus" role="status" aria-live="polite" style="display:block;margin-top:6px;font-size:11px;color:#9de7ff"></span></div>
 </div><section class="panel position-panel" id="openPositionPanel"><div class="panel-heading"><h2>Open Position <span class="gloss-cyan">– Gate.io Futures</span></h2><button class="btn gloss-action" id="positionRefresh" type="button">↻ Refresh Positions</button></div>
 <div id="gatePositionsBody" class="position-card-list" aria-live="polite"><p class="light">Checking read-only Gate.io open positions…</p></div><p id="gatePositionsUpdated" class="light">Read-only Gate.io account data. Each card refreshes itself from the exchange. SL/TP status is read from Gate.io's resting triggers.</p></section>
 <section class="panel" id="liveFuturesOrderTable" aria-label="Live futures order table">
@@ -1941,6 +1963,45 @@ loadRadar();loadScanner();setInterval(()=>{if(!document.hidden)loadRadar()},6000
  document.addEventListener('visibilitychange',()=>{if(!document.hidden)check();});
  check();
  setInterval(()=>{if(failures<3||!document.hidden)check();},4000);
+})();
+
+// DATABASE SIGNALS reset. Rebases the displayed count to zero; never deletes
+// a receipt, so the Incoming LuxAlgo Signals Status table and every verified
+// trade record stay exactly as they are.
+(function(){
+ 'use strict';
+ const btn=document.getElementById('resetSignalCount');
+ const out=document.getElementById('resetSignalCountStatus');
+ const tile=document.getElementById('databaseSignalCount');
+ if(!btn||!out)return;
+ btn.addEventListener('click',async()=>{
+  if(!window.confirm('Reset the DATABASE SIGNALS count to 0?\n\nStored signals and trade history are NOT deleted. Only the displayed count restarts at zero.'))return;
+  const csrf=document.querySelector('input[name="csrf_token"]')?.value;
+  if(!csrf){out.textContent='No valid session token. Refresh the page and sign in again.';return;}
+  btn.disabled=true;
+  out.textContent='Resetting count\u2026';
+  try{
+   const r=await fetch('/terminal/signals/reset-count',{
+    method:'POST',cache:'no-store',credentials:'same-origin',
+    headers:{'Content-Type':'application/json','X-Terminal-CSRF':csrf},
+    body:'{}'
+   });
+   const d=await r.json().catch(()=>({}));
+   if(!r.ok){
+    out.textContent='Reset FAILED \u00b7 '+String(d.error||d.detail||('HTTP '+r.status))
+      +(r.status===401?' \u00b7 sign in again':'')
+      +(r.status===403?' \u00b7 refresh the page and retry':'');
+    return;
+   }
+   if(tile)tile.textContent='0';
+   out.textContent='\u2713 Count reset to 0 \u00b7 baseline #'+d.baseline_id
+     +' \u00b7 stored signals preserved';
+   setTimeout(()=>{window.location.reload();},1200);
+  }catch(e){
+   out.textContent='Reset outcome UNKNOWN \u00b7 '+String(e.message).slice(0,80)
+     +' \u00b7 reload the page to see the current count.';
+  }finally{btn.disabled=false;}
+ });
 })();
 
 // Stage 16 V4 presentation. Reads existing paper table only; does not mutate trades.
