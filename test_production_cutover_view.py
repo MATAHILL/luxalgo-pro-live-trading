@@ -10,7 +10,7 @@ class ProductionCutoverTests(unittest.TestCase):
         p=production_monitor_page(PAGE)
         self.assertIn('class="production-view"',p)
         self.assertIn('LUXALGO PRO · LIVE FUTURES TERMINAL',p)
-        for part in ('id="incomingLuxPanel"','id="radarBody"','id="scannerBody"',
+        for part in ('id="signalStatusPanel"','id="radarBody"','id="scannerBody"',
                      'id="positionRefresh"'):
             self.assertIn(part,p,part)
         # The Futures Liquidity Details section is removed from the page entirely.
@@ -24,7 +24,11 @@ class ProductionCutoverTests(unittest.TestCase):
                         'id="gateTestnetPositionPanel"','id="testnetOrdersPanel"',
                         'id="botTurnOn"','id="botTurnOff"'):
             self.assertNotIn(retired,p,retired)
-        self.assertIn("fetch('/terminal/incoming-signals?production=1'",p)
+        # The signal table is replaced by the live+closed trade status table.
+        self.assertNotIn('id="incomingLuxPanel"',p)
+        self.assertNotIn('id="completedTradesBody"',p)
+        self.assertIn("getJson('/terminal/live-positions')",p)
+        self.assertIn("getJson('/api/completed-trades')",p)
         # The live BOT switch reports current state; never assert a retired static banner.
         # Keep explicit OFF, exchange-proof and read-only status UI verifiable.
         self.assertIn('id="productionBotIndicator"',p)

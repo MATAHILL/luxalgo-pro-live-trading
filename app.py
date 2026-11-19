@@ -779,7 +779,9 @@ header.terminal-header{border-radius:17px!important}
 .incoming-lux-scroll thead th{position:sticky;top:0;z-index:3;background:#12314d;box-shadow:0 1px 0 #53718a;padding:8px 7px}
 .incoming-lux-scroll tbody td{padding:7px 7px;vertical-align:middle}
 .incoming-lux-scroll tbody td .btn{padding:6px 9px;font-size:10px;line-height:1.2}
-#incomingLuxInfo{font-size:11px}
+#signalStatusInfo{font-size:11px}
+.status-live{color:#ffd28a;font-weight:800}
+.status-closed{color:#8ed7ff;font-weight:800}
 @media(max-width:700px){.incoming-lux-scroll{max-height:505px}}
 #v4PaperCards>.v4-trade{align-self:start}
 .v45-tools{display:flex;gap:7px;align-items:center;flex-wrap:wrap}
@@ -868,14 +870,12 @@ header.terminal-header{border-radius:17px!important}
 <summary style="cursor:pointer;font-size:16px;font-weight:850">OPEN ORDERS · GATE.IO FUTURES TESTNET — Click to expand / minimize</summary>
 <p class="light">Actual unfilled Testnet exchange orders only · No simulated signals</p>
 <div class="panel-heading"><span class="light" id="testnetOrdersStatus">Not checked</span><button class="btn gloss-action" id="testnetOrdersRefresh" type="button">↻ Refresh Testnet Orders</button></div>
-<div class="tablewrap"><table style="width:100%;min-width:600px"><thead><tr><th>CONTRACT</th><th>ORDER ID</th><th>SIZE</th><th>PRICE</th><th>REMAINING</th><th>TIME IN FORCE</th><th>STATUS</th></tr></thead><tbody id="testnetOrdersRows"><tr><td colspan="7">Expand to load</td></tr></tbody></table></div></details>
-<details id="incomingLuxPanel" class="panel" open style="width:100%;margin:14px 0;max-width:none">
-<summary style="cursor:pointer;font-size:16px;font-weight:850;padding:2px 0 12px">INCOMING LUXALGO ORDERS · WEBHOOK SIGNALS <span class="light" style="font-size:12px">— Click to minimize / maximize</span></summary>
-<p class="light">Fresh LuxAlgo signals only, after your saved dashboard reset. LIVE requires an open Gate.io Testnet position with reverified exchange-side TP/SL; CLOSED requires a verified closing journal. Unexecuted or uncertain calls are never labeled LIVE. Real-money trading OFF.</p>
-<div class="panel-heading"><span id="incomingLuxInfo" class="light" role="status">Loading fresh signals from zero…</span><div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn" id="incomingLuxClear" type="button" title="Clear displayed signals, not exchange orders or safety logs">Clear Visible History</button><button class="btn gloss-action" id="incomingLuxRefresh" type="button">↻ Refresh</button></div></div>
-<div class="market-tabs" id="incomingLuxFilters" aria-label="Filter incoming LuxAlgo signals by verified status"><button class="btn selected" type="button" data-lux-filter="ALL">ALL</button><button class="btn" type="button" data-lux-filter="LIVE">● LIVE</button><button class="btn" type="button" data-lux-filter="CLOSED">✓ CLOSED</button><button class="btn" type="button" data-lux-filter="WAITING FOR EXECUTION">◷ WAITING</button><button class="btn" type="button" data-lux-filter="NOT EXECUTED">NOT EXECUTED</button><button class="btn" type="button" data-lux-filter="UNSUPPORTED ON TESTNET">UNSUPPORTED MARKET</button><button class="btn" type="button" data-lux-filter="VERIFY EXCHANGE">VERIFY EXCHANGE</button></div>
-<div class="tablewrap incoming-lux-scroll" id="incomingLuxScroll" tabindex="0" role="region" aria-label="Incoming LuxAlgo signals, latest 25, scroll vertically after row 10"><table style="min-width:1000px;width:100%"><thead><tr><th>S/N</th><th>RECEIVED (IST)</th><th>COIN</th><th>SIGNAL</th><th>TF</th><th>ORDER TYPE</th><th>ENTRY</th><th>STOP LOSS</th><th>TAKE PROFIT</th><th>CURRENT STATUS · CLICK TO REFRESH</th><th>DETAIL</th></tr></thead><tbody id="incomingLuxRows"><tr><td colspan="11">Loading…</td></tr></tbody></table></div>
-</details><section class="panel advanced-panel" id="advancedScannerPanel"><div class="panel-heading"><h2>LUXALGO PRO · ADVANCED FUTURES OPPORTUNITY SCANNER <span class="gloss-cyan">● MARKET INTELLIGENCE</span></h2><button class="btn gloss-action" id="advancedRefresh" type="button">↻ Scan All Pairs</button></div>
+<div class="tablewrap"><table style="width:100%;min-width:600px"><thead><tr><th>CONTRACT</th><th>ORDER ID</th><th>SIZE</th><th>PRICE</th><th>REMAINING</th><th>TIME IN FORCE</th><th>STATUS</th></tr></thead><tbody id="testnetOrdersRows"><tr><td colspan="7">Expand to load</td></tr></tbody></table></div></details><section class="panel" id="signalStatusPanel" style="width:100%;margin:14px 0;max-width:none" aria-label="Incoming LuxAlgo signals status">
+<div class="panel-heading"><h2>INCOMING LUXALGO SIGNALS STATUS</h2><span class="label-muted" id="signalStatusInfo" role="status" aria-live="polite">LOADING…</span></div>
+<p class="light">Every bot trade in the execution ledger. <strong>Live</strong> rows are positions the exchange still holds; <strong>Closed</strong> rows are exchange-verified exits. Exit fill, quantity and net P&amp;L come from the exchange’s own closing fills with fees subtracted; partial closes are summed. A dash means the exchange has not returned that figure — never an estimate.</p>
+<div class="tablewrap incoming-lux-scroll" id="signalStatusScroll" tabindex="0" role="region" aria-label="Incoming LuxAlgo signals status, live and closed trades"><table style="min-width:1120px;width:100%"><thead><tr><th>S/N</th><th>TIME (IST)</th><th>PAIR</th><th>DIRECTION</th><th>ENTRY FILL</th><th>EXIT FILL</th><th>EXIT QTY</th><th>EXIT TIME (IST)</th><th>FEES</th><th>NET REALIZED P&amp;L</th><th>RESULT</th><th>STATUS</th></tr></thead><tbody id="signalStatusBody"><tr><td colspan="12" class="empty-state">Loading trades…</td></tr></tbody></table></div>
+</section>
+<section class="panel advanced-panel" id="advancedScannerPanel"><div class="panel-heading"><h2>LUXALGO PRO · ADVANCED FUTURES OPPORTUNITY SCANNER <span class="gloss-cyan">● MARKET INTELLIGENCE</span></h2><button class="btn gloss-action" id="advancedRefresh" type="button">↻ Scan All Pairs</button></div>
 <p class="light">Gate.io USDT perpetuals · 5m + 15m completed candles · volume / trend / structure screening · up to five watchlist candidates. ATR-based technical levels are estimates only; only genuine stored LuxAlgo alerts confirm SL1/TP1. NEVER PLACES ORDERS.</p>
 <div class="adv-controls"><strong id="advancedScanStatus" class="adv-summary">Ready to inspect markets…</strong><span id="advancedEquityInfo" class="light">Equity risk sizing: verifying read-only account</span></div>
 <div class="adv-table"><table><thead><tr><th>PAIR</th><th>DIRECTION</th><th>TIMEFRAME</th><th>LUXALGO</th><th>ENTRY REF.</th><th>SL1</th><th>TP1</th><th>R:R</th><th>0.5% RISK / SIZE</th><th>STATUS / REASON</th></tr></thead><tbody id="advancedScanBody"><tr><td colspan="10" class="light">Waiting for scan results.</td></tr></tbody></table></div>
@@ -897,7 +897,7 @@ header.terminal-header{border-radius:17px!important}
 <div class="tablewrap market-scroll"><table><thead><tr><th>PAIR · CHART ↗</th><th>BIAS</th><th>SCORE</th><th>RSI</th><th>VOL RATIO</th></tr></thead><tbody id="scannerBody"><tr><td colspan="5">Scanning…</td></tr></tbody></table></div>
 <p class="light">Technical labels reflect EMA trend, RSI, recent price-range break and candle volume. They are not LuxAlgo orders.</p>
 </section></div>
-<div class="bottom-grid"><section class="panel performance-panel"><div class="panel-heading"><h2>PERFORMANCE ANALYTICS</h2><span class="label-muted" id="perfStatus">VERIFIED FILLS ONLY</span></div><div class="perf-grid"><div><span>Total Closed Trades</span><strong id="perfClosed">—</strong></div><div><span>Winning Trades</span><strong id="perfWins">—</strong></div><div><span>Losing Trades</span><strong id="perfLosses">—</strong></div><div><span>Win Rate</span><strong id="perfWinRate">—</strong></div><div><span>Losing Rate</span><strong id="perfLosingRate">—</strong></div><div><span>Total Close Rate</span><strong id="perfCloseRate">—</strong></div><div><span>Total Realized P&amp;L (USDT)</span><strong id="perfRealized">—</strong></div><div><span>Unrealized P&amp;L (USDT)</span><strong id="perfUnrealized">—</strong></div></div><p class="light" id="perfNote">Waiting for authenticated position and fill synchronization. No synthetic P&amp;L or win statistics.</p></section></div><section class="panel"><div class="panel-heading"><h2>COMPLETED TRADES · EXIT RECORD</h2><span class="label-muted" id="completedTradesStatus">LOADING…</span></div><div class="tablewrap"><table><thead><tr><th>TIME (IST)</th><th>PAIR</th><th>DIRECTION</th><th>ENTRY FILL</th><th>EXIT FILL</th><th>EXIT QTY</th><th>EXIT TIME (IST)</th><th>FEES</th><th>NET REALIZED P&amp;L</th><th>RESULT</th></tr></thead><tbody id="completedTradesBody"><tr><td colspan="10" class="empty-state">Loading closed bot trades…</td></tr></tbody></table></div><p class="light">Closed bot trades only. A row appears here once the exchange reports the position, its open orders and its resting SL/TP triggers all gone. Exit fill, quantity and net P&amp;L come from Gate.io's own closing fills, with fees subtracted; partial closes are summed. A dash means the exchange has not returned that figure — never an estimate.</p></section><section class="panel legacy-paper-panel"><div class="panel-heading"><h2>PAPER TRADE MONITOR <span class="tag">SIMULATION ONLY</span></h2><button class="btn gloss-action" id="paperRefresh" type="button">↻ Check Paper Trades</button></div><p class="light" id="paperStatus" role="status" aria-live="polite">Checks queued simulated orders when the dashboard is open; historical outcomes remain estimates, not fills.</p><div class="tablewrap"><table><thead><tr><th>CREATED (IST)</th><th>PAIR</th><th>SIDE</th><th>SIM ENTRY</th><th>SIM SL</th><th>SIM TP</th><th>STATE</th><th>LAST PRICE</th><th>UNREALIZED P&amp;L</th><th>EST. CLOSED P&amp;L</th></tr></thead><tbody id="paperBody"><tr><td colspan="10">No simulated positions loaded.</td></tr></tbody></table></div><p id="paperOpenPnlTotal" class="light" role="status" aria-live="polite">Open paper unrealized P&amp;L: not yet available.</p><p class="light">Simulation outcomes assume the reference entry was achievable and exclude fees, slippage and funding. If both SL and TP are touched in one candle, SL is assumed first. Historical-data gaps are not guessed. Simulated P&amp;L is never included in verified real-trade analytics.</p></section><div class="foot">LUXALGO PRO · Private terminal · Market data is public Gate.io data. Scanners are technical watchlists, not LuxAlgo entry signals. No account positions, fills, profit or loss are available until authenticated exchange sync is implemented. Live order placement is controlled by the PRODUCTION BOT switch above: when it reads BOT ON, enabled signals are sent to Gate.io and the panels above show the real result; when it reads BOT OFF or a gate is listed, no orders are placed.</div></div><script>
+<div class="bottom-grid"><section class="panel performance-panel"><div class="panel-heading"><h2>PERFORMANCE ANALYTICS</h2><span class="label-muted" id="perfStatus">VERIFIED FILLS ONLY</span></div><div class="perf-grid"><div><span>Total Closed Trades</span><strong id="perfClosed">—</strong></div><div><span>Winning Trades</span><strong id="perfWins">—</strong></div><div><span>Losing Trades</span><strong id="perfLosses">—</strong></div><div><span>Win Rate</span><strong id="perfWinRate">—</strong></div><div><span>Losing Rate</span><strong id="perfLosingRate">—</strong></div><div><span>Total Close Rate</span><strong id="perfCloseRate">—</strong></div><div><span>Total Realized P&amp;L (USDT)</span><strong id="perfRealized">—</strong></div><div><span>Unrealized P&amp;L (USDT)</span><strong id="perfUnrealized">—</strong></div></div><p class="light" id="perfNote">Waiting for authenticated position and fill synchronization. No synthetic P&amp;L or win statistics.</p></section></div><section class="panel legacy-paper-panel"><div class="panel-heading"><h2>PAPER TRADE MONITOR <span class="tag">SIMULATION ONLY</span></h2><button class="btn gloss-action" id="paperRefresh" type="button">↻ Check Paper Trades</button></div><p class="light" id="paperStatus" role="status" aria-live="polite">Checks queued simulated orders when the dashboard is open; historical outcomes remain estimates, not fills.</p><div class="tablewrap"><table><thead><tr><th>CREATED (IST)</th><th>PAIR</th><th>SIDE</th><th>SIM ENTRY</th><th>SIM SL</th><th>SIM TP</th><th>STATE</th><th>LAST PRICE</th><th>UNREALIZED P&amp;L</th><th>EST. CLOSED P&amp;L</th></tr></thead><tbody id="paperBody"><tr><td colspan="10">No simulated positions loaded.</td></tr></tbody></table></div><p id="paperOpenPnlTotal" class="light" role="status" aria-live="polite">Open paper unrealized P&amp;L: not yet available.</p><p class="light">Simulation outcomes assume the reference entry was achievable and exclude fees, slippage and funding. If both SL and TP are touched in one candle, SL is assumed first. Historical-data gaps are not guessed. Simulated P&amp;L is never included in verified real-trade analytics.</p></section><div class="foot">LUXALGO PRO · Private terminal · Market data is public Gate.io data. Scanners are technical watchlists, not LuxAlgo entry signals. No account positions, fills, profit or loss are available until authenticated exchange sync is implemented. Live order placement is controlled by the PRODUCTION BOT switch above: when it reads BOT ON, enabled signals are sent to Gate.io and the panels above show the real result; when it reads BOT OFF or a gate is listed, no orders are placed.</div></div><script>
 
 // Read-only advanced watchlist: uses completed 5m/15m public candles and validated LuxAlgo receipt records.
 (function(){
@@ -2186,61 +2186,101 @@ document.addEventListener('visibilitychange',()=>{if(!document.hidden)load();});
 })();
 </script>
 <script>
-/* COMPLETED TRADES v1 — read-only closed bot trades from the execution ledger. */
+/* SIGNAL STATUS v1 - live and closed bot trades from the execution ledger. */
 (function(){
 'use strict';
-const body=document.getElementById('completedTradesBody');
-const status=document.getElementById('completedTradesStatus');
+const body=document.getElementById('signalStatusBody');
+const status=document.getElementById('signalStatusInfo');
 if(!body)return;
-const esc=v=>String(v??'\u2014').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const num=v=>{if(v===null||v===undefined||v==='')return '\u2014';const n=Number(v);return Number.isFinite(n)?n.toLocaleString(undefined,{maximumFractionDigits:6}):'\u2014';};
 const ist=iso=>{if(!iso)return '\u2014';const d=new Date(iso);return Number.isNaN(d.getTime())?'\u2014':d.toLocaleString('en-IN',{timeZone:'Asia/Kolkata',hour12:true});};
+const pair=c=>String(c||'').replace('_','/');
 let busy=false;
+async function getJson(url){
+ const r=await fetch(url,{cache:'no-store',credentials:'same-origin'});
+ let d={};try{d=await r.json();}catch(e){d={};}
+ if(!r.ok)throw Error(d.error||('HTTP '+r.status));
+ return d;
+}
+function addRow(cells,classes){
+ const tr=body.insertRow();
+ cells.forEach((v,i)=>{
+  const td=tr.insertCell();
+  td.textContent=v;
+  if(classes&&classes[i])td.className=classes[i];
+ });
+}
 async function load(){
  if(busy||document.hidden)return;busy=true;
  try{
-  const r=await fetch('/api/completed-trades',{cache:'no-store',credentials:'same-origin'});
-  const d=await r.json();
-  if(!r.ok)throw Error(d.error||('HTTP '+r.status));
-  const rows=Array.isArray(d.trades)?d.trades:[];
+  const results=await Promise.allSettled([
+   getJson('/terminal/live-positions'),
+   getJson('/api/completed-trades')
+  ]);
+  const liveRes=results[0],closedRes=results[1];
+  const live=(liveRes.status==='fulfilled'&&Array.isArray(liveRes.value.positions))?liveRes.value.positions:[];
+  const closed=(closedRes.status==='fulfilled'&&Array.isArray(closedRes.value.trades))?closedRes.value.trades:[];
+  const errors=[];
+  if(liveRes.status==='rejected')errors.push('live: '+String(liveRes.reason&&liveRes.reason.message||liveRes.reason).slice(0,70));
+  if(closedRes.status==='rejected')errors.push('closed: '+String(closedRes.reason&&closedRes.reason.message||closedRes.reason).slice(0,70));
   body.replaceChildren();
-  if(!rows.length){
-   const tr=body.insertRow(),td=tr.insertCell();
-   td.colSpan=10;td.className='empty-state';
-   td.textContent='No closed bot trades yet. A trade appears here after the exchange reports the position fully closed.';
-  }else{
-   for(const t of rows){
-    const tr=body.insertRow();
-    const pnl=Number(t.net_realized_pnl_usdt!==null&&t.net_realized_pnl_usdt!==undefined
-                      ?t.net_realized_pnl_usdt:t.realized_pnl_usdt);
-    const hasPnl=((t.net_realized_pnl_usdt!==null&&t.net_realized_pnl_usdt!==undefined)
-                  ||(t.realized_pnl_usdt!==null&&t.realized_pnl_usdt!==undefined))
-                 &&Number.isFinite(pnl);
-    const fees=Number(t.fees_usdt);
-    const hasFees=t.fees_usdt!==null&&t.fees_usdt!==undefined&&Number.isFinite(fees);
-    const cells=[
-     ist(t.closed_at),
-     String(t.symbol||'').replace('USDT','/USDT'),
-     t.side||'\u2014',
-     num(t.entry_price),
-     t.exit_price===null||t.exit_price===undefined?'\u2014':num(t.exit_price),
-     t.exit_quantity===null||t.exit_quantity===undefined?'\u2014':num(t.exit_quantity),
-     t.exit_timestamp?ist(t.exit_timestamp):'\u2014',
-     hasFees?((fees>0?'+':'')+num(fees)):'\u2014',
-     hasPnl?((pnl>0?'+':'')+num(pnl)):'\u2014',
-     hasPnl?(pnl>0?'WIN':pnl<0?'LOSS':'FLAT'):'CLOSED'
-    ];
-    cells.forEach((v,i)=>{
-     const td=tr.insertCell();td.textContent=v;
-     if(i===7&&hasFees)td.className=fees>0?'positive':'negative';
-     if(i===8&&hasPnl)td.className=pnl>0?'gloss-pnl-profit':pnl<0?'gloss-pnl-loss':'gloss-pnl-neutral';
-     if(i===9&&hasPnl)td.className=pnl>0?'positive':pnl<0?'negative':'';
-    });
-   }
+  let n=0;
+  for(const p of live){
+   n+=1;
+   addRow([
+    n,
+    ist(p.created_at),
+    pair(p.contract),
+    p.side||'\u2014',
+    num(p.entry_price),
+    '\u2014',
+    '\u2014',
+    '\u2014',
+    '\u2014',
+    '\u2014',
+    p.state||'OPEN',
+    'Live'
+   ],{10:'positive',11:'status-live'});
   }
-  status.textContent=rows.length+' closed bot trade'+(rows.length===1?'':'s')+' \u00b7 exchange-verified \u00b7 updated '+new Date().toLocaleTimeString('en-IN',{timeZone:'Asia/Kolkata',hour12:true})+' IST';
+  for(const t of closed){
+   n+=1;
+   const pnl=Number(t.net_realized_pnl_usdt!==null&&t.net_realized_pnl_usdt!==undefined
+                     ?t.net_realized_pnl_usdt:t.realized_pnl_usdt);
+   const hasPnl=((t.net_realized_pnl_usdt!==null&&t.net_realized_pnl_usdt!==undefined)
+                 ||(t.realized_pnl_usdt!==null&&t.realized_pnl_usdt!==undefined))
+                &&Number.isFinite(pnl);
+   const fees=Number(t.fees_usdt);
+   const hasFees=t.fees_usdt!==null&&t.fees_usdt!==undefined&&Number.isFinite(fees);
+   addRow([
+    n,
+    ist(t.closed_at),
+    String(t.symbol||'').replace('USDT','/USDT'),
+    t.side||'\u2014',
+    num(t.entry_price),
+    t.exit_price===null||t.exit_price===undefined?'\u2014':num(t.exit_price),
+    t.exit_quantity===null||t.exit_quantity===undefined?'\u2014':num(t.exit_quantity),
+    t.exit_timestamp?ist(t.exit_timestamp):'\u2014',
+    hasFees?((fees>0?'+':'')+num(fees)):'\u2014',
+    hasPnl?((pnl>0?'+':'')+num(pnl)):'\u2014',
+    hasPnl?(pnl>0?'WIN':pnl<0?'LOSS':'FLAT'):'CLOSED',
+    'Closed'
+   ],{
+    8:hasFees?(fees>0?'positive':'negative'):'',
+    9:hasPnl?(pnl>0?'gloss-pnl-profit':pnl<0?'gloss-pnl-loss':'gloss-pnl-neutral'):'',
+    10:hasPnl?(pnl>0?'positive':pnl<0?'negative':''):'',
+    11:'status-closed'
+   });
+  }
+  if(!n){
+   const tr=body.insertRow(),td=tr.insertCell();
+   td.colSpan=12;td.className='empty-state';
+   td.textContent='No bot trades yet. A live row appears when the bot opens a position; a closed row appears once the exchange reports it fully closed.';
+  }
+  const stamp=new Date().toLocaleTimeString('en-IN',{timeZone:'Asia/Kolkata',hour12:true});
+  status.textContent=live.length+' live \u00b7 '+closed.length+' closed \u00b7 updated '+stamp+' IST'
+   +(errors.length?' \u00b7 '+errors.join(' \u00b7 '):'');
  }catch(e){
-  status.textContent='Completed trades unavailable: '+String(e.message).slice(0,90);
+  status.textContent='Trade status unavailable: '+String(e.message).slice(0,90);
  }finally{busy=false;}
 }
 load();
@@ -2293,99 +2333,6 @@ document.addEventListener('visibilitychange',()=>{if(!document.hidden)load();});
  }
  refresh();setInterval(refresh,60000);
  document.addEventListener('visibilitychange',()=>{if(!document.hidden)refresh()});
-})();
-</script>
-<script>
-(function(){'use strict';
- const panel=document.getElementById('incomingLuxPanel');
- const tbody=document.getElementById('incomingLuxRows');
- const info=document.getElementById('incomingLuxInfo');
- const refreshButton=document.getElementById('incomingLuxRefresh');
- const clearButton=document.getElementById('incomingLuxClear');
- const filters=document.getElementById('incomingLuxFilters');
- const scrollArea=document.getElementById('incomingLuxScroll');
- if(!panel||!tbody||!info||!refreshButton||!clearButton||!filters||!scrollArea)return;
- let allSignals=[],chosen='ALL',pending=false;
- const addCell=(tr,value)=>{
-   const td=document.createElement('td');
-   td.textContent=value===null||value===undefined||value===''?'—':String(value);
-   tr.appendChild(td);return td;
- };
- function draw(){
-   tbody.replaceChildren();
-   const matches=chosen==='ALL'?allSignals:allSignals.filter(x=>x.status_label===chosen);
-   for(const [index,s] of matches.entries()){
-     const row=document.createElement('tr');
-     let time='—';try{time=new Date(s.time).toLocaleString('en-IN',{timeZone:'Asia/Kolkata',hour12:true})+' IST'}catch(e){}
-     for(const value of [index+1,time,s.symbol,s.side,s.timeframe,s.order_type,
-       s.entry,s.stop_loss,s.take_profit])addCell(row,value);
-     const slot=addCell(row,'');
-     const statusButton=document.createElement('button');
-     statusButton.type='button';statusButton.className='btn';
-     statusButton.textContent=s.status_label||'PENDING';
-     statusButton.title='Click to refresh the latest exchange-backed status';
-     statusButton.style.fontWeight='800';
-     statusButton.style.color=s.status_label==='EXECUTED'?'#6cf3ba':
-       s.status_label==='CLOSED'?'#8ed7ff':
-       s.status_label==='PENDING'?'#ffd28a':
-       s.status_label==='PARTIALLY_FILLED'||s.status_label==='PROTECTION PENDING'?'#ffd28a':
-       s.status_label==='REJECTED'||s.status_label==='FAILED'||s.status_label==='HALTED'?'#ffadad':'#ffadad';
-     statusButton.addEventListener('click',()=>refresh());
-     slot.appendChild(statusButton);
-     addCell(row,(s.exchange_order_id?'Order '+s.exchange_order_id+' · ':'')+(s.reason||''));tbody.appendChild(row);
-   }
-   if(!matches.length){
-     const tr=document.createElement('tr'),td=document.createElement('td');
-     td.colSpan=11;td.textContent=allSignals.length?
-       'No '+chosen+' signals after reset.':'0 incoming signals since reset · waiting for a fresh LuxAlgo alert';
-     tr.appendChild(td);tbody.appendChild(tr);
-   }
-   info.textContent='Latest '+allSignals.length+'/25 visible signals · '+matches.length+
-       ' in '+chosen+' view · first 10 rows; scroll down for the rest · safety audit retained';
- }
- async function refresh(){
-   if(pending)return;
-   pending=true;refreshButton.disabled=true;
-   try{
-     const response=await fetch('/terminal/incoming-signals',{cache:'no-store'});
-     const data=await response.json();
-     if(!response.ok||!Array.isArray(data.signals))throw Error(data.error||'Status monitor unavailable');
-     allSignals=data.signals;draw();
-   }catch(e){info.textContent='Live signal status unavailable: '+e.message+' · previous statuses not refreshed';}
-   finally{pending=false;refreshButton.disabled=false;}
- }
- filters.addEventListener('click',e=>{
-   const button=e.target.closest('[data-lux-filter]');
-   if(!button)return;
-   chosen=button.dataset.luxFilter;
-   scrollArea.scrollTop=0;
-   for(const b of filters.querySelectorAll('[data-lux-filter]')){
-      b.classList.toggle('selected',b.dataset.luxFilter===chosen);
-   }
-   draw();
- });
- clearButton.addEventListener('click',async()=>{
-   if(pending||clearButton.disabled)return;
-   if(!window.confirm('Reset incoming LuxAlgo signals to 0 on this dashboard? Past exchange orders, audit logs and duplicate protection will NOT be deleted.'))return;
-   clearButton.disabled=true;info.textContent='Saving visible-history reset…';
-   try{
-     const response=await fetch('/terminal/incoming-signals/reset',{
-       method:'POST',cache:'no-store',
-       headers:{'Content-Type':'application/json','X-Terminal-CSRF':{{ csrf_token|tojson }}},
-       body:'{}'});
-     const result=await response.json();
-     if(!response.ok||result.status!=='CLEARED')throw Error(result.error||'Reset not confirmed');
-     allSignals=[];chosen='ALL';
-     for(const b of filters.querySelectorAll('[data-lux-filter]')){
-       b.classList.toggle('selected',b.dataset.luxFilter==='ALL');
-     }
-     draw();await refresh();
-   }catch(e){info.textContent='Visible-history reset failed: '+e.message;}
-   finally{clearButton.disabled=false;}
- });
- refreshButton.addEventListener('click',refresh);
- panel.addEventListener('toggle',()=>{if(panel.open)refresh()});
- refresh();setInterval(()=>{if(panel.open&&!document.hidden)refresh()},30000);
 })();
 </script>
 <script>
