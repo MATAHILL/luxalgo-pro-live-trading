@@ -425,11 +425,55 @@ def terminal_bot_control_post():
     except (psycopg.Error,RuntimeError,OSError):
         return jsonify(error='Unable to save bot state; treat as OFF',orders_enabled=False),503
 
+SIGNAL_COUNT_RESET_ENV = 'LUXALGO_SIGNAL_COUNT_RESET_UTC'
+
+def _signal_count_baseline(cursor):
+    """Resolve the durable watermark for the DATABASE SIGNALS tile.
+
+    The tile counts only receipts that arrived after the last reset. Receipt
+    rows are never deleted: the Incoming LuxAlgo Signals Status table, the
+    execution journal and every audit trail depend on them. Deletion would
+    also silently drop verified trade history, which must not happen.
+
+    The Render environment value seeds the same watermark so a reset survives
+    redeploys without any shell access to the database.
+    """
+    cursor.execute("""CREATE TABLE IF NOT EXISTS luxalgo_signal_count_baseline (
+       id SMALLINT PRIMARY KEY CHECK(id=1),
+       baseline_id BIGINT NOT NULL,
+       reset_at TIMESTAMPTZ NOT NULL
+    )""")
+    cursor.execute('SELECT baseline_id FROM luxalgo_signal_count_baseline WHERE id=1')
+    row=cursor.fetchone()
+    baseline=int(row['baseline_id']) if row else 0
+    raw=os.getenv(SIGNAL_COUNT_RESET_ENV,'').strip()
+    if not raw:
+        return baseline
+    try:
+        seeded_at=datetime.fromisoformat(raw.replace('Z','+00:00'))
+        if seeded_at.tzinfo is None:
+            raise ValueError('Reset time requires a timezone')
+        seeded_at=seeded_at.astimezone(timezone.utc)
+    except (ValueError,TypeError,AttributeError):
+        raise ValueError('Invalid '+SIGNAL_COUNT_RESET_ENV+' value') from None
+    # Baseline is the highest receipt id at or before the requested instant.
+    cursor.execute('SELECT COALESCE(MAX(id),0) AS watermark FROM luxalgo_signal_receipts WHERE received_at <= %s',(seeded_at,))
+    seeded=int(cursor.fetchone()['watermark'])
+    if seeded <= baseline:
+        return baseline
+    cursor.execute("""INSERT INTO luxalgo_signal_count_baseline(id,baseline_id,reset_at)
+        VALUES(1,%s,clock_timestamp()) ON CONFLICT(id) DO UPDATE
+        SET baseline_id=GREATEST(luxalgo_signal_count_baseline.baseline_id,EXCLUDED.baseline_id),
+            reset_at=GREATEST(luxalgo_signal_count_baseline.reset_at,EXCLUDED.reset_at)
+        RETURNING baseline_id""",(seeded,))
+    return int(cursor.fetchone()['baseline_id'])
+
 def _db_recent():
     with _db_connect() as con:
         _ensure_schema(con)
         with con.cursor() as cur:
-            cur.execute('SELECT COUNT(*) AS total FROM luxalgo_signal_receipts')
+            baseline=_signal_count_baseline(cur)
+            cur.execute('SELECT COUNT(*) AS total FROM luxalgo_signal_receipts WHERE id > %s',(baseline,))
             count = cur.fetchone()['total']
             cur.execute('''SELECT received_at, event_id, symbol, side, timeframe FROM luxalgo_signal_receipts r
                            WHERE NOT EXISTS (SELECT 1 FROM luxalgo_hidden_signal_rows h WHERE h.event_id=r.event_id)
@@ -442,7 +486,8 @@ def _db_status():
     with _db_connect() as con:
         _ensure_schema(con)
         with con.cursor() as cur:
-            cur.execute('SELECT COUNT(*) AS total FROM luxalgo_signal_receipts')
+            baseline=_signal_count_baseline(cur)
+            cur.execute('SELECT COUNT(*) AS total FROM luxalgo_signal_receipts WHERE id > %s',(baseline,))
             count = cur.fetchone()['total']
             cur.execute('''SELECT event_id, received_at, symbol, side, timeframe, status
                            FROM luxalgo_dry_run_intents ORDER BY received_at DESC LIMIT 15''')
@@ -2769,7 +2814,7 @@ def _render_legacy_home(*,production_view=False):
             with con.cursor() as cur:
                 cur.execute('SELECT COALESCE(MAX(id), 0) AS latest_id FROM luxalgo_signal_receipts')
                 latest_receipt_id = int(cur.fetchone()['latest_id'])
-    except (psycopg.Error, RuntimeError, OSError):
+    except (psycopg.Error, RuntimeError, OSError, ValueError):
         app.logger.exception('Persistent signal storage unavailable')
         return Response('Persistent signal database temporarily unavailable. No trading is active.', status=503)
     page=PAGE
@@ -4062,7 +4107,7 @@ def bot_status():
         return jsonify(error='Unauthorized'), 401
     try:
         signal_count, recent = _db_status()
-    except (psycopg.Error, RuntimeError, OSError):
+    except (psycopg.Error, RuntimeError, OSError, ValueError):
         app.logger.exception('Persistent signal database unavailable')
         return jsonify(error='Persistent signal database unavailable', orders_enabled=False),503
     return jsonify(mode='DRY_RUN_ONLY', live_trading=False,
@@ -6909,6 +6954,42 @@ def _incoming_visible_since(cursor):
             RETURNING cleared_at""",(seeded,))
         boundary=cursor.fetchone()['cleared_at']
     return boundary
+
+@app.post('/terminal/signals/reset-count')
+def terminal_reset_signal_count():
+    """Rebase the DATABASE SIGNALS tile to zero without deleting a receipt.
+
+    Only the displayed count is rebased. The Incoming LuxAlgo Signals Status
+    table, completed-trade records and every execution journal row are left
+    untouched, so no verified trade disappearing is possible.
+    """
+    if not _terminal_permitted(): return _terminal_guard()
+    if not _csrf_valid(): return jsonify(error='Invalid session verification'),403
+    try:
+        with _db_connect() as con:
+            _ensure_schema(con)
+            with con.cursor() as cur:
+                cur.execute('SELECT COALESCE(MAX(id),0) AS watermark FROM luxalgo_signal_receipts')
+                watermark=int(cur.fetchone()['watermark'])
+                cur.execute("""CREATE TABLE IF NOT EXISTS luxalgo_signal_count_baseline (
+                   id SMALLINT PRIMARY KEY CHECK(id=1),
+                   baseline_id BIGINT NOT NULL,
+                   reset_at TIMESTAMPTZ NOT NULL
+                )""")
+                cur.execute("""INSERT INTO luxalgo_signal_count_baseline(id,baseline_id,reset_at)
+                    VALUES(1,%s,clock_timestamp()) ON CONFLICT(id) DO UPDATE
+                    SET baseline_id=GREATEST(luxalgo_signal_count_baseline.baseline_id,EXCLUDED.baseline_id),
+                        reset_at=GREATEST(luxalgo_signal_count_baseline.reset_at,EXCLUDED.reset_at)
+                    RETURNING baseline_id,reset_at""",(watermark,))
+                saved=cur.fetchone()
+        response=jsonify(status='COUNT_RESET',signal_count=0,
+                         baseline_id=int(saved['baseline_id']),
+                         reset_at=saved['reset_at'].isoformat(),
+                         receipts_preserved=True,orders_placed=0)
+        response.headers['Cache-Control']='private, no-store'
+        return response
+    except (psycopg.Error,RuntimeError,OSError,ValueError,TypeError):
+        return jsonify(error='Signal count reset could not be saved'),503
 
 
 @app.post('/terminal/incoming-signals/reset')
