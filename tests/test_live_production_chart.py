@@ -45,7 +45,10 @@ class PerCardIndicatorTests(unittest.TestCase):
     def test_each_card_owns_its_own_indicator_panel(self):
         # The panel is created inside the per-position loop, so it is per-card.
         self.assertIn("const ind=element('div','position-indicators')", PAGE)
-        self.assertIn("ind.dataset.indOpen='false'", PAGE)
+        # Every rendered card is an ACTIVE trade, so the panel starts OPEN and
+        # its indicators load immediately. The token still collapses it.
+        self.assertIn("ind.dataset.indOpen='true'", PAGE)
+        self.assertIn("loadIndicators();", PAGE)
 
     def test_second_click_collapses_only_that_card(self):
         self.assertIn("const opening=ind.dataset.indOpen!=='true'", PAGE)
