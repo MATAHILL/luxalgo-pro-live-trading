@@ -16,6 +16,107 @@ from live_futures_engine import (
     verify_execution_preflight, account_position_mode)
 from live_execution_coordinator import install,control,halt,read_rows,risk_reserve
 
+# ---------------------------------------------------------------------------
+# Confluence re-check - second enforcement layer.
+#
+# app.py decides confluence at webhook time and stores the verdict in
+# luxalgo_signal_confluence. That verdict is re-read here, immediately before
+# any exchange write, so a missing, stale, edited or never-written row cannot
+# reach the order path. This layer never creates a decision and never upgrades
+# one: it can only refuse.
+# ---------------------------------------------------------------------------
+
+CONFLUENCE_GATE_NOT_PASSED = "CONFLUENCE_GATE_NOT_PASSED"
+
+
+class ConfluenceGateNotPassed(LiveSafetyError):
+    """Stored confluence verdict does not permit an order. Always fail closed."""
+
+    def __init__(self, reason, detail=None):
+        super().__init__(CONFLUENCE_GATE_NOT_PASSED + ": " + str(reason))
+        self.code = CONFLUENCE_GATE_NOT_PASSED
+        self.reason = str(reason)
+        self.detail = dict(detail or {})
+
+
+def _norm_symbol(value):
+    """XRP_USDT / GATEIO:XRPUSDT.P / xrpusdt -> XRPUSDT."""
+    raw = str(value or "").strip().upper()
+    if ":" in raw:
+        raw = raw.split(":", 1)[1]
+    if raw.endswith(".P"):
+        raw = raw[:-2]
+    if raw.endswith("_USDT"):
+        raw = raw[:-5] + "USDT"
+    return raw
+
+
+def _configured_min_score():
+    """Minimum from the same env the webhook gate uses; None if unreadable."""
+    try:
+        import signal_confluence as _sc
+        return int(_sc.ConfluenceConfig.from_env().min_score)
+    except Exception:
+        return None
+
+
+def require_confluence_pass(con, event_id, *, symbol=None, side=None,
+                            timeframe=None):
+    """Re-read the stored confluence row; raise unless it is a clean PASS.
+
+    Fails closed on every path: missing event id, unreadable table, absent
+    row, non-PASS decision, score below the configured minimum, or a row that
+    belongs to a different symbol/side/timeframe. Returns the row on success.
+    """
+    if not event_id:
+        raise ConfluenceGateNotPassed("MISSING_EVENT_ID")
+    try:
+        with con.cursor() as cur:
+            cur.execute("""SELECT event_id,symbol,side,timeframe,decision,
+                                  score,min_score,blockers
+                           FROM luxalgo_signal_confluence
+                           WHERE event_id=%s LIMIT 1""", (event_id,))
+            row = cur.fetchone()
+    except Exception as exc:
+        raise ConfluenceGateNotPassed(
+            "CONFLUENCE_READ_FAILED", {"error": type(exc).__name__}) from exc
+    if not row:
+        raise ConfluenceGateNotPassed("CONFLUENCE_ROW_MISSING")
+    if not hasattr(row, "get"):
+        raise ConfluenceGateNotPassed("CONFLUENCE_ROW_UNREADABLE")
+    decision = str(row.get("decision") or "").upper()
+    if decision != "PASS":
+        raise ConfluenceGateNotPassed(
+            "CONFLUENCE_DECISION_NOT_PASS",
+            {"decision": decision or "MISSING",
+             "blockers": str(row.get("blockers") or "")})
+    try:
+        score = int(row.get("score"))
+        stored_min = int(row.get("min_score"))
+    except (TypeError, ValueError):
+        raise ConfluenceGateNotPassed("CONFLUENCE_SCORE_UNREADABLE") from None
+    configured = _configured_min_score()
+    # The stricter of the stored and currently configured minimum applies, so
+    # raising the threshold in the environment also tightens older rows.
+    minimum = stored_min if configured is None else max(stored_min, configured)
+    if score < minimum:
+        raise ConfluenceGateNotPassed(
+            "CONFLUENCE_SCORE_BELOW_MINIMUM",
+            {"score": score, "min_score": minimum})
+    if symbol is not None and _norm_symbol(row.get("symbol")) != _norm_symbol(symbol):
+        raise ConfluenceGateNotPassed(
+            "CONFLUENCE_SYMBOL_MISMATCH",
+            {"row": _norm_symbol(row.get("symbol")), "plan": _norm_symbol(symbol)})
+    if side is not None and str(row.get("side") or "").upper() != str(side).upper():
+        raise ConfluenceGateNotPassed(
+            "CONFLUENCE_SIDE_MISMATCH",
+            {"row": row.get("side"), "plan": side})
+    if timeframe is not None and str(row.get("timeframe") or "") != str(timeframe):
+        raise ConfluenceGateNotPassed(
+            "CONFLUENCE_TIMEFRAME_MISMATCH",
+            {"row": row.get("timeframe"), "plan": timeframe})
+    return row
+
 def persist_state(open_connection, event_id, state, *, entry_order_id=None,
                   stop_order_id=None, take_order_id=None, detail=None):
     """Compare-and-set milestones; late workers cannot overwrite HALT/closure.
@@ -365,6 +466,13 @@ def execute_confirmed_signal(open_connection,plan,client=None):
         verify_execution_preflight(plan,metadata,snap)
         existing=read_rows(con)
         assert_existing_protected_exposure(existing,snap)
+        # Second enforcement layer: the stored verdict must still permit this
+        # exact signal. Deliberately BEFORE risk_reserve so a refusal leaves no
+        # RESERVED ledger row behind, and before any exchange write.
+        require_confluence_pass(con,plan["event_id"],
+                                symbol=plan.get("contract"),
+                                side=plan.get("side"),
+                                timeframe=plan.get("timeframe"))
         verified_equity,_=verified_account_equity(snap["account"])
         risk_reserve(con,plan,snap["positions"],verified_equity)
     event=plan["event_id"]
@@ -451,6 +559,8 @@ def process_stored_luxalgo_alert(open_connection,event_id,client=None):
         install(con)
         if control(con)["halted"]:
             raise LiveSafetyError("Persistent live execution HALT")
+        # Cheap early refusal before any exchange read or plan construction.
+        require_confluence_pass(con,event_id)
         with con.cursor() as cur:
             cur.execute("""SELECT h.event_id,h.source_bar_id,h.symbol,h.side,
                            h.timeframe,h.order_type,h.level_status,h.received_at,
