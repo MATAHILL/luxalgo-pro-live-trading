@@ -742,6 +742,31 @@ h2{font-size:15px;font-weight:850;letter-spacing:.3px}
 .position-chart-box[data-chart-open="true"]{max-height:470px;border-top:1px solid #2b435e}
 .position-chart-frame{width:100%;height:450px;border:0;display:block;background:#0b1a2b}
 .ot-serial{color:#9fb5cf;font-variant-numeric:tabular-nums;font-weight:700}
+/* Live position marks: the card ticks like an exchange while a trade is open. */
+.position-live-badge{display:inline-flex;align-items:center;gap:5px;font-size:9.5px;font-weight:900;
+ letter-spacing:.09em;color:#0a2a1c;background:linear-gradient(150deg,#8dffc9,#2fd68d);
+ border:1px solid #b6ffe0;border-radius:5px;padding:2px 6px;text-transform:uppercase}
+.position-live-badge .dot{width:6px;height:6px;border-radius:50%;background:#0a2a1c;
+ animation:posLivePulse 1.6s ease-in-out infinite}
+@keyframes posLivePulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.35;transform:scale(.72)}}
+.position-live-badge[data-stale="true"]{background:linear-gradient(150deg,#ffd79a,#e0a13c);border-color:#ffe6bd}
+.position-live-badge[data-stale="true"] .dot{animation:none;opacity:.5}
+.position-fact[data-live="last"] strong{color:#9fe8ff}
+.position-fact[data-live="last"] small::after{content:" \00b7 live";color:#5fd0ff;font-weight:800}
+.position-fact[data-live="pnl"] strong,.position-summary-pnl{transition:color .18s ease}
+.position-tick{font-size:9.5px;color:#7fb6d8;margin-top:6px;letter-spacing:.02em}
+/* One-click maintenance: clears browser storage, cached files and server caches. */
+.maint-clear{border:1px solid #7fd4ff;border-radius:9px;cursor:pointer;padding:8px 13px;font-size:11px;
+ font-weight:850;letter-spacing:.03em;color:#eafcff;
+ background:linear-gradient(155deg,#3f8fbd,#1a4f78 52%,#123a5c);box-shadow:inset 0 1px 0 #ffffff55,0 2px 9px #0a8aff44}
+.maint-clear:hover{filter:brightness(1.14)}
+.maint-clear:disabled{opacity:.55;cursor:wait}
+.maint-clear:focus-visible{outline:2px solid #ffe39e;outline-offset:2px}
+.maint-status{display:block;max-width:290px;font-size:10.5px;line-height:1.45;color:#9de7ff;text-align:right}
+.maint-status[data-state="ok"]{color:#8dffc9}
+.maint-status[data-state="warn"]{color:#ffd79a}
+.maint-status[data-state="err"]{color:#ff9db0}
+@media(max-width:680px){.maint-status{text-align:left}}
 @media(max-width:500px){.position-card>summary{align-items:flex-start}.position-symbol{font-size:13px}.position-summary-pnl{font-size:13px}}
 
 /* Distinct high-gloss RED Delete action; isolated from other signal buttons. */
@@ -874,7 +899,7 @@ header.terminal-header{border-radius:17px!important}
 </style><script type="module" src="https://widgets.tradingview-widget.com/w/en/tv-advanced-chart.js"></script></head><body><div class="wrap"><header class="terminal-header"><div class="terminal-brand"><h1>LUXALGO PRO · TESTNET FUTURES TERMINAL</h1><p>Gate.io USDT Perpetual · LuxAlgo 5m / 15m · Coded by · SUBHASISH</p>
 <div class="profile-greeting"><div class="profile-avatar" id="avatarDisplay"><span>SD</span></div>
 <div><div class="profile-name">Hello SUBHASISH</div><label class="profile-change" for="profileImageInput" tabindex="0">Change Photo</label><input type="file" id="profileImageInput" accept="image/png,image/jpeg,image/webp" hidden></div></div></div><section class="news-slot" aria-label="Latest crypto news"><div class="news-heading"><span>● CRYPTO NEWS</span><span style="display:flex;align-items:center;gap:7px"><span id="newsFeedStatus">Loading headlines…</span><button type="button" id="newsRefresh" aria-label="Refresh crypto news" title="Refresh crypto news">↻</button></span></div><div class="news-viewport" id="newsViewport"><div class="news-stack" id="newsStack"><span class="news-empty">Retrieving publisher headlines…</span></div></div></section><div class="profile-right">
-<form method="post" action="/logout"><input type="hidden" name="csrf_token" value="{{ csrf_token|e }}"><button class="glossy-logout" type="submit">⇥ LOGOUT</button></form><span id="signalLiveSync" role="status" aria-live="polite" style="font-size:11px;color:#9de7ff">● Signals auto-sync: connecting…</span></div></header>
+<form method="post" action="/logout"><input type="hidden" name="csrf_token" value="{{ csrf_token|e }}"><button class="glossy-logout" type="submit">⇥ LOGOUT</button></form><button class="maint-clear" type="button" id="maintenanceClear" title="Clears this browser's cache, cookies and leftover storage, plus the server's in-memory caches. Does not touch trades, positions or signal history.">✦ CLEAR CACHE &amp; JUNK</button><span class="maint-status" id="maintenanceStatus" role="status" aria-live="polite">Clears browser cache, cookies and leftover junk in one click.</span><span id="signalLiveSync" role="status" aria-live="polite" style="font-size:11px;color:#9de7ff">● Signals auto-sync: connecting…</span></div></header>
  <section class="live-ops-banner" aria-label="Live trading execution status"><div><strong>GATE.IO FUTURES · TESTNET TRADING MODE</strong><p>Only Gate.io Futures TESTNET automatic orders are permitted. Entry and native protection must pass exchange validation. Real-money orders remain disabled.</p></div><span class="live-ops-state">TESTNET ONLY</span></section>
 <section class="bot-control-panel" aria-label="Remote bot control">
  <div><div class="bot-status-line"><strong id="botControlLabel">BOT OFF · TESTNET SIGNALS PAUSED</strong><span id="botStateIndicator" class="bot-state-indicator unknown" role="status" aria-live="polite">● CHECKING</span></div><p id="botControlDetail">New LuxAlgo signals remain logged. No live orders are possible.</p></div>
@@ -1416,7 +1441,7 @@ async function loadPnlSummary(){
   note('metricWinRateNote','Summary unavailable');
  }
 }
-function field(grid,label,value,colorClass){const x=element('div','position-fact');x.append(element('small','',label),element('strong',colorClass||'',value));grid.append(x);}
+function field(grid,label,value,colorClass){const x=element('div','position-fact');x.append(element('small','',label),element('strong',colorClass||'',value));grid.append(x);return x;}
 function pnlClass(v){return v===null||v===undefined?'gloss-pnl-neutral':v>0?'gloss-pnl-profit':v<0?'gloss-pnl-loss':'gloss-pnl-neutral';}
 /* Builds the per-card indicator table from a server response. Every figure is
    a verified server value; a missing one prints a dash, never a guess. */
@@ -1479,31 +1504,40 @@ function renderPositions(positions){
   left.append(element('span','position-side '+(p.side==='LONG'?'long':'short'),p.side==='LONG'?'L':'S'),
               token,
               element('span','position-leverage',p.leverage_label));
+  // A live badge marks a card whose marks are ticking from the exchange.
+  const liveBadge=element('span','position-live-badge');
+  liveBadge.append(element('span','dot'),element('span','','LIVE'));
+  liveBadge.title='Mark price and P&L refresh from Gate.io while this position is open';
+  left.append(liveBadge);
   const right=element('span','position-summary-pnl '+pnlClass(p.unrealized_pnl),(p.unrealized_pnl>=0?'+':'')+money(p.unrealized_pnl)+' USDT ⌄');
   heading.append(left,right);card.append(heading);
   const inner=element('div','position-card-inner'),grid=element('div','position-facts');
-  field(grid,'Unrealized P&L (USDT)',(p.unrealized_pnl>=0?'+':'')+money(p.unrealized_pnl),pnlClass(p.unrealized_pnl));
+  const pnlFact=field(grid,'Unrealized P&L (USDT)',(p.unrealized_pnl>=0?'+':'')+money(p.unrealized_pnl),pnlClass(p.unrealized_pnl));
+  pnlFact.dataset.live='pnl';
   field(grid,'ROI (based on reported margin)',p.roi_percent===null?'—':(p.roi_percent>=0?'+':'')+p.roi_percent.toFixed(2)+'%',p.roi_percent===null?'':pnlClass(p.roi_percent));
   field(grid,'Position size (USDT)',p.position_value_usdt===null?'—':money(p.position_value_usdt));
   field(grid,'Margin (USDT)',p.margin_usdt===null?'—':money(p.margin_usdt));
   field(grid,'Contracts',String(p.size_contracts));
   field(grid,'Entry price',price(p.entry_price));
-  field(grid,'Mark price',price(p.mark_price));
+  const markFact=field(grid,'Mark price',price(p.mark_price));
+  markFact.dataset.live='last';
   field(grid,'Liquidation price',price(p.liquidation_price));
   grid && inner.append(grid);
+  // Ticker line: shows the exchange mark and when it was last read, so the
+  // operator can see the card is genuinely live rather than frozen.
+  const tick=element('p','position-tick','Mark '+price(p.mark_price)+' · waiting for the first live tick…');
+  inner.append(tick);
   // Per-card indicator table. Each card owns its own element, so opening one
   // never affects another. Nothing here is shared or global.
+  // Every rendered card is an ACTIVE trade, so the panel starts OPEN and its
+  // indicators load immediately; the token still collapses it on demand.
   const ind=element('div','position-indicators');
-  ind.dataset.indOpen='false';
-  ind.setAttribute('aria-hidden','true');
+  ind.dataset.indOpen='true';
+  ind.setAttribute('aria-hidden','false');
   inner.append(ind);
   let indLoaded=false;
-  token.addEventListener('click',async ()=>{
-   const opening=ind.dataset.indOpen!=='true';
-   ind.dataset.indOpen=opening?'true':'false';
-   ind.setAttribute('aria-hidden',opening?'false':'true');
-   token.setAttribute('aria-expanded',opening?'true':'false');
-   if(!opening||indLoaded)return;
+  const loadIndicators=async()=>{
+   if(indLoaded)return;
    indLoaded=true;
    ind.replaceChildren(element('p','ind-loading','Loading indicators for '+p.contract.replace('_','/')+'\u2026'));
    try{
@@ -1515,7 +1549,17 @@ function renderPositions(positions){
     indLoaded=false;
     ind.replaceChildren(element('p','ind-note','\u26a0 Indicators unavailable \u00b7 '+String(err.message).slice(0,110)));
    }
+  };
+  token.setAttribute('aria-expanded','true');
+  token.addEventListener('click',async ()=>{
+   const opening=ind.dataset.indOpen!=='true';
+   ind.dataset.indOpen=opening?'true':'false';
+   ind.setAttribute('aria-hidden',opening?'false':'true');
+   token.setAttribute('aria-expanded',opening?'true':'false');
+   if(!opening)return;
+   await loadIndicators();
   });
+  loadIndicators();
   const actions=element('div','position-card-actions');
   const chart=element('button','btn position-chart-action','View Chart');chart.type='button';
   chart.addEventListener('click',()=>{
@@ -1692,7 +1736,162 @@ body.addEventListener('click',async e=>{
       +' \u00b7 Check Gate.io before any retry.');
  }finally{all.forEach(x=>x.disabled=false);}
 });
+/* Live marks: while a position is open, its card ticks like an exchange.
+   One shared server read feeds every card, so this stays inside the exchange
+   rate limit even with several tabs open. Read-only: no order is ever sent. */
+let liveMarksTimer=null,liveMarksBusy=false,liveMarksFails=0;
+async function tickLiveMarks(){
+ if(liveMarksBusy||document.hidden)return;
+ if(!document.querySelector('.position-card'))return;
+ liveMarksBusy=true;
+ try{
+  const r=await fetch('/terminal/positions/live-marks',{cache:'no-store'});
+  const d=await r.json();
+  if(!r.ok)throw Error(d.error||('HTTP '+r.status));
+  const marks=d.marks||{};
+  let painted=0;
+  document.querySelectorAll('.position-card').forEach(card=>{
+   const contract=card.dataset.contract;
+   const m=marks[contract];
+   if(!m)return;
+   painted++;
+   const lastEl=card.querySelector('[data-live="last"] strong');
+   if(lastEl&&m.mark_price!==null&&m.mark_price!==undefined)lastEl.textContent=price(m.mark_price);
+   const pnlEl=card.querySelector('[data-live="pnl"] strong');
+   if(pnlEl&&m.unrealized_pnl!==null&&m.unrealized_pnl!==undefined){
+    pnlEl.textContent=(m.unrealized_pnl>=0?'+':'')+money(m.unrealized_pnl);
+    pnlEl.className=pnlClass(m.unrealized_pnl);
+   }
+   const headPnl=card.querySelector('.position-summary-pnl');
+   if(headPnl&&m.unrealized_pnl!==null&&m.unrealized_pnl!==undefined){
+    headPnl.textContent=(m.unrealized_pnl>=0?'+':'')+money(m.unrealized_pnl)+' USDT \u2304';
+    headPnl.className='position-summary-pnl '+pnlClass(m.unrealized_pnl);
+   }
+   const tick=card.querySelector('.position-tick');
+   if(tick){
+    tick.textContent='Mark '+price(m.mark_price)
+      +' \u00b7 live '+new Date(d.fetched_at*1000).toLocaleTimeString('en-IN',{timeZone:'Asia/Kolkata',hour12:true})+' IST';
+   }
+   const badge=card.querySelector('.position-live-badge');
+   if(badge)badge.dataset.stale='false';
+  });
+  // The account-wide unrealised figure follows the same tick.
+  if(d.unrealized_pnl_usdt!==null&&d.unrealized_pnl_usdt!==undefined){
+   pnl.textContent=money(d.unrealized_pnl_usdt);
+   pnl.classList.toggle('positive',d.unrealized_pnl_usdt>0);
+   pnl.classList.toggle('negative',d.unrealized_pnl_usdt<0);
+  }
+  liveMarksFails=0;
+  if(painted===0&&d.count===0){
+   // Every position closed at the exchange: re-read the list so the cards go.
+   loadPositions();
+  }
+ }catch(err){
+  liveMarksFails++;
+  if(liveMarksFails>=3){
+   document.querySelectorAll('.position-live-badge').forEach(b=>{b.dataset.stale='true';});
+   document.querySelectorAll('.position-tick').forEach(t=>{
+    t.textContent='\u26a0 Live marks paused \u00b7 '+String(err.message).slice(0,70);
+   });
+  }
+ }finally{liveMarksBusy=false;}
+}
+function startLiveMarks(){
+ if(liveMarksTimer)return;
+ liveMarksTimer=setInterval(tickLiveMarks,4000);
+ tickLiveMarks();
+}
+/* One-click maintenance. Clears this browser's cache, cookies and leftover
+   storage, then asks the server to drop its derived caches. The signed-in
+   session cookie is HttpOnly, so it is never exposed to or removed by this
+   code: you stay signed in. No trade, position or signal record is touched. */
+(function(){
+ const btn=document.getElementById('maintenanceClear');
+ const out=document.getElementById('maintenanceStatus');
+ if(!btn||!out)return;
+ const say=(t,state)=>{out.textContent=t;if(state)out.dataset.state=state;else delete out.dataset.state;};
+ btn.addEventListener('click',async()=>{
+  if(btn.disabled)return;
+  if(!window.confirm("Clear this browser's cache, cookies and leftover junk, "
+    +"plus the server's temporary caches?\\n\\nYour trades, positions, signal "
+    +"history and sign-in are NOT affected."))return;
+  btn.disabled=true;
+  const done=[];
+  const failed=[];
+  say('Clearing browser storage\u2026');
+  // 1. Local and session storage.
+  try{localStorage.clear();done.push('localStorage');}catch(e){failed.push('localStorage');}
+  try{sessionStorage.clear();done.push('sessionStorage');}catch(e){failed.push('sessionStorage');}
+  // 2. IndexedDB databases.
+  try{
+   if(window.indexedDB&&indexedDB.databases){
+    const dbs=await indexedDB.databases();
+    for(const db of dbs){
+     if(!db||!db.name)continue;
+     await new Promise(res=>{
+      const req=indexedDB.deleteDatabase(db.name);
+      req.onsuccess=req.onerror=req.onblocked=()=>res();
+     });
+    }
+    done.push('indexedDB');
+   }
+  }catch(e){failed.push('indexedDB');}
+  // 3. Cache Storage (the HTTP cache the browser keeps for this origin).
+  try{
+   if(window.caches){
+    const keys=await caches.keys();
+    await Promise.all(keys.map(k=>caches.delete(k)));
+    done.push('cacheStorage');
+   }
+  }catch(e){failed.push('cacheStorage');}
+  // 4. Service workers, so a stale worker cannot serve an old page.
+  try{
+   if(navigator.serviceWorker&&navigator.serviceWorker.getRegistrations){
+    const regs=await navigator.serviceWorker.getRegistrations();
+    await Promise.all(regs.map(r=>r.unregister()));
+    if(regs.length)done.push('serviceWorkers');
+   }
+  }catch(e){failed.push('serviceWorkers');}
+  // 5. Readable cookies. The HttpOnly session cookie is invisible here and is
+  //    deliberately left alone, so the operator is not signed out.
+  try{
+   const names=document.cookie?document.cookie.split(';').map(c=>c.split('=')[0].trim()).filter(Boolean):[];
+   for(const n of names){
+    document.cookie=n+'=; Max-Age=0; path=/';
+    document.cookie=n+'=; Max-Age=0; path=/; SameSite=Lax';
+   }
+   if(names.length)done.push(names.length+' cookie(s)');
+  }catch(e){failed.push('cookies');}
+  // 6. Server-side derived caches.
+  say('Clearing server caches\u2026');
+  let serverCleared=0;
+  try{
+   const csrf=document.querySelector('input[name="csrf_token"]')?.value;
+   if(!csrf)throw Error('no session token');
+   const r=await fetch('/terminal/maintenance/clear',{method:'POST',cache:'no-store',
+    headers:{'Content-Type':'application/json','X-Terminal-CSRF':csrf},body:'{}'});
+   const d=await r.json();
+   if(!r.ok)throw Error(d.error||('HTTP '+r.status));
+   serverCleared=d.cleared_count||0;
+   done.push(serverCleared+' server cache(s)');
+  }catch(e){
+   failed.push('server caches: '+String(e.message).slice(0,60));
+  }
+  // 7. Repopulate the page from fresh data, no reload and no sign-out.
+  try{await loadPositions();}catch(e){}
+  try{await loadPnlSummary();}catch(e){}
+  try{if(typeof loadRadar==='function')loadRadar();}catch(e){}
+  try{if(typeof loadScanner==='function')loadScanner();}catch(e){}
+  btn.disabled=false;
+  if(failed.length){
+   say('\u26a0 Cleared '+done.length+' item(s) \u00b7 could not clear: '+failed.join(', '),'warn');
+  }else{
+   say('\u2713 Cleared '+done.join(' \u00b7 ')+' \u00b7 you are still signed in','ok');
+  }
+ });
+})();
 loadPositions();loadPnlSummary();setInterval(()=>{if(!document.hidden){loadPositions();loadPnlSummary();}},30000);
+startLiveMarks();
 })();
 </script>
 <script>
@@ -2766,6 +2965,62 @@ def _csrf_valid():
     submitted=request.form.get('csrf_token','') or request.headers.get('X-Terminal-CSRF','')
     expected=session.get('csrf_token','')
     return bool(expected and submitted and hmac.compare_digest(submitted,expected))
+
+
+@app.post('/terminal/maintenance/clear')
+def terminal_maintenance_clear():
+    """One-click housekeeping: drop the server's in-memory caches.
+
+    This clears ONLY derived, re-fetchable data: the news feed cache, the
+    public radar/scanner caches, the paper quote cache and the contract
+    multiplier cache. It never touches the database, the trade ledger, open
+    positions, signal receipts or the operator's session, so nothing that
+    matters is lost and nothing needs re-entering.
+
+    The browser half of the cleanup (localStorage, sessionStorage, IndexedDB,
+    Cache Storage, service workers and non-session cookies) is done client
+    side by the button; this endpoint reports what the server dropped.
+    """
+    if not _terminal_permitted():
+        return _terminal_guard()
+    if not _csrf_valid():
+        return jsonify(error='Invalid terminal session verification'), 403
+    cleared = []
+    try:
+        with _news_lock:
+            _news_cache.update(expires_at=0, items=[], fetched_at=None)
+        cleared.append('news')
+    except (NameError, AttributeError, TypeError):
+        pass
+    try:
+        with _radar_lock:
+            _radar_cache.update(at=0.0, data=None)
+        cleared.append('radar')
+    except (NameError, AttributeError, TypeError):
+        pass
+    try:
+        with _scanner_lock:
+            _scanner_cache.update(at=0.0, data=None)
+        cleared.append('scanner')
+    except (NameError, AttributeError, TypeError):
+        pass
+    try:
+        with _paper_live_cache_lock:
+            _paper_live_cache.update(at=0.0, value=None)
+        cleared.append('paper_quotes')
+    except (NameError, AttributeError, TypeError):
+        pass
+    try:
+        _paper_multiplier_cache.clear()
+        cleared.append('contract_specs')
+    except (NameError, AttributeError):
+        pass
+    response = jsonify(status='CACHE_CLEARED', cleared=cleared,
+                       cleared_count=len(cleared),
+                       database_touched=False, session_preserved=True,
+                       orders_placed=0, cleared_at=int(time.time()))
+    response.headers['Cache-Control'] = 'no-store'
+    return response
 
 
 @app.post('/logout')
@@ -6518,6 +6773,71 @@ def terminal_testnet_positions():
         return jsonify(error='Gate Testnet positions unavailable or invalid',orders_enabled=False),502
 
 
+@app.get('/terminal/positions/live-marks')
+def terminal_positions_live_marks():
+    """Fast, read-only mark snapshot for the open position cards.
+
+    Returns the exchange's own mark price and unrealised P&L for every open
+    position, so a card can tick like a live exchange without re-reading the
+    whole account on every browser. One signed GET is shared by all open
+    tabs through a short cache, which keeps the exchange rate limit safe.
+
+    Read-only: no order is ever placed, amended or cancelled here.
+    """
+    if not _terminal_permitted():
+        return _terminal_guard()
+    now = time.monotonic()
+    with _live_marks_lock:
+        cached = _live_marks_cache['value']
+        if cached is not None and now - _live_marks_cache['at'] < 2.0:
+            response = jsonify(**cached)
+            response.headers['Cache-Control'] = 'no-store'
+            return response
+    try:
+        positions = _gate_read_only_positions()
+    except RuntimeError:
+        return jsonify(error='Gate.io read-only credentials unavailable',
+                       orders_enabled=False), 503
+    except HTTPError as exc:
+        return jsonify(error='Gate.io mark feed rejected the read (HTTP %s)' % exc.code,
+                       gate_http_status=exc.code, orders_enabled=False), 502
+    except (URLError, TimeoutError, OSError, ValueError, KeyError, TypeError):
+        return jsonify(error='Gate.io mark feed unavailable', orders_enabled=False), 502
+    marks = {}
+    total = 0.0
+    complete = True
+    for p in positions:
+        contract = p.get('contract')
+        if not contract:
+            continue
+        pnl = p.get('unrealized_pnl')
+        if pnl is None:
+            complete = False
+        else:
+            total += pnl
+        marks[contract] = {
+            'mark_price': p.get('mark_price'),
+            'entry_price': p.get('entry_price'),
+            'unrealized_pnl': pnl,
+            'roi_percent': p.get('roi_percent'),
+            'side': p.get('side'),
+            'size_contracts': p.get('size_contracts'),
+        }
+    payload = {
+        'marks': marks,
+        'count': len(marks),
+        'unrealized_pnl_usdt': round(total, 8) if complete and marks else None,
+        'fetched_at': int(time.time()),
+        'source': 'GATE_IO_EXCHANGE_MARK',
+        'orders_enabled': False,
+    }
+    with _live_marks_lock:
+        _live_marks_cache.update(at=time.monotonic(), value=payload)
+    response = jsonify(**payload)
+    response.headers['Cache-Control'] = 'no-store'
+    return response
+
+
 @app.get('/terminal/positions')
 def terminal_positions():
     if not _terminal_permitted():
@@ -7763,6 +8083,12 @@ def _paper_open_marks(orders):
 # A brief shared cache prevents each browser polling session from multiplying API load.
 _paper_live_cache_lock = Lock()
 _paper_live_cache = {'at':0.0,'value':None}
+
+# Shared, short-lived mark snapshot for the open position cards. One signed
+# exchange read serves every open tab, so the cards can tick every few seconds
+# without multiplying Gate.io requests.
+_live_marks_lock = Lock()
+_live_marks_cache = {'at': 0.0, 'value': None}
 
 @app.get('/terminal/paper-live-pnl')
 def terminal_paper_live_pnl():
