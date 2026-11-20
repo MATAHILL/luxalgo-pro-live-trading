@@ -192,5 +192,85 @@ class ResetEndpointTests(unittest.TestCase):
         self.assertIn("{{ count }}", PAGE)
 
 
+class ResetHandlerScriptTests(unittest.TestCase):
+    """The reset button is useless if its script block cannot parse.
+
+    PAGE is a normal (non-raw) Python string, so a bare \\n inside a JS string
+    literal is emitted as a REAL newline. That is a fatal JavaScript syntax
+    error, and it silently kills every handler in the same <script> block --
+    the button then does nothing at all when clicked. This happened once; the
+    tests below make sure it cannot happen again unnoticed.
+    """
+
+    def _served_page(self):
+        """The page as the browser receives it, with Jinja placeholders filled.
+
+        PAGE still contains {{ ... }} expressions; those are not JavaScript, so
+        they must be rendered before a JS parser can judge the block.
+        """
+        import re
+        from app import PAGE
+        # Substitute every Jinja expression with a harmless JS literal.
+        return re.sub(r"\{\{.*?\}\}", "0", PAGE, flags=re.S)
+
+    def test_every_script_block_parses_as_javascript(self):
+        """Authoritative check: hand each block to a real JS parser.
+
+        A regex cannot decide this reliably -- it cannot tell a string
+        terminator from an apostrophe in a comment. node --check can, and it
+        is exactly what the browser does before running the block.
+        """
+        import re
+        import shutil
+        import subprocess
+        import tempfile
+
+        node = shutil.which("node")
+        if not node:
+            self.skipTest("node is not installed; cannot parse-check JS")
+
+        page = self._served_page()
+        blocks = re.findall(r"<script\b[^>]*>(.*?)</script>", page, re.S)
+        self.assertTrue(blocks, "no script blocks found")
+
+        failures = []
+        for index, block in enumerate(blocks):
+            if not block.strip():
+                continue
+            with tempfile.NamedTemporaryFile("w", suffix=".js",
+                                             delete=False, encoding="utf-8") as fh:
+                fh.write(block)
+                path = fh.name
+            try:
+                result = subprocess.run([node, "--check", path],
+                                        capture_output=True, text=True)
+                if result.returncode != 0:
+                    failures.append((index, result.stderr.strip().splitlines()[:3]))
+            finally:
+                import os
+                os.unlink(path)
+
+        self.assertEqual(
+            failures, [],
+            "script block(s) do not parse as JavaScript: %r" % (failures,)
+        )
+
+    def test_reset_handler_is_present_and_escapes_its_newlines(self):
+        page = self._served_page()
+        self.assertIn("getElementById('resetSignalCount')", page)
+        self.assertIn("addEventListener('click'", page)
+        # The confirm text must carry the two-character escape, not a newline.
+        self.assertIn("count to 0?\\n\\nStored signals", page)
+        self.assertNotIn("count to 0?\n\nStored signals", page)
+
+    def test_reset_handler_reports_failures_visibly(self):
+        page = self._served_page()
+        # Every failure path must write to the status element, never fail mute.
+        self.assertIn("Reset FAILED", page)
+        self.assertIn("No valid session token", page)
+        self.assertIn("Reset outcome UNKNOWN", page)
+        self.assertIn("resetSignalCountStatus", page)
+
+
 if __name__ == "__main__":
     unittest.main()

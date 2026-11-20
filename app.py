@@ -1975,7 +1975,7 @@ loadRadar();loadScanner();setInterval(()=>{if(!document.hidden)loadRadar()},6000
  const tile=document.getElementById('databaseSignalCount');
  if(!btn||!out)return;
  btn.addEventListener('click',async()=>{
-  if(!window.confirm('Reset the DATABASE SIGNALS count to 0?\n\nStored signals and trade history are NOT deleted. Only the displayed count restarts at zero.'))return;
+  if(!window.confirm('Reset the DATABASE SIGNALS count to 0?\\n\\nStored signals and trade history are NOT deleted. Only the displayed count restarts at zero.'))return;
   const csrf=document.querySelector('input[name="csrf_token"]')?.value;
   if(!csrf){out.textContent='No valid session token. Refresh the page and sign in again.';return;}
   btn.disabled=true;
