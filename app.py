@@ -4715,7 +4715,10 @@ def webhook():
     # One-trade handoff: durable first-candidate reservation ONLY. Not an order.
     # Preserves existing webhook receipt behavior and does not call exchange APIs.
     one_trade_candidate = 'NOT_ELIGIBLE'
-    if level_status == 'VALID' and _conf_pass and not duplicate and tf == '15m':
+    # Both 5m and 15m signals may reserve the single one-trade slot. The
+    # one-position-at-a-time rule, the 30-minute cooldown and every confluence
+    # veto are unchanged; only the timeframe restriction is lifted.
+    if level_status == 'VALID' and _conf_pass and not duplicate and tf in ('5m', '15m'):
         try:
             with _db_connect() as con:
                 _ensure_schema(con)
