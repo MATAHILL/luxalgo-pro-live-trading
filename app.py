@@ -96,7 +96,7 @@ ON luxalgo_live_signal_handoff(symbol,side,timeframe,source_bar_id)
 WHERE source_bar_id IS NOT NULL;
 -- Historical Testnet journal retained for audit only, not market data.
 CREATE TABLE IF NOT EXISTS luxalgo_one_trade_candidate (
- singleton_id SMALLINT PRIMARY KEY CHECK(singleton_id=1),
+ slot TEXT PRIMARY KEY CHECK(slot IN ('5m','15m')),
  event_id TEXT NOT NULL UNIQUE,
  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
  symbol TEXT NOT NULL,
@@ -108,6 +108,37 @@ CREATE TABLE IF NOT EXISTS luxalgo_one_trade_candidate (
  status TEXT NOT NULL CHECK(status='WAITING_FOR_VERIFIED_EXECUTION'),
  note TEXT NOT NULL DEFAULT 'No real order submitted. Requires validated exchange execution and SL/TP.'
 );
+-- Migrate the legacy global singleton (singleton_id=1) to one slot per
+-- timeframe, so a 5m and a 15m signal no longer compete for the same row.
+-- Idempotent: a fresh table already has the slot key and skips this block.
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.columns
+             WHERE table_name='luxalgo_one_trade_candidate'
+               AND column_name='singleton_id') THEN
+    ALTER TABLE luxalgo_one_trade_candidate ADD COLUMN IF NOT EXISTS slot TEXT;
+    ALTER TABLE luxalgo_one_trade_candidate
+      DROP CONSTRAINT IF EXISTS luxalgo_one_trade_candidate_pkey;
+    ALTER TABLE luxalgo_one_trade_candidate
+      DROP CONSTRAINT IF EXISTS luxalgo_one_trade_candidate_singleton_id_check;
+    ALTER TABLE luxalgo_one_trade_candidate ALTER COLUMN singleton_id DROP NOT NULL;
+    UPDATE luxalgo_one_trade_candidate
+       SET slot = CASE WHEN timeframe IN ('5m','15m') THEN timeframe ELSE '15m' END
+     WHERE slot IS NULL;
+    ALTER TABLE luxalgo_one_trade_candidate ALTER COLUMN slot SET NOT NULL;
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint
+                   WHERE conname='luxalgo_one_trade_candidate_slot_check') THEN
+      ALTER TABLE luxalgo_one_trade_candidate
+        ADD CONSTRAINT luxalgo_one_trade_candidate_slot_check
+        CHECK (slot IN ('5m','15m'));
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint
+                   WHERE conname='luxalgo_one_trade_candidate_pkey') THEN
+      ALTER TABLE luxalgo_one_trade_candidate
+        ADD CONSTRAINT luxalgo_one_trade_candidate_pkey PRIMARY KEY (slot);
+    END IF;
+  END IF;
+END $$;
 CREATE TABLE IF NOT EXISTS luxalgo_signal_receipts (
  id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
  received_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -4715,19 +4746,19 @@ def webhook():
     # One-trade handoff: durable first-candidate reservation ONLY. Not an order.
     # Preserves existing webhook receipt behavior and does not call exchange APIs.
     one_trade_candidate = 'NOT_ELIGIBLE'
-    # Both 5m and 15m signals may reserve the single one-trade slot. The
-    # one-position-at-a-time rule, the 30-minute cooldown and every confluence
-    # veto are unchanged; only the timeframe restriction is lifted.
+    # One slot per timeframe: a 5m and a 15m signal no longer compete for the
+    # same row, so both may hold a position at the same time. The 30-minute
+    # cooldown and every confluence veto are unchanged.
     if level_status == 'VALID' and _conf_pass and not duplicate and tf in ('5m', '15m'):
         try:
             with _db_connect() as con:
                 _ensure_schema(con)
                 with con.cursor() as cur:
                     cur.execute("""INSERT INTO luxalgo_one_trade_candidate
-                        (singleton_id,event_id,symbol,side,timeframe,entry_price,stop_loss,take_profit,status)
-                        VALUES (1,%s,%s,%s,%s,%s,%s,%s,'WAITING_FOR_VERIFIED_EXECUTION')
-                        ON CONFLICT (singleton_id) DO NOTHING RETURNING event_id""",
-                        (event_id,symbol,allowed[side],tf,entry_price,stop_loss,take_profit))
+                        (slot,event_id,symbol,side,timeframe,entry_price,stop_loss,take_profit,status)
+                        VALUES (%s,%s,%s,%s,%s,%s,%s,%s,'WAITING_FOR_VERIFIED_EXECUTION')
+                        ON CONFLICT (slot) DO NOTHING RETURNING event_id""",
+                        (tf,event_id,symbol,allowed[side],tf,entry_price,stop_loss,take_profit))
                     one_trade_candidate = ('RESERVED_NO_ORDER' if cur.fetchone() else 'ALREADY_RESERVED')
         except (psycopg.Error, RuntimeError, OSError):
             app.logger.warning('One-trade candidate reservation failed; no execution permitted')
