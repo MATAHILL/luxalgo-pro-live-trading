@@ -1,4 +1,4 @@
-"""Offline tests for the XRP-only confluence gate. No network, no exchange."""
+"""Offline tests for the confluence gate. No network, no exchange."""
 import math
 import unittest
 from datetime import datetime, timezone, timedelta
@@ -53,19 +53,82 @@ class SymbolScopeTests(unittest.TestCase):
             ok, _ = sc.symbol_permitted(sym)
             self.assertTrue(ok, sym)
 
-    def test_other_alts_not_allowed(self):
-        for sym in ("ETHUSDT", "SOLUSDT", "DOGEUSDT"):
+    def test_other_alts_allowed_by_default(self):
+        """No allowlist: every non-BTC symbol is accepted out of the box."""
+        for sym in ("ETHUSDT", "SOLUSDT", "DOGEUSDT", "ARBUSDT", "PEPEUSDT"):
             ok, reason = sc.symbol_permitted(sym)
+            self.assertTrue(ok, sym)
+            self.assertEqual(reason, "OK", sym)
+
+    def test_any_symbol_allowed_regardless_of_config(self):
+        """A stale allowlist in a config object cannot restrict anything."""
+        c = sc.ConfluenceConfig(allowlist=frozenset({"XRPUSDT"}))
+        for sym in ("ETHUSDT", "SOLUSDT", "GATEIO:ETHUSDT.P"):
+            ok, reason = sc.symbol_permitted(sym, c)
+            self.assertTrue(ok, sym)
+            self.assertEqual(reason, "OK", sym)
+
+    def test_btc_blocked_even_when_allowlist_widened(self):
+        """BTC stays vetoed no matter how wide the allowlist gets."""
+        c = sc.ConfluenceConfig(
+            allowlist=frozenset({"XRPUSDT", "ETHUSDT", "SOLUSDT", "BTCUSDT", "BTCDOMUSDT"}))
+        for sym in ("BTCUSDT", "BTCUSDT.P", "GATEIO:BTCUSDT.P", "BTCDOMUSDT"):
+            ok, reason = sc.symbol_permitted(sym, c)
             self.assertFalse(ok, sym)
-            self.assertEqual(reason, "SYMBOL_NOT_ALLOWED", sym)
+            self.assertEqual(reason, "BTC_BLOCKED", sym)
+
+    def test_blocked_list_read_from_env(self):
+        """LUXALGO_BLOCKED_SYMBOLS drives the block list; unset keeps BTC."""
+        import os
+        old = os.environ.get("LUXALGO_BLOCKED_SYMBOLS")
+        try:
+            os.environ["LUXALGO_BLOCKED_SYMBOLS"] = "BTCUSDT,BTCDOMUSDT,GATEIO:ETHUSDT.P"
+            cfg = sc.ConfluenceConfig.from_env()
+            self.assertIn("ETHUSDT", cfg.blocked)  # prefix + .P normalized
+            self.assertFalse(sc.symbol_permitted("ETHUSDT", cfg)[0])
+            self.assertTrue(sc.symbol_permitted("SOLUSDT", cfg)[0])
+            os.environ.pop("LUXALGO_BLOCKED_SYMBOLS")
+            cfg2 = sc.ConfluenceConfig.from_env()
+            self.assertIn("BTCUSDT", cfg2.blocked)
+            self.assertFalse(sc.symbol_permitted("BTCUSDT", cfg2)[0])
+            self.assertTrue(sc.symbol_permitted("ETHUSDT", cfg2)[0])
+        finally:
+            if old is None:
+                os.environ.pop("LUXALGO_BLOCKED_SYMBOLS", None)
+            else:
+                os.environ["LUXALGO_BLOCKED_SYMBOLS"] = old
 
     def test_coin_scope_module_agrees(self):
         self.assertTrue(scope.selected_webhook_symbol("XRPUSDT"))
         self.assertTrue(scope.selected_webhook_symbol("GATEIO:XRPUSDT.P"))
+        self.assertTrue(scope.selected_webhook_symbol("ETHUSDT"))
+        self.assertTrue(scope.selected_webhook_symbol("SOLUSDT"))
         self.assertFalse(scope.selected_webhook_symbol("BTCUSDT"))
-        self.assertFalse(scope.selected_webhook_symbol("ETHUSDT"))
         self.assertTrue(scope.selected_testnet_contract("XRP_USDT"))
+        self.assertTrue(scope.selected_testnet_contract("ETH_USDT"))
         self.assertFalse(scope.selected_testnet_contract("BTC_USDT"))
+
+    def test_coin_scope_module_blocks_btc_by_default(self):
+        """The scope module blocks BTC with no env set, and admits other alts."""
+        import importlib
+        import os
+        old = os.environ.get("LUXALGO_BLOCKED_SYMBOLS")
+        try:
+            os.environ.pop("LUXALGO_BLOCKED_SYMBOLS", None)
+            mod = importlib.reload(scope)
+            self.assertTrue(mod.selected_webhook_symbol("ETHUSDT"))
+            self.assertTrue(mod.selected_testnet_contract("ETH_USDT"))
+            self.assertFalse(mod.selected_webhook_symbol("BTCUSDT"))
+            self.assertFalse(mod.selected_webhook_symbol("BTCDOMUSDT"))
+            self.assertFalse(mod.selected_testnet_contract("BTC_USDT"))
+            self.assertFalse(mod.selected_webhook_symbol(""))
+            self.assertFalse(mod.selected_webhook_symbol(None))
+        finally:
+            if old is None:
+                os.environ.pop("LUXALGO_BLOCKED_SYMBOLS", None)
+            else:
+                os.environ["LUXALGO_BLOCKED_SYMBOLS"] = old
+            importlib.reload(scope)
 
 
 class GateTests(unittest.TestCase):
@@ -181,6 +244,25 @@ class CandleNormalizationTests(unittest.TestCase):
     def test_bad_rows_skipped(self):
         raw = [{"t": "x"}, {"t": "1", "o": "1", "h": "0.5", "l": "2", "c": "1"}]
         self.assertEqual(sc.normalize_candles(raw, "15m", NOW), [])
+
+    def test_raw_gateio_string_candles_are_normalized(self):
+        """Regression: raw Gate.io candles carry an "h" key with STRING values.
+
+        A presence check for "h" wrongly treated them as already normalized,
+        so strings reached _ema() and the gate crashed -> every signal blocked.
+        """
+        secs = 900
+        raw = []
+        for i in range(60, 0, -1):
+            ts = int(NOW.timestamp()) - i * secs
+            raw.append({"t": str(ts), "o": "1.0", "h": "1.1",
+                        "l": "0.9", "c": "1.05", "v": "10"})
+        bars = sc.normalize_candles(raw, "15m", NOW)
+        self.assertEqual(len(bars), 60)
+        self.assertIsInstance(bars[0]["c"], float)
+        # The scoring path must not raise on this payload.
+        ema = sc._ema([b["c"] for b in bars], 9)
+        self.assertIsNotNone(ema)
 
 
 if __name__ == "__main__":

@@ -1,4 +1,7 @@
-"""XRP-only LuxAlgo signal confluence gate (pure logic + read-only candle fetch).
+"""LuxAlgo signal confluence gate (pure logic + read-only candle fetch).
+
+The symbol scope has no allowlist: every symbol is accepted except those in
+LUXALGO_BLOCKED_SYMBOLS. BTC is blocked unconditionally.
 
 A PASS is permission to CONTINUE through the existing safety-locked execution
 path. It is never an order, never an authorization, and never a guarantee of
@@ -8,7 +11,7 @@ Design rules
 ------------
 * No exchange write of any kind lives in this module.
 * Missing, stale or malformed market data BLOCKS; it never defaults to PASS.
-* BTC (and any symbol outside the allowlist) is blocked before any scoring.
+* BTC (and any blocked symbol) is blocked before any scoring.
 * The score is a *quality* measure; the hard gates are *veto* conditions.
   A high score cannot override a veto.
 """
@@ -28,7 +31,6 @@ TF_SECONDS = {"5m": 300, "15m": 900, "1h": 3600, "4h": 14400}
 SIGNAL_TIMEFRAMES = ("5m", "15m")
 HTF_FOR = {"5m": "15m", "15m": "1h"}
 
-DEFAULT_ALLOWLIST = "XRPUSDT"
 DEFAULT_BLOCKED = "BTCUSDT,BTCDOMUSDT,BTCUSDT.P,BTCUSD"
 
 # Component ceilings. They sum to 100 so the score is directly readable.
@@ -69,8 +71,31 @@ def _env_bool(name, default):
     return str(raw).strip().lower() in ("1", "true", "yes", "on")
 
 
+def _bare_symbol(symbol):
+    """Strip a TradingView exchange prefix and the .P perpetual suffix."""
+    if not isinstance(symbol, str):
+        return ""
+    raw = symbol.strip().upper()
+    if ":" in raw:
+        raw = raw.split(":", 1)[1]
+    if raw.endswith(".P"):
+        raw = raw[:-2]
+    return raw
+
+
 def _csv_set(raw):
-    return frozenset(x.strip().upper() for x in str(raw).split(",") if x.strip())
+    """Parse a comma-separated symbol list into bare symbols.
+
+    Entries are normalized exactly like incoming alerts, so a value copied
+    straight from TradingView ("GATEIO:XRPUSDT.P") still matches. An empty
+    value yields an empty set; the caller supplies the default.
+    """
+    out = set()
+    for item in str(raw).split(","):
+        bare = _bare_symbol(item)
+        if bare:
+            out.add(bare)
+    return frozenset(out)
 
 
 class ConfluenceConfig:
@@ -83,7 +108,8 @@ class ConfluenceConfig:
     )
 
     def __init__(self, **kw):
-        self.allowlist = kw.get("allowlist", frozenset({DEFAULT_ALLOWLIST}))
+        # Retained for config-dict compatibility only; it no longer restricts.
+        self.allowlist = kw.get("allowlist", frozenset())
         self.blocked = kw.get("blocked", _csv_set(DEFAULT_BLOCKED))
         self.min_score = kw.get("min_score", 60)
         self.min_rr = kw.get("min_rr", 1.5)
@@ -100,7 +126,7 @@ class ConfluenceConfig:
     @classmethod
     def from_env(cls):
         return cls(
-            allowlist=_csv_set(_env_str("LUXALGO_SYMBOL_ALLOWLIST", DEFAULT_ALLOWLIST)),
+            allowlist=frozenset(),
             blocked=_csv_set(_env_str("LUXALGO_BLOCKED_SYMBOLS", DEFAULT_BLOCKED)),
             min_score=_env_int("LUXALGO_MIN_CONFLUENCE_SCORE", 60),
             min_rr=_env_float("LUXALGO_MIN_RR", 1.5),
@@ -127,18 +153,6 @@ class ConfluenceConfig:
 # Symbol scope
 # --------------------------------------------------------------------------
 
-def _bare_symbol(symbol):
-    """Strip a TradingView exchange prefix and the .P perpetual suffix."""
-    if not isinstance(symbol, str):
-        return ""
-    raw = symbol.strip().upper()
-    if ":" in raw:
-        raw = raw.split(":", 1)[1]
-    if raw.endswith(".P"):
-        raw = raw[:-2]
-    return raw
-
-
 def symbol_permitted(symbol, config=None):
     """Return (allowed: bool, reason: str). BTC is blocked unconditionally."""
     cfg = config or ConfluenceConfig.from_env()
@@ -147,8 +161,6 @@ def symbol_permitted(symbol, config=None):
         return False, "SYMBOL_MISSING"
     if bare in cfg.blocked or bare.startswith("BTC"):
         return False, "BTC_BLOCKED"
-    if bare not in cfg.allowlist:
-        return False, "SYMBOL_NOT_ALLOWED"
     return True, "OK"
 
 
@@ -411,8 +423,9 @@ def evaluate(*, symbol, side, timeframe, entry, stop, take_profit,
         blockers.append("RR_BELOW_MIN")
 
     # --- veto 2: market data ----------------------------------------------
-    bars = candles if (candles and isinstance(candles[0], dict)
-                       and "h" in candles[0]) else normalize_candles(candles, timeframe, now)
+    # Always normalize: Gate.io raw candles also carry an "h" key, so a
+    # presence check is not enough to detect already-normalized bars.
+    bars = normalize_candles(candles, timeframe, now)
     if len(bars) < 30:
         blockers.append("INSUFFICIENT_CANDLES")
         return result("BLOCK", 0, "INSUFFICIENT_CANDLES")
@@ -466,9 +479,7 @@ def evaluate(*, symbol, side, timeframe, entry, stop, take_profit,
     htf_bars = []
     if htf_candles:
         htf_tf = HTF_FOR[timeframe]
-        htf_bars = (htf_candles if (isinstance(htf_candles[0], dict)
-                                    and "h" in htf_candles[0])
-                    else normalize_candles(htf_candles, htf_tf, now))
+        htf_bars = normalize_candles(htf_candles, htf_tf, now)
     htf_closes = [b["c"] for b in htf_bars] if htf_bars else []
     if cfg.require_htf:
         if len(htf_closes) < 55:
