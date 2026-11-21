@@ -13,7 +13,7 @@ from live_futures_engine import (
     verify_ledger_position,
 )
 
-from live_risk_policy import per_entry_risk
+from live_risk_policy import per_entry_risk, sizing_mode, SIZING_MODE_FIXED
 
 LOCK_ID = 805513217
 
@@ -96,7 +96,7 @@ def risk_reserve(con,plan,exchange_positions,account_equity):
             any(not amount.is_finite() or amount<=0 for amount in reserved)):
             raise LiveSafetyError("Invalid reserved risk or account equity")
         used=sum(reserved,Decimal("0"))
-        if incremental>equity*per_entry_risk():
+        if sizing_mode()!=SIZING_MODE_FIXED and incremental>equity*per_entry_risk():
             raise LiveSafetyError("Atomic per-entry " + format((per_entry_risk()*100).normalize(), 'f') + "% risk cap")
         if used+incremental>equity*MAX_AGGREGATE_RISK:
             raise LiveSafetyError("Atomic account-wide risk cap")

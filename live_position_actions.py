@@ -359,7 +359,7 @@ def reverse_position(con, event_id, stop_loss, take_profit, client=None):
     from live_futures_engine import (MAX_POSITION_NOTIONAL_USDT,
                                      MAX_POSITION_INITIAL_MARGIN_USDT,
                                      MAX_LEVERAGE, verified_account_equity)
-    from live_risk_policy import per_entry_risk
+    from live_risk_policy import per_entry_risk, sizing_mode, fixed_notional_usdt, SIZING_MODE_FIXED
     snap2 = client.snapshot()
     meta = client.request("GET", PREFIX + "/contracts/" + row["contract"])
     if not isinstance(meta, dict):
@@ -377,11 +377,19 @@ def reverse_position(con, event_id, stop_loss, take_profit, client=None):
     unit_margin = (entry * multiplier) * (1 + slip) * (Decimal(1) / MAX_LEVERAGE + fee)
     unit_notional = entry * multiplier * (1 + slip)
     budget = min(equity * per_entry_risk(), equity * Decimal("0.025"))
-    count = min(int(budget / unit_loss) if unit_loss > 0 else 0,
-                int(available / unit_margin) if unit_margin > 0 else 0,
-                int(MAX_POSITION_NOTIONAL_USDT / unit_notional) if unit_notional > 0 else 0,
-                int(MAX_POSITION_INITIAL_MARGIN_USDT / unit_margin) if unit_margin > 0 else 0,
-                int(qty))
+    if sizing_mode() == SIZING_MODE_FIXED:
+        units_by_target = int(fixed_notional_usdt() / (entry * multiplier)) if entry * multiplier > 0 else 0
+        count = min(units_by_target,
+                    int(available / unit_margin) if unit_margin > 0 else 0,
+                    int(MAX_POSITION_NOTIONAL_USDT / unit_notional) if unit_notional > 0 else 0,
+                    int(MAX_POSITION_INITIAL_MARGIN_USDT / unit_margin) if unit_margin > 0 else 0,
+                    int(qty))
+    else:
+        count = min(int(budget / unit_loss) if unit_loss > 0 else 0,
+                    int(available / unit_margin) if unit_margin > 0 else 0,
+                    int(MAX_POSITION_NOTIONAL_USDT / unit_notional) if unit_notional > 0 else 0,
+                    int(MAX_POSITION_INITIAL_MARGIN_USDT / unit_margin) if unit_margin > 0 else 0,
+                    int(qty))
     if count < 1:
         return {"state": "REVERSE_ABORTED_SIZE", "orders_sent": 1,
                 "detail": "Position was closed, but the opposite entry does not "

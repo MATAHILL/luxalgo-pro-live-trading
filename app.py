@@ -96,7 +96,7 @@ ON luxalgo_live_signal_handoff(symbol,side,timeframe,source_bar_id)
 WHERE source_bar_id IS NOT NULL;
 -- Historical Testnet journal retained for audit only, not market data.
 CREATE TABLE IF NOT EXISTS luxalgo_one_trade_candidate (
- slot TEXT PRIMARY KEY CHECK(slot IN ('5m','15m')),
+ singleton_id SMALLINT PRIMARY KEY CHECK(singleton_id=1),
  event_id TEXT NOT NULL UNIQUE,
  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
  symbol TEXT NOT NULL,
@@ -108,37 +108,6 @@ CREATE TABLE IF NOT EXISTS luxalgo_one_trade_candidate (
  status TEXT NOT NULL CHECK(status='WAITING_FOR_VERIFIED_EXECUTION'),
  note TEXT NOT NULL DEFAULT 'No real order submitted. Requires validated exchange execution and SL/TP.'
 );
--- Migrate the legacy global singleton (singleton_id=1) to one slot per
--- timeframe, so a 5m and a 15m signal no longer compete for the same row.
--- Idempotent: a fresh table already has the slot key and skips this block.
-DO $$
-BEGIN
-  IF EXISTS (SELECT 1 FROM information_schema.columns
-             WHERE table_name='luxalgo_one_trade_candidate'
-               AND column_name='singleton_id') THEN
-    ALTER TABLE luxalgo_one_trade_candidate ADD COLUMN IF NOT EXISTS slot TEXT;
-    ALTER TABLE luxalgo_one_trade_candidate
-      DROP CONSTRAINT IF EXISTS luxalgo_one_trade_candidate_pkey;
-    ALTER TABLE luxalgo_one_trade_candidate
-      DROP CONSTRAINT IF EXISTS luxalgo_one_trade_candidate_singleton_id_check;
-    ALTER TABLE luxalgo_one_trade_candidate ALTER COLUMN singleton_id DROP NOT NULL;
-    UPDATE luxalgo_one_trade_candidate
-       SET slot = CASE WHEN timeframe IN ('5m','15m') THEN timeframe ELSE '15m' END
-     WHERE slot IS NULL;
-    ALTER TABLE luxalgo_one_trade_candidate ALTER COLUMN slot SET NOT NULL;
-    IF NOT EXISTS (SELECT 1 FROM pg_constraint
-                   WHERE conname='luxalgo_one_trade_candidate_slot_check') THEN
-      ALTER TABLE luxalgo_one_trade_candidate
-        ADD CONSTRAINT luxalgo_one_trade_candidate_slot_check
-        CHECK (slot IN ('5m','15m'));
-    END IF;
-    IF NOT EXISTS (SELECT 1 FROM pg_constraint
-                   WHERE conname='luxalgo_one_trade_candidate_pkey') THEN
-      ALTER TABLE luxalgo_one_trade_candidate
-        ADD CONSTRAINT luxalgo_one_trade_candidate_pkey PRIMARY KEY (slot);
-    END IF;
-  END IF;
-END $$;
 CREATE TABLE IF NOT EXISTS luxalgo_signal_receipts (
  id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
  received_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -456,77 +425,11 @@ def terminal_bot_control_post():
     except (psycopg.Error,RuntimeError,OSError):
         return jsonify(error='Unable to save bot state; treat as OFF',orders_enabled=False),503
 
-SIGNAL_COUNT_RESET_ENV = 'LUXALGO_SIGNAL_COUNT_RESET_UTC'
-SIGNAL_COUNT_RESET_NOW = {'now','1','true','yes','on'}
-
-def _signal_count_baseline(cursor):
-    """Resolve the durable watermark for the DATABASE SIGNALS tile.
-
-    The tile counts only receipts that arrived after the last reset. Receipt
-    rows are never deleted: the Incoming LuxAlgo Signals Status table, the
-    execution journal and every audit trail depend on them. Deletion would
-    also silently drop verified trade history, which must not happen.
-
-    The Render environment value seeds the same watermark so a reset survives
-    redeploys without any shell access to the database.
-    """
-    cursor.execute("""CREATE TABLE IF NOT EXISTS luxalgo_signal_count_baseline (
-       id SMALLINT PRIMARY KEY CHECK(id=1),
-       baseline_id BIGINT NOT NULL,
-       reset_at TIMESTAMPTZ NOT NULL
-    )""")
-    cursor.execute('SELECT baseline_id FROM luxalgo_signal_count_baseline WHERE id=1')
-    row=cursor.fetchone()
-    baseline=int(row['baseline_id']) if row else 0
-    raw=os.getenv(SIGNAL_COUNT_RESET_ENV,'').strip()
-    if not raw:
-        return baseline
-    if raw.lower() in SIGNAL_COUNT_RESET_NOW:
-        # "now" rebases to the newest receipt exactly once. The stored baseline
-        # is authoritative afterwards, so later signals still count up from 0.
-        if row is not None:
-            return baseline
-        cursor.execute('SELECT COALESCE(MAX(id),0) AS watermark FROM luxalgo_signal_receipts')
-        seeded=int(cursor.fetchone()['watermark'])
-        if seeded <= 0:
-            return baseline
-        cursor.execute("""INSERT INTO luxalgo_signal_count_baseline(id,baseline_id,reset_at)
-            VALUES(1,%s,clock_timestamp()) ON CONFLICT(id) DO UPDATE
-            SET baseline_id=GREATEST(luxalgo_signal_count_baseline.baseline_id,EXCLUDED.baseline_id),
-                reset_at=GREATEST(luxalgo_signal_count_baseline.reset_at,EXCLUDED.reset_at)
-            RETURNING baseline_id""",(seeded,))
-        return int(cursor.fetchone()['baseline_id'])
-    try:
-        seeded_at=datetime.fromisoformat(raw.replace('Z','+00:00'))
-        if seeded_at.tzinfo is None:
-            raise ValueError('Reset time requires a timezone')
-        seeded_at=seeded_at.astimezone(timezone.utc)
-    except (ValueError,TypeError,AttributeError):
-        raise ValueError('Invalid '+SIGNAL_COUNT_RESET_ENV+' value') from None
-    # Baseline is the highest receipt id at or before the requested instant.
-    cursor.execute('SELECT COALESCE(MAX(id),0) AS watermark FROM luxalgo_signal_receipts WHERE received_at <= %s',(seeded_at,))
-    seeded=int(cursor.fetchone()['watermark'])
-    if seeded <= 0:
-        # A reset instant earlier than every stored receipt would otherwise be a
-        # silent no-op, leaving the tile on its old lifetime total. Resetting to
-        # a time before any signal can only mean "clear the whole count".
-        cursor.execute('SELECT COALESCE(MAX(id),0) AS watermark FROM luxalgo_signal_receipts')
-        seeded=int(cursor.fetchone()['watermark'])
-    if seeded <= baseline:
-        return baseline
-    cursor.execute("""INSERT INTO luxalgo_signal_count_baseline(id,baseline_id,reset_at)
-        VALUES(1,%s,clock_timestamp()) ON CONFLICT(id) DO UPDATE
-        SET baseline_id=GREATEST(luxalgo_signal_count_baseline.baseline_id,EXCLUDED.baseline_id),
-            reset_at=GREATEST(luxalgo_signal_count_baseline.reset_at,EXCLUDED.reset_at)
-        RETURNING baseline_id""",(seeded,))
-    return int(cursor.fetchone()['baseline_id'])
-
 def _db_recent():
     with _db_connect() as con:
         _ensure_schema(con)
         with con.cursor() as cur:
-            baseline=_signal_count_baseline(cur)
-            cur.execute('SELECT COUNT(*) AS total FROM luxalgo_signal_receipts WHERE id > %s',(baseline,))
+            cur.execute('SELECT COUNT(*) AS total FROM luxalgo_signal_receipts')
             count = cur.fetchone()['total']
             cur.execute('''SELECT received_at, event_id, symbol, side, timeframe FROM luxalgo_signal_receipts r
                            WHERE NOT EXISTS (SELECT 1 FROM luxalgo_hidden_signal_rows h WHERE h.event_id=r.event_id)
@@ -539,8 +442,7 @@ def _db_status():
     with _db_connect() as con:
         _ensure_schema(con)
         with con.cursor() as cur:
-            baseline=_signal_count_baseline(cur)
-            cur.execute('SELECT COUNT(*) AS total FROM luxalgo_signal_receipts WHERE id > %s',(baseline,))
+            cur.execute('SELECT COUNT(*) AS total FROM luxalgo_signal_receipts')
             count = cur.fetchone()['total']
             cur.execute('''SELECT event_id, received_at, symbol, side, timeframe, status
                            FROM luxalgo_dry_run_intents ORDER BY received_at DESC LIMIT 15''')
@@ -773,31 +675,6 @@ h2{font-size:15px;font-weight:850;letter-spacing:.3px}
 .position-chart-box[data-chart-open="true"]{max-height:470px;border-top:1px solid #2b435e}
 .position-chart-frame{width:100%;height:450px;border:0;display:block;background:#0b1a2b}
 .ot-serial{color:#9fb5cf;font-variant-numeric:tabular-nums;font-weight:700}
-/* Live position marks: the card ticks like an exchange while a trade is open. */
-.position-live-badge{display:inline-flex;align-items:center;gap:5px;font-size:9.5px;font-weight:900;
- letter-spacing:.09em;color:#0a2a1c;background:linear-gradient(150deg,#8dffc9,#2fd68d);
- border:1px solid #b6ffe0;border-radius:5px;padding:2px 6px;text-transform:uppercase}
-.position-live-badge .dot{width:6px;height:6px;border-radius:50%;background:#0a2a1c;
- animation:posLivePulse 1.6s ease-in-out infinite}
-@keyframes posLivePulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.35;transform:scale(.72)}}
-.position-live-badge[data-stale="true"]{background:linear-gradient(150deg,#ffd79a,#e0a13c);border-color:#ffe6bd}
-.position-live-badge[data-stale="true"] .dot{animation:none;opacity:.5}
-.position-fact[data-live="last"] strong{color:#9fe8ff}
-.position-fact[data-live="last"] small::after{content:" \00b7 live";color:#5fd0ff;font-weight:800}
-.position-fact[data-live="pnl"] strong,.position-summary-pnl{transition:color .18s ease}
-.position-tick{font-size:9.5px;color:#7fb6d8;margin-top:6px;letter-spacing:.02em}
-/* One-click maintenance: clears browser storage, cached files and server caches. */
-.maint-clear{border:1px solid #7fd4ff;border-radius:9px;cursor:pointer;padding:8px 13px;font-size:11px;
- font-weight:850;letter-spacing:.03em;color:#eafcff;
- background:linear-gradient(155deg,#3f8fbd,#1a4f78 52%,#123a5c);box-shadow:inset 0 1px 0 #ffffff55,0 2px 9px #0a8aff44}
-.maint-clear:hover{filter:brightness(1.14)}
-.maint-clear:disabled{opacity:.55;cursor:wait}
-.maint-clear:focus-visible{outline:2px solid #ffe39e;outline-offset:2px}
-.maint-status{display:block;max-width:290px;font-size:10.5px;line-height:1.45;color:#9de7ff;text-align:right}
-.maint-status[data-state="ok"]{color:#8dffc9}
-.maint-status[data-state="warn"]{color:#ffd79a}
-.maint-status[data-state="err"]{color:#ff9db0}
-@media(max-width:680px){.maint-status{text-align:left}}
 @media(max-width:500px){.position-card>summary{align-items:flex-start}.position-symbol{font-size:13px}.position-summary-pnl{font-size:13px}}
 
 /* Distinct high-gloss RED Delete action; isolated from other signal buttons. */
@@ -902,9 +779,7 @@ header.terminal-header{border-radius:17px!important}
 .incoming-lux-scroll thead th{position:sticky;top:0;z-index:3;background:#12314d;box-shadow:0 1px 0 #53718a;padding:8px 7px}
 .incoming-lux-scroll tbody td{padding:7px 7px;vertical-align:middle}
 .incoming-lux-scroll tbody td .btn{padding:6px 9px;font-size:10px;line-height:1.2}
-#signalStatusInfo{font-size:11px}
-.status-live{color:#ffd28a;font-weight:800}
-.status-closed{color:#8ed7ff;font-weight:800}
+#incomingLuxInfo{font-size:11px}
 @media(max-width:700px){.incoming-lux-scroll{max-height:505px}}
 #v4PaperCards>.v4-trade{align-self:start}
 .v45-tools{display:flex;gap:7px;align-items:center;flex-wrap:wrap}
@@ -930,7 +805,7 @@ header.terminal-header{border-radius:17px!important}
 </style><script type="module" src="https://widgets.tradingview-widget.com/w/en/tv-advanced-chart.js"></script></head><body><div class="wrap"><header class="terminal-header"><div class="terminal-brand"><h1>LUXALGO PRO · TESTNET FUTURES TERMINAL</h1><p>Gate.io USDT Perpetual · LuxAlgo 5m / 15m · Coded by · SUBHASISH</p>
 <div class="profile-greeting"><div class="profile-avatar" id="avatarDisplay"><span>SD</span></div>
 <div><div class="profile-name">Hello SUBHASISH</div><label class="profile-change" for="profileImageInput" tabindex="0">Change Photo</label><input type="file" id="profileImageInput" accept="image/png,image/jpeg,image/webp" hidden></div></div></div><section class="news-slot" aria-label="Latest crypto news"><div class="news-heading"><span>● CRYPTO NEWS</span><span style="display:flex;align-items:center;gap:7px"><span id="newsFeedStatus">Loading headlines…</span><button type="button" id="newsRefresh" aria-label="Refresh crypto news" title="Refresh crypto news">↻</button></span></div><div class="news-viewport" id="newsViewport"><div class="news-stack" id="newsStack"><span class="news-empty">Retrieving publisher headlines…</span></div></div></section><div class="profile-right">
-<form method="post" action="/logout"><input type="hidden" name="csrf_token" value="{{ csrf_token|e }}"><button class="glossy-logout" type="submit">⇥ LOGOUT</button></form><button class="maint-clear" type="button" id="maintenanceClear" title="Clears this browser's cache, cookies and leftover storage, plus the server's in-memory caches. Does not touch trades, positions or signal history.">✦ CLEAR CACHE &amp; JUNK</button><span class="maint-status" id="maintenanceStatus" role="status" aria-live="polite">Clears browser cache, cookies and leftover junk in one click.</span><span id="signalLiveSync" role="status" aria-live="polite" style="font-size:11px;color:#9de7ff">● Signals auto-sync: connecting…</span></div></header>
+<form method="post" action="/logout"><input type="hidden" name="csrf_token" value="{{ csrf_token|e }}"><button class="glossy-logout" type="submit">⇥ LOGOUT</button></form><span id="signalLiveSync" role="status" aria-live="polite" style="font-size:11px;color:#9de7ff">● Signals auto-sync: connecting…</span></div></header>
  <section class="live-ops-banner" aria-label="Live trading execution status"><div><strong>GATE.IO FUTURES · TESTNET TRADING MODE</strong><p>Only Gate.io Futures TESTNET automatic orders are permitted. Entry and native protection must pass exchange validation. Real-money orders remain disabled.</p></div><span class="live-ops-state">TESTNET ONLY</span></section>
 <section class="bot-control-panel" aria-label="Remote bot control">
  <div><div class="bot-status-line"><strong id="botControlLabel">BOT OFF · TESTNET SIGNALS PAUSED</strong><span id="botStateIndicator" class="bot-state-indicator unknown" role="status" aria-live="polite">● CHECKING</span></div><p id="botControlDetail">New LuxAlgo signals remain logged. No live orders are possible.</p></div>
@@ -944,7 +819,7 @@ header.terminal-header{border-radius:17px!important}
 <div class="metric"><small>UNREALIZED P&amp;L (USDT)</small><strong id="unrealizedPositionPnl">—</strong><span>Read-only, refreshed every 30s</span></div>
 <div class="metric"><small>TOTAL REALIZED P&amp;L</small><strong id="metricRealizedPnl">—</strong><span id="metricRealizedPnlNote">Verified closed trades, net of fees</span></div>
 <div class="metric"><small>WIN RATE</small><strong id="metricWinRate">—</strong><span id="metricWinRateNote">Winning ÷ decided closed trades</span></div>
-<div class="metric"><small>DATABASE SIGNALS</small><strong id="databaseSignalCount">{{ count }}</strong><span>Webhook: {{ 'configured' if configured else 'not configured' }}</span><button class="btn gloss-action" type="button" id="resetSignalCount" style="margin-top:8px;font-size:11px;padding:4px 10px">↺ RESET TO 0</button><span id="resetSignalCountStatus" role="status" aria-live="polite" style="display:block;margin-top:6px;font-size:11px;color:#9de7ff"></span></div>
+<div class="metric"><small>DATABASE SIGNALS</small><strong>{{ count }}</strong><span>Webhook: {{ 'configured' if configured else 'not configured' }}</span></div>
 </div><section class="panel position-panel" id="openPositionPanel"><div class="panel-heading"><h2>Open Position <span class="gloss-cyan">– Gate.io Futures</span></h2><button class="btn gloss-action" id="positionRefresh" type="button">↻ Refresh Positions</button></div>
 <div id="gatePositionsBody" class="position-card-list" aria-live="polite"><p class="light">Checking read-only Gate.io open positions…</p></div><p id="gatePositionsUpdated" class="light">Read-only Gate.io account data. Each card refreshes itself from the exchange. SL/TP status is read from Gate.io's resting triggers.</p></section>
 <section class="panel" id="liveFuturesOrderTable" aria-label="Live futures order table">
@@ -993,12 +868,14 @@ header.terminal-header{border-radius:17px!important}
 <summary style="cursor:pointer;font-size:16px;font-weight:850">OPEN ORDERS · GATE.IO FUTURES TESTNET — Click to expand / minimize</summary>
 <p class="light">Actual unfilled Testnet exchange orders only · No simulated signals</p>
 <div class="panel-heading"><span class="light" id="testnetOrdersStatus">Not checked</span><button class="btn gloss-action" id="testnetOrdersRefresh" type="button">↻ Refresh Testnet Orders</button></div>
-<div class="tablewrap"><table style="width:100%;min-width:600px"><thead><tr><th>CONTRACT</th><th>ORDER ID</th><th>SIZE</th><th>PRICE</th><th>REMAINING</th><th>TIME IN FORCE</th><th>STATUS</th></tr></thead><tbody id="testnetOrdersRows"><tr><td colspan="7">Expand to load</td></tr></tbody></table></div></details><section class="panel" id="signalStatusPanel" style="width:100%;margin:14px 0;max-width:none" aria-label="Incoming LuxAlgo signals status">
-<div class="panel-heading"><h2>INCOMING LUXALGO SIGNALS STATUS</h2><span class="label-muted" id="signalStatusInfo" role="status" aria-live="polite">LOADING…</span></div>
-<p class="light">Every bot trade in the execution ledger. <strong>Live</strong> rows are positions the exchange still holds; <strong>Closed</strong> rows are exchange-verified exits. Exit fill, quantity and net P&amp;L come from the exchange’s own closing fills with fees subtracted; partial closes are summed. A dash means the exchange has not returned that figure — never an estimate.</p>
-<div class="tablewrap incoming-lux-scroll" id="signalStatusScroll" tabindex="0" role="region" aria-label="Incoming LuxAlgo signals status, live and closed trades"><table style="min-width:1120px;width:100%"><thead><tr><th>S/N</th><th>TIME (IST)</th><th>PAIR</th><th>DIRECTION</th><th>ENTRY FILL</th><th>EXIT FILL</th><th>EXIT QTY</th><th>EXIT TIME (IST)</th><th>FEES</th><th>NET REALIZED P&amp;L</th><th>RESULT</th><th>STATUS</th></tr></thead><tbody id="signalStatusBody"><tr><td colspan="12" class="empty-state">Loading trades…</td></tr></tbody></table></div>
-</section>
-<section class="panel advanced-panel" id="advancedScannerPanel"><div class="panel-heading"><h2>LUXALGO PRO · ADVANCED FUTURES OPPORTUNITY SCANNER <span class="gloss-cyan">● MARKET INTELLIGENCE</span></h2><button class="btn gloss-action" id="advancedRefresh" type="button">↻ Scan All Pairs</button></div>
+<div class="tablewrap"><table style="width:100%;min-width:600px"><thead><tr><th>CONTRACT</th><th>ORDER ID</th><th>SIZE</th><th>PRICE</th><th>REMAINING</th><th>TIME IN FORCE</th><th>STATUS</th></tr></thead><tbody id="testnetOrdersRows"><tr><td colspan="7">Expand to load</td></tr></tbody></table></div></details>
+<details id="incomingLuxPanel" class="panel" open style="width:100%;margin:14px 0;max-width:none">
+<summary style="cursor:pointer;font-size:16px;font-weight:850;padding:2px 0 12px">INCOMING LUXALGO ORDERS · WEBHOOK SIGNALS <span class="light" style="font-size:12px">— Click to minimize / maximize</span></summary>
+<p class="light">Fresh LuxAlgo signals only, after your saved dashboard reset. LIVE requires an open Gate.io Testnet position with reverified exchange-side TP/SL; CLOSED requires a verified closing journal. Unexecuted or uncertain calls are never labeled LIVE. Real-money trading OFF.</p>
+<div class="panel-heading"><span id="incomingLuxInfo" class="light" role="status">Loading fresh signals from zero…</span><div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn" id="incomingLuxClear" type="button" title="Clear displayed signals, not exchange orders or safety logs">Clear Visible History</button><button class="btn gloss-action" id="incomingLuxRefresh" type="button">↻ Refresh</button></div></div>
+<div class="market-tabs" id="incomingLuxFilters" aria-label="Filter incoming LuxAlgo signals by verified status"><button class="btn selected" type="button" data-lux-filter="ALL">ALL</button><button class="btn" type="button" data-lux-filter="LIVE">● LIVE</button><button class="btn" type="button" data-lux-filter="CLOSED">✓ CLOSED</button><button class="btn" type="button" data-lux-filter="WAITING FOR EXECUTION">◷ WAITING</button><button class="btn" type="button" data-lux-filter="NOT EXECUTED">NOT EXECUTED</button><button class="btn" type="button" data-lux-filter="UNSUPPORTED ON TESTNET">UNSUPPORTED MARKET</button><button class="btn" type="button" data-lux-filter="VERIFY EXCHANGE">VERIFY EXCHANGE</button></div>
+<div class="tablewrap incoming-lux-scroll" id="incomingLuxScroll" tabindex="0" role="region" aria-label="Incoming LuxAlgo signals, latest 25, scroll vertically after row 10"><table style="min-width:1000px;width:100%"><thead><tr><th>S/N</th><th>RECEIVED (IST)</th><th>COIN</th><th>SIGNAL</th><th>TF</th><th>ORDER TYPE</th><th>ENTRY</th><th>STOP LOSS</th><th>TAKE PROFIT</th><th>CURRENT STATUS · CLICK TO REFRESH</th><th>DETAIL</th></tr></thead><tbody id="incomingLuxRows"><tr><td colspan="11">Loading…</td></tr></tbody></table></div>
+</details><section class="panel advanced-panel" id="advancedScannerPanel"><div class="panel-heading"><h2>LUXALGO PRO · ADVANCED FUTURES OPPORTUNITY SCANNER <span class="gloss-cyan">● MARKET INTELLIGENCE</span></h2><button class="btn gloss-action" id="advancedRefresh" type="button">↻ Scan All Pairs</button></div>
 <p class="light">Gate.io USDT perpetuals · 5m + 15m completed candles · volume / trend / structure screening · up to five watchlist candidates. ATR-based technical levels are estimates only; only genuine stored LuxAlgo alerts confirm SL1/TP1. NEVER PLACES ORDERS.</p>
 <div class="adv-controls"><strong id="advancedScanStatus" class="adv-summary">Ready to inspect markets…</strong><span id="advancedEquityInfo" class="light">Equity risk sizing: verifying read-only account</span></div>
 <div class="adv-table"><table><thead><tr><th>PAIR</th><th>DIRECTION</th><th>TIMEFRAME</th><th>LUXALGO</th><th>ENTRY REF.</th><th>SL1</th><th>TP1</th><th>R:R</th><th>0.5% RISK / SIZE</th><th>STATUS / REASON</th></tr></thead><tbody id="advancedScanBody"><tr><td colspan="10" class="light">Waiting for scan results.</td></tr></tbody></table></div>
@@ -1020,7 +897,7 @@ header.terminal-header{border-radius:17px!important}
 <div class="tablewrap market-scroll"><table><thead><tr><th>PAIR · CHART ↗</th><th>BIAS</th><th>SCORE</th><th>RSI</th><th>VOL RATIO</th></tr></thead><tbody id="scannerBody"><tr><td colspan="5">Scanning…</td></tr></tbody></table></div>
 <p class="light">Technical labels reflect EMA trend, RSI, recent price-range break and candle volume. They are not LuxAlgo orders.</p>
 </section></div>
-<div class="bottom-grid"><section class="panel performance-panel"><div class="panel-heading"><h2>PERFORMANCE ANALYTICS</h2><span class="label-muted" id="perfStatus">VERIFIED FILLS ONLY</span></div><div class="perf-grid"><div><span>Total Closed Trades</span><strong id="perfClosed">—</strong></div><div><span>Winning Trades</span><strong id="perfWins">—</strong></div><div><span>Losing Trades</span><strong id="perfLosses">—</strong></div><div><span>Win Rate</span><strong id="perfWinRate">—</strong></div><div><span>Losing Rate</span><strong id="perfLosingRate">—</strong></div><div><span>Total Close Rate</span><strong id="perfCloseRate">—</strong></div><div><span>Total Realized P&amp;L (USDT)</span><strong id="perfRealized">—</strong></div><div><span>Unrealized P&amp;L (USDT)</span><strong id="perfUnrealized">—</strong></div></div><p class="light" id="perfNote">Waiting for authenticated position and fill synchronization. No synthetic P&amp;L or win statistics.</p></section></div><section class="panel legacy-paper-panel"><div class="panel-heading"><h2>PAPER TRADE MONITOR <span class="tag">SIMULATION ONLY</span></h2><button class="btn gloss-action" id="paperRefresh" type="button">↻ Check Paper Trades</button></div><p class="light" id="paperStatus" role="status" aria-live="polite">Checks queued simulated orders when the dashboard is open; historical outcomes remain estimates, not fills.</p><div class="tablewrap"><table><thead><tr><th>CREATED (IST)</th><th>PAIR</th><th>SIDE</th><th>SIM ENTRY</th><th>SIM SL</th><th>SIM TP</th><th>STATE</th><th>LAST PRICE</th><th>UNREALIZED P&amp;L</th><th>EST. CLOSED P&amp;L</th></tr></thead><tbody id="paperBody"><tr><td colspan="10">No simulated positions loaded.</td></tr></tbody></table></div><p id="paperOpenPnlTotal" class="light" role="status" aria-live="polite">Open paper unrealized P&amp;L: not yet available.</p><p class="light">Simulation outcomes assume the reference entry was achievable and exclude fees, slippage and funding. If both SL and TP are touched in one candle, SL is assumed first. Historical-data gaps are not guessed. Simulated P&amp;L is never included in verified real-trade analytics.</p></section><div class="foot">LUXALGO PRO · Private terminal · Market data is public Gate.io data. Scanners are technical watchlists, not LuxAlgo entry signals. No account positions, fills, profit or loss are available until authenticated exchange sync is implemented. Live order placement is controlled by the PRODUCTION BOT switch above: when it reads BOT ON, enabled signals are sent to Gate.io and the panels above show the real result; when it reads BOT OFF or a gate is listed, no orders are placed.</div></div><script>
+<div class="bottom-grid"><section class="panel performance-panel"><div class="panel-heading"><h2>PERFORMANCE ANALYTICS</h2><span class="label-muted" id="perfStatus">VERIFIED FILLS ONLY</span></div><div class="perf-grid"><div><span>Total Closed Trades</span><strong id="perfClosed">—</strong></div><div><span>Winning Trades</span><strong id="perfWins">—</strong></div><div><span>Losing Trades</span><strong id="perfLosses">—</strong></div><div><span>Win Rate</span><strong id="perfWinRate">—</strong></div><div><span>Losing Rate</span><strong id="perfLosingRate">—</strong></div><div><span>Total Close Rate</span><strong id="perfCloseRate">—</strong></div><div><span>Total Realized P&amp;L (USDT)</span><strong id="perfRealized">—</strong></div><div><span>Unrealized P&amp;L (USDT)</span><strong id="perfUnrealized">—</strong></div></div><p class="light" id="perfNote">Waiting for authenticated position and fill synchronization. No synthetic P&amp;L or win statistics.</p></section></div><section class="panel"><div class="panel-heading"><h2>COMPLETED TRADES · EXIT RECORD</h2><span class="label-muted" id="completedTradesStatus">LOADING…</span></div><div class="tablewrap"><table><thead><tr><th>TIME (IST)</th><th>PAIR</th><th>DIRECTION</th><th>ENTRY FILL</th><th>EXIT FILL</th><th>EXIT QTY</th><th>EXIT TIME (IST)</th><th>FEES</th><th>NET REALIZED P&amp;L</th><th>RESULT</th></tr></thead><tbody id="completedTradesBody"><tr><td colspan="10" class="empty-state">Loading closed bot trades…</td></tr></tbody></table></div><p class="light">Closed bot trades only. A row appears here once the exchange reports the position, its open orders and its resting SL/TP triggers all gone. Exit fill, quantity and net P&amp;L come from Gate.io's own closing fills, with fees subtracted; partial closes are summed. A dash means the exchange has not returned that figure — never an estimate.</p></section><section class="panel legacy-paper-panel"><div class="panel-heading"><h2>PAPER TRADE MONITOR <span class="tag">SIMULATION ONLY</span></h2><button class="btn gloss-action" id="paperRefresh" type="button">↻ Check Paper Trades</button></div><p class="light" id="paperStatus" role="status" aria-live="polite">Checks queued simulated orders when the dashboard is open; historical outcomes remain estimates, not fills.</p><div class="tablewrap"><table><thead><tr><th>CREATED (IST)</th><th>PAIR</th><th>SIDE</th><th>SIM ENTRY</th><th>SIM SL</th><th>SIM TP</th><th>STATE</th><th>LAST PRICE</th><th>UNREALIZED P&amp;L</th><th>EST. CLOSED P&amp;L</th></tr></thead><tbody id="paperBody"><tr><td colspan="10">No simulated positions loaded.</td></tr></tbody></table></div><p id="paperOpenPnlTotal" class="light" role="status" aria-live="polite">Open paper unrealized P&amp;L: not yet available.</p><p class="light">Simulation outcomes assume the reference entry was achievable and exclude fees, slippage and funding. If both SL and TP are touched in one candle, SL is assumed first. Historical-data gaps are not guessed. Simulated P&amp;L is never included in verified real-trade analytics.</p></section><div class="foot">LUXALGO PRO · Private terminal · Market data is public Gate.io data. Scanners are technical watchlists, not LuxAlgo entry signals. No account positions, fills, profit or loss are available until authenticated exchange sync is implemented. Live order placement is controlled by the PRODUCTION BOT switch above: when it reads BOT ON, enabled signals are sent to Gate.io and the panels above show the real result; when it reads BOT OFF or a gate is listed, no orders are placed.</div></div><script>
 
 // Read-only advanced watchlist: uses completed 5m/15m public candles and validated LuxAlgo receipt records.
 (function(){
@@ -1472,7 +1349,7 @@ async function loadPnlSummary(){
   note('metricWinRateNote','Summary unavailable');
  }
 }
-function field(grid,label,value,colorClass){const x=element('div','position-fact');x.append(element('small','',label),element('strong',colorClass||'',value));grid.append(x);return x;}
+function field(grid,label,value,colorClass){const x=element('div','position-fact');x.append(element('small','',label),element('strong',colorClass||'',value));grid.append(x);}
 function pnlClass(v){return v===null||v===undefined?'gloss-pnl-neutral':v>0?'gloss-pnl-profit':v<0?'gloss-pnl-loss':'gloss-pnl-neutral';}
 /* Builds the per-card indicator table from a server response. Every figure is
    a verified server value; a missing one prints a dash, never a guess. */
@@ -1535,40 +1412,31 @@ function renderPositions(positions){
   left.append(element('span','position-side '+(p.side==='LONG'?'long':'short'),p.side==='LONG'?'L':'S'),
               token,
               element('span','position-leverage',p.leverage_label));
-  // A live badge marks a card whose marks are ticking from the exchange.
-  const liveBadge=element('span','position-live-badge');
-  liveBadge.append(element('span','dot'),element('span','','LIVE'));
-  liveBadge.title='Mark price and P&L refresh from Gate.io while this position is open';
-  left.append(liveBadge);
   const right=element('span','position-summary-pnl '+pnlClass(p.unrealized_pnl),(p.unrealized_pnl>=0?'+':'')+money(p.unrealized_pnl)+' USDT ⌄');
   heading.append(left,right);card.append(heading);
   const inner=element('div','position-card-inner'),grid=element('div','position-facts');
-  const pnlFact=field(grid,'Unrealized P&L (USDT)',(p.unrealized_pnl>=0?'+':'')+money(p.unrealized_pnl),pnlClass(p.unrealized_pnl));
-  pnlFact.dataset.live='pnl';
+  field(grid,'Unrealized P&L (USDT)',(p.unrealized_pnl>=0?'+':'')+money(p.unrealized_pnl),pnlClass(p.unrealized_pnl));
   field(grid,'ROI (based on reported margin)',p.roi_percent===null?'—':(p.roi_percent>=0?'+':'')+p.roi_percent.toFixed(2)+'%',p.roi_percent===null?'':pnlClass(p.roi_percent));
   field(grid,'Position size (USDT)',p.position_value_usdt===null?'—':money(p.position_value_usdt));
   field(grid,'Margin (USDT)',p.margin_usdt===null?'—':money(p.margin_usdt));
   field(grid,'Contracts',String(p.size_contracts));
   field(grid,'Entry price',price(p.entry_price));
-  const markFact=field(grid,'Mark price',price(p.mark_price));
-  markFact.dataset.live='last';
+  field(grid,'Mark price',price(p.mark_price));
   field(grid,'Liquidation price',price(p.liquidation_price));
   grid && inner.append(grid);
-  // Ticker line: shows the exchange mark and when it was last read, so the
-  // operator can see the card is genuinely live rather than frozen.
-  const tick=element('p','position-tick','Mark '+price(p.mark_price)+' · waiting for the first live tick…');
-  inner.append(tick);
   // Per-card indicator table. Each card owns its own element, so opening one
   // never affects another. Nothing here is shared or global.
-  // Every rendered card is an ACTIVE trade, so the panel starts OPEN and its
-  // indicators load immediately; the token still collapses it on demand.
   const ind=element('div','position-indicators');
-  ind.dataset.indOpen='true';
-  ind.setAttribute('aria-hidden','false');
+  ind.dataset.indOpen='false';
+  ind.setAttribute('aria-hidden','true');
   inner.append(ind);
   let indLoaded=false;
-  const loadIndicators=async()=>{
-   if(indLoaded)return;
+  token.addEventListener('click',async ()=>{
+   const opening=ind.dataset.indOpen!=='true';
+   ind.dataset.indOpen=opening?'true':'false';
+   ind.setAttribute('aria-hidden',opening?'false':'true');
+   token.setAttribute('aria-expanded',opening?'true':'false');
+   if(!opening||indLoaded)return;
    indLoaded=true;
    ind.replaceChildren(element('p','ind-loading','Loading indicators for '+p.contract.replace('_','/')+'\u2026'));
    try{
@@ -1580,17 +1448,7 @@ function renderPositions(positions){
     indLoaded=false;
     ind.replaceChildren(element('p','ind-note','\u26a0 Indicators unavailable \u00b7 '+String(err.message).slice(0,110)));
    }
-  };
-  token.setAttribute('aria-expanded','true');
-  token.addEventListener('click',async ()=>{
-   const opening=ind.dataset.indOpen!=='true';
-   ind.dataset.indOpen=opening?'true':'false';
-   ind.setAttribute('aria-hidden',opening?'false':'true');
-   token.setAttribute('aria-expanded',opening?'true':'false');
-   if(!opening)return;
-   await loadIndicators();
   });
-  loadIndicators();
   const actions=element('div','position-card-actions');
   const chart=element('button','btn position-chart-action','View Chart');chart.type='button';
   chart.addEventListener('click',()=>{
@@ -1767,162 +1625,7 @@ body.addEventListener('click',async e=>{
       +' \u00b7 Check Gate.io before any retry.');
  }finally{all.forEach(x=>x.disabled=false);}
 });
-/* Live marks: while a position is open, its card ticks like an exchange.
-   One shared server read feeds every card, so this stays inside the exchange
-   rate limit even with several tabs open. Read-only: no order is ever sent. */
-let liveMarksTimer=null,liveMarksBusy=false,liveMarksFails=0;
-async function tickLiveMarks(){
- if(liveMarksBusy||document.hidden)return;
- if(!document.querySelector('.position-card'))return;
- liveMarksBusy=true;
- try{
-  const r=await fetch('/terminal/positions/live-marks',{cache:'no-store'});
-  const d=await r.json();
-  if(!r.ok)throw Error(d.error||('HTTP '+r.status));
-  const marks=d.marks||{};
-  let painted=0;
-  document.querySelectorAll('.position-card').forEach(card=>{
-   const contract=card.dataset.contract;
-   const m=marks[contract];
-   if(!m)return;
-   painted++;
-   const lastEl=card.querySelector('[data-live="last"] strong');
-   if(lastEl&&m.mark_price!==null&&m.mark_price!==undefined)lastEl.textContent=price(m.mark_price);
-   const pnlEl=card.querySelector('[data-live="pnl"] strong');
-   if(pnlEl&&m.unrealized_pnl!==null&&m.unrealized_pnl!==undefined){
-    pnlEl.textContent=(m.unrealized_pnl>=0?'+':'')+money(m.unrealized_pnl);
-    pnlEl.className=pnlClass(m.unrealized_pnl);
-   }
-   const headPnl=card.querySelector('.position-summary-pnl');
-   if(headPnl&&m.unrealized_pnl!==null&&m.unrealized_pnl!==undefined){
-    headPnl.textContent=(m.unrealized_pnl>=0?'+':'')+money(m.unrealized_pnl)+' USDT \u2304';
-    headPnl.className='position-summary-pnl '+pnlClass(m.unrealized_pnl);
-   }
-   const tick=card.querySelector('.position-tick');
-   if(tick){
-    tick.textContent='Mark '+price(m.mark_price)
-      +' \u00b7 live '+new Date(d.fetched_at*1000).toLocaleTimeString('en-IN',{timeZone:'Asia/Kolkata',hour12:true})+' IST';
-   }
-   const badge=card.querySelector('.position-live-badge');
-   if(badge)badge.dataset.stale='false';
-  });
-  // The account-wide unrealised figure follows the same tick.
-  if(d.unrealized_pnl_usdt!==null&&d.unrealized_pnl_usdt!==undefined){
-   pnl.textContent=money(d.unrealized_pnl_usdt);
-   pnl.classList.toggle('positive',d.unrealized_pnl_usdt>0);
-   pnl.classList.toggle('negative',d.unrealized_pnl_usdt<0);
-  }
-  liveMarksFails=0;
-  if(painted===0&&d.count===0){
-   // Every position closed at the exchange: re-read the list so the cards go.
-   loadPositions();
-  }
- }catch(err){
-  liveMarksFails++;
-  if(liveMarksFails>=3){
-   document.querySelectorAll('.position-live-badge').forEach(b=>{b.dataset.stale='true';});
-   document.querySelectorAll('.position-tick').forEach(t=>{
-    t.textContent='\u26a0 Live marks paused \u00b7 '+String(err.message).slice(0,70);
-   });
-  }
- }finally{liveMarksBusy=false;}
-}
-function startLiveMarks(){
- if(liveMarksTimer)return;
- liveMarksTimer=setInterval(tickLiveMarks,4000);
- tickLiveMarks();
-}
-/* One-click maintenance. Clears this browser's cache, cookies and leftover
-   storage, then asks the server to drop its derived caches. The signed-in
-   session cookie is HttpOnly, so it is never exposed to or removed by this
-   code: you stay signed in. No trade, position or signal record is touched. */
-(function(){
- const btn=document.getElementById('maintenanceClear');
- const out=document.getElementById('maintenanceStatus');
- if(!btn||!out)return;
- const say=(t,state)=>{out.textContent=t;if(state)out.dataset.state=state;else delete out.dataset.state;};
- btn.addEventListener('click',async()=>{
-  if(btn.disabled)return;
-  if(!window.confirm("Clear this browser's cache, cookies and leftover junk, "
-    +"plus the server's temporary caches?\\n\\nYour trades, positions, signal "
-    +"history and sign-in are NOT affected."))return;
-  btn.disabled=true;
-  const done=[];
-  const failed=[];
-  say('Clearing browser storage\u2026');
-  // 1. Local and session storage.
-  try{localStorage.clear();done.push('localStorage');}catch(e){failed.push('localStorage');}
-  try{sessionStorage.clear();done.push('sessionStorage');}catch(e){failed.push('sessionStorage');}
-  // 2. IndexedDB databases.
-  try{
-   if(window.indexedDB&&indexedDB.databases){
-    const dbs=await indexedDB.databases();
-    for(const db of dbs){
-     if(!db||!db.name)continue;
-     await new Promise(res=>{
-      const req=indexedDB.deleteDatabase(db.name);
-      req.onsuccess=req.onerror=req.onblocked=()=>res();
-     });
-    }
-    done.push('indexedDB');
-   }
-  }catch(e){failed.push('indexedDB');}
-  // 3. Cache Storage (the HTTP cache the browser keeps for this origin).
-  try{
-   if(window.caches){
-    const keys=await caches.keys();
-    await Promise.all(keys.map(k=>caches.delete(k)));
-    done.push('cacheStorage');
-   }
-  }catch(e){failed.push('cacheStorage');}
-  // 4. Service workers, so a stale worker cannot serve an old page.
-  try{
-   if(navigator.serviceWorker&&navigator.serviceWorker.getRegistrations){
-    const regs=await navigator.serviceWorker.getRegistrations();
-    await Promise.all(regs.map(r=>r.unregister()));
-    if(regs.length)done.push('serviceWorkers');
-   }
-  }catch(e){failed.push('serviceWorkers');}
-  // 5. Readable cookies. The HttpOnly session cookie is invisible here and is
-  //    deliberately left alone, so the operator is not signed out.
-  try{
-   const names=document.cookie?document.cookie.split(';').map(c=>c.split('=')[0].trim()).filter(Boolean):[];
-   for(const n of names){
-    document.cookie=n+'=; Max-Age=0; path=/';
-    document.cookie=n+'=; Max-Age=0; path=/; SameSite=Lax';
-   }
-   if(names.length)done.push(names.length+' cookie(s)');
-  }catch(e){failed.push('cookies');}
-  // 6. Server-side derived caches.
-  say('Clearing server caches\u2026');
-  let serverCleared=0;
-  try{
-   const csrf=document.querySelector('input[name="csrf_token"]')?.value;
-   if(!csrf)throw Error('no session token');
-   const r=await fetch('/terminal/maintenance/clear',{method:'POST',cache:'no-store',
-    headers:{'Content-Type':'application/json','X-Terminal-CSRF':csrf},body:'{}'});
-   const d=await r.json();
-   if(!r.ok)throw Error(d.error||('HTTP '+r.status));
-   serverCleared=d.cleared_count||0;
-   done.push(serverCleared+' server cache(s)');
-  }catch(e){
-   failed.push('server caches: '+String(e.message).slice(0,60));
-  }
-  // 7. Repopulate the page from fresh data, no reload and no sign-out.
-  try{await loadPositions();}catch(e){}
-  try{await loadPnlSummary();}catch(e){}
-  try{if(typeof loadRadar==='function')loadRadar();}catch(e){}
-  try{if(typeof loadScanner==='function')loadScanner();}catch(e){}
-  btn.disabled=false;
-  if(failed.length){
-   say('\u26a0 Cleared '+done.length+' item(s) \u00b7 could not clear: '+failed.join(', '),'warn');
-  }else{
-   say('\u2713 Cleared '+done.join(' \u00b7 ')+' \u00b7 you are still signed in','ok');
-  }
- });
-})();
 loadPositions();loadPnlSummary();setInterval(()=>{if(!document.hidden){loadPositions();loadPnlSummary();}},30000);
-startLiveMarks();
 })();
 </script>
 <script>
@@ -2193,45 +1896,6 @@ loadRadar();loadScanner();setInterval(()=>{if(!document.hidden)loadRadar()},6000
  document.addEventListener('visibilitychange',()=>{if(!document.hidden)check();});
  check();
  setInterval(()=>{if(failures<3||!document.hidden)check();},4000);
-})();
-
-// DATABASE SIGNALS reset. Rebases the displayed count to zero; never deletes
-// a receipt, so the Incoming LuxAlgo Signals Status table and every verified
-// trade record stay exactly as they are.
-(function(){
- 'use strict';
- const btn=document.getElementById('resetSignalCount');
- const out=document.getElementById('resetSignalCountStatus');
- const tile=document.getElementById('databaseSignalCount');
- if(!btn||!out)return;
- btn.addEventListener('click',async()=>{
-  if(!window.confirm('Reset the DATABASE SIGNALS count to 0?\\n\\nStored signals and trade history are NOT deleted. Only the displayed count restarts at zero.'))return;
-  const csrf=document.querySelector('input[name="csrf_token"]')?.value;
-  if(!csrf){out.textContent='No valid session token. Refresh the page and sign in again.';return;}
-  btn.disabled=true;
-  out.textContent='Resetting count\u2026';
-  try{
-   const r=await fetch('/terminal/signals/reset-count',{
-    method:'POST',cache:'no-store',credentials:'same-origin',
-    headers:{'Content-Type':'application/json','X-Terminal-CSRF':csrf},
-    body:'{}'
-   });
-   const d=await r.json().catch(()=>({}));
-   if(!r.ok){
-    out.textContent='Reset FAILED \u00b7 '+String(d.error||d.detail||('HTTP '+r.status))
-      +(r.status===401?' \u00b7 sign in again':'')
-      +(r.status===403?' \u00b7 refresh the page and retry':'');
-    return;
-   }
-   if(tile)tile.textContent='0';
-   out.textContent='\u2713 Count reset to 0 \u00b7 baseline #'+d.baseline_id
-     +' \u00b7 stored signals preserved';
-   setTimeout(()=>{window.location.reload();},1200);
-  }catch(e){
-   out.textContent='Reset outcome UNKNOWN \u00b7 '+String(e.message).slice(0,80)
-     +' \u00b7 reload the page to see the current count.';
-  }finally{btn.disabled=false;}
- });
 })();
 
 // Stage 16 V4 presentation. Reads existing paper table only; does not mutate trades.
@@ -2522,101 +2186,61 @@ document.addEventListener('visibilitychange',()=>{if(!document.hidden)load();});
 })();
 </script>
 <script>
-/* SIGNAL STATUS v1 - live and closed bot trades from the execution ledger. */
+/* COMPLETED TRADES v1 — read-only closed bot trades from the execution ledger. */
 (function(){
 'use strict';
-const body=document.getElementById('signalStatusBody');
-const status=document.getElementById('signalStatusInfo');
+const body=document.getElementById('completedTradesBody');
+const status=document.getElementById('completedTradesStatus');
 if(!body)return;
+const esc=v=>String(v??'\u2014').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const num=v=>{if(v===null||v===undefined||v==='')return '\u2014';const n=Number(v);return Number.isFinite(n)?n.toLocaleString(undefined,{maximumFractionDigits:6}):'\u2014';};
 const ist=iso=>{if(!iso)return '\u2014';const d=new Date(iso);return Number.isNaN(d.getTime())?'\u2014':d.toLocaleString('en-IN',{timeZone:'Asia/Kolkata',hour12:true});};
-const pair=c=>String(c||'').replace('_','/');
 let busy=false;
-async function getJson(url){
- const r=await fetch(url,{cache:'no-store',credentials:'same-origin'});
- let d={};try{d=await r.json();}catch(e){d={};}
- if(!r.ok)throw Error(d.error||('HTTP '+r.status));
- return d;
-}
-function addRow(cells,classes){
- const tr=body.insertRow();
- cells.forEach((v,i)=>{
-  const td=tr.insertCell();
-  td.textContent=v;
-  if(classes&&classes[i])td.className=classes[i];
- });
-}
 async function load(){
  if(busy||document.hidden)return;busy=true;
  try{
-  const results=await Promise.allSettled([
-   getJson('/terminal/live-positions'),
-   getJson('/api/completed-trades')
-  ]);
-  const liveRes=results[0],closedRes=results[1];
-  const live=(liveRes.status==='fulfilled'&&Array.isArray(liveRes.value.positions))?liveRes.value.positions:[];
-  const closed=(closedRes.status==='fulfilled'&&Array.isArray(closedRes.value.trades))?closedRes.value.trades:[];
-  const errors=[];
-  if(liveRes.status==='rejected')errors.push('live: '+String(liveRes.reason&&liveRes.reason.message||liveRes.reason).slice(0,70));
-  if(closedRes.status==='rejected')errors.push('closed: '+String(closedRes.reason&&closedRes.reason.message||closedRes.reason).slice(0,70));
+  const r=await fetch('/api/completed-trades',{cache:'no-store',credentials:'same-origin'});
+  const d=await r.json();
+  if(!r.ok)throw Error(d.error||('HTTP '+r.status));
+  const rows=Array.isArray(d.trades)?d.trades:[];
   body.replaceChildren();
-  let n=0;
-  for(const p of live){
-   n+=1;
-   addRow([
-    n,
-    ist(p.created_at),
-    pair(p.contract),
-    p.side||'\u2014',
-    num(p.entry_price),
-    '\u2014',
-    '\u2014',
-    '\u2014',
-    '\u2014',
-    '\u2014',
-    p.state||'OPEN',
-    'Live'
-   ],{10:'positive',11:'status-live'});
-  }
-  for(const t of closed){
-   n+=1;
-   const pnl=Number(t.net_realized_pnl_usdt!==null&&t.net_realized_pnl_usdt!==undefined
-                     ?t.net_realized_pnl_usdt:t.realized_pnl_usdt);
-   const hasPnl=((t.net_realized_pnl_usdt!==null&&t.net_realized_pnl_usdt!==undefined)
-                 ||(t.realized_pnl_usdt!==null&&t.realized_pnl_usdt!==undefined))
-                &&Number.isFinite(pnl);
-   const fees=Number(t.fees_usdt);
-   const hasFees=t.fees_usdt!==null&&t.fees_usdt!==undefined&&Number.isFinite(fees);
-   addRow([
-    n,
-    ist(t.closed_at),
-    String(t.symbol||'').replace('USDT','/USDT'),
-    t.side||'\u2014',
-    num(t.entry_price),
-    t.exit_price===null||t.exit_price===undefined?'\u2014':num(t.exit_price),
-    t.exit_quantity===null||t.exit_quantity===undefined?'\u2014':num(t.exit_quantity),
-    t.exit_timestamp?ist(t.exit_timestamp):'\u2014',
-    hasFees?((fees>0?'+':'')+num(fees)):'\u2014',
-    hasPnl?((pnl>0?'+':'')+num(pnl)):'\u2014',
-    hasPnl?(pnl>0?'WIN':pnl<0?'LOSS':'FLAT'):'CLOSED',
-    'Closed'
-   ],{
-    8:hasFees?(fees>0?'positive':'negative'):'',
-    9:hasPnl?(pnl>0?'gloss-pnl-profit':pnl<0?'gloss-pnl-loss':'gloss-pnl-neutral'):'',
-    10:hasPnl?(pnl>0?'positive':pnl<0?'negative':''):'',
-    11:'status-closed'
-   });
-  }
-  if(!n){
+  if(!rows.length){
    const tr=body.insertRow(),td=tr.insertCell();
-   td.colSpan=12;td.className='empty-state';
-   td.textContent='No bot trades yet. A live row appears when the bot opens a position; a closed row appears once the exchange reports it fully closed.';
+   td.colSpan=10;td.className='empty-state';
+   td.textContent='No closed bot trades yet. A trade appears here after the exchange reports the position fully closed.';
+  }else{
+   for(const t of rows){
+    const tr=body.insertRow();
+    const pnl=Number(t.net_realized_pnl_usdt!==null&&t.net_realized_pnl_usdt!==undefined
+                      ?t.net_realized_pnl_usdt:t.realized_pnl_usdt);
+    const hasPnl=((t.net_realized_pnl_usdt!==null&&t.net_realized_pnl_usdt!==undefined)
+                  ||(t.realized_pnl_usdt!==null&&t.realized_pnl_usdt!==undefined))
+                 &&Number.isFinite(pnl);
+    const fees=Number(t.fees_usdt);
+    const hasFees=t.fees_usdt!==null&&t.fees_usdt!==undefined&&Number.isFinite(fees);
+    const cells=[
+     ist(t.closed_at),
+     String(t.symbol||'').replace('USDT','/USDT'),
+     t.side||'\u2014',
+     num(t.entry_price),
+     t.exit_price===null||t.exit_price===undefined?'\u2014':num(t.exit_price),
+     t.exit_quantity===null||t.exit_quantity===undefined?'\u2014':num(t.exit_quantity),
+     t.exit_timestamp?ist(t.exit_timestamp):'\u2014',
+     hasFees?((fees>0?'+':'')+num(fees)):'\u2014',
+     hasPnl?((pnl>0?'+':'')+num(pnl)):'\u2014',
+     hasPnl?(pnl>0?'WIN':pnl<0?'LOSS':'FLAT'):'CLOSED'
+    ];
+    cells.forEach((v,i)=>{
+     const td=tr.insertCell();td.textContent=v;
+     if(i===7&&hasFees)td.className=fees>0?'positive':'negative';
+     if(i===8&&hasPnl)td.className=pnl>0?'gloss-pnl-profit':pnl<0?'gloss-pnl-loss':'gloss-pnl-neutral';
+     if(i===9&&hasPnl)td.className=pnl>0?'positive':pnl<0?'negative':'';
+    });
+   }
   }
-  const stamp=new Date().toLocaleTimeString('en-IN',{timeZone:'Asia/Kolkata',hour12:true});
-  status.textContent=live.length+' live \u00b7 '+closed.length+' closed \u00b7 updated '+stamp+' IST'
-   +(errors.length?' \u00b7 '+errors.join(' \u00b7 '):'');
+  status.textContent=rows.length+' closed bot trade'+(rows.length===1?'':'s')+' \u00b7 exchange-verified \u00b7 updated '+new Date().toLocaleTimeString('en-IN',{timeZone:'Asia/Kolkata',hour12:true})+' IST';
  }catch(e){
-  status.textContent='Trade status unavailable: '+String(e.message).slice(0,90);
+  status.textContent='Completed trades unavailable: '+String(e.message).slice(0,90);
  }finally{busy=false;}
 }
 load();
@@ -2669,6 +2293,99 @@ document.addEventListener('visibilitychange',()=>{if(!document.hidden)load();});
  }
  refresh();setInterval(refresh,60000);
  document.addEventListener('visibilitychange',()=>{if(!document.hidden)refresh()});
+})();
+</script>
+<script>
+(function(){'use strict';
+ const panel=document.getElementById('incomingLuxPanel');
+ const tbody=document.getElementById('incomingLuxRows');
+ const info=document.getElementById('incomingLuxInfo');
+ const refreshButton=document.getElementById('incomingLuxRefresh');
+ const clearButton=document.getElementById('incomingLuxClear');
+ const filters=document.getElementById('incomingLuxFilters');
+ const scrollArea=document.getElementById('incomingLuxScroll');
+ if(!panel||!tbody||!info||!refreshButton||!clearButton||!filters||!scrollArea)return;
+ let allSignals=[],chosen='ALL',pending=false;
+ const addCell=(tr,value)=>{
+   const td=document.createElement('td');
+   td.textContent=value===null||value===undefined||value===''?'—':String(value);
+   tr.appendChild(td);return td;
+ };
+ function draw(){
+   tbody.replaceChildren();
+   const matches=chosen==='ALL'?allSignals:allSignals.filter(x=>x.status_label===chosen);
+   for(const [index,s] of matches.entries()){
+     const row=document.createElement('tr');
+     let time='—';try{time=new Date(s.time).toLocaleString('en-IN',{timeZone:'Asia/Kolkata',hour12:true})+' IST'}catch(e){}
+     for(const value of [index+1,time,s.symbol,s.side,s.timeframe,s.order_type,
+       s.entry,s.stop_loss,s.take_profit])addCell(row,value);
+     const slot=addCell(row,'');
+     const statusButton=document.createElement('button');
+     statusButton.type='button';statusButton.className='btn';
+     statusButton.textContent=s.status_label||'PENDING';
+     statusButton.title='Click to refresh the latest exchange-backed status';
+     statusButton.style.fontWeight='800';
+     statusButton.style.color=s.status_label==='EXECUTED'?'#6cf3ba':
+       s.status_label==='CLOSED'?'#8ed7ff':
+       s.status_label==='PENDING'?'#ffd28a':
+       s.status_label==='PARTIALLY_FILLED'||s.status_label==='PROTECTION PENDING'?'#ffd28a':
+       s.status_label==='REJECTED'||s.status_label==='FAILED'||s.status_label==='HALTED'?'#ffadad':'#ffadad';
+     statusButton.addEventListener('click',()=>refresh());
+     slot.appendChild(statusButton);
+     addCell(row,(s.exchange_order_id?'Order '+s.exchange_order_id+' · ':'')+(s.reason||''));tbody.appendChild(row);
+   }
+   if(!matches.length){
+     const tr=document.createElement('tr'),td=document.createElement('td');
+     td.colSpan=11;td.textContent=allSignals.length?
+       'No '+chosen+' signals after reset.':'0 incoming signals since reset · waiting for a fresh LuxAlgo alert';
+     tr.appendChild(td);tbody.appendChild(tr);
+   }
+   info.textContent='Latest '+allSignals.length+'/25 visible signals · '+matches.length+
+       ' in '+chosen+' view · first 10 rows; scroll down for the rest · safety audit retained';
+ }
+ async function refresh(){
+   if(pending)return;
+   pending=true;refreshButton.disabled=true;
+   try{
+     const response=await fetch('/terminal/incoming-signals',{cache:'no-store'});
+     const data=await response.json();
+     if(!response.ok||!Array.isArray(data.signals))throw Error(data.error||'Status monitor unavailable');
+     allSignals=data.signals;draw();
+   }catch(e){info.textContent='Live signal status unavailable: '+e.message+' · previous statuses not refreshed';}
+   finally{pending=false;refreshButton.disabled=false;}
+ }
+ filters.addEventListener('click',e=>{
+   const button=e.target.closest('[data-lux-filter]');
+   if(!button)return;
+   chosen=button.dataset.luxFilter;
+   scrollArea.scrollTop=0;
+   for(const b of filters.querySelectorAll('[data-lux-filter]')){
+      b.classList.toggle('selected',b.dataset.luxFilter===chosen);
+   }
+   draw();
+ });
+ clearButton.addEventListener('click',async()=>{
+   if(pending||clearButton.disabled)return;
+   if(!window.confirm('Reset incoming LuxAlgo signals to 0 on this dashboard? Past exchange orders, audit logs and duplicate protection will NOT be deleted.'))return;
+   clearButton.disabled=true;info.textContent='Saving visible-history reset…';
+   try{
+     const response=await fetch('/terminal/incoming-signals/reset',{
+       method:'POST',cache:'no-store',
+       headers:{'Content-Type':'application/json','X-Terminal-CSRF':{{ csrf_token|tojson }}},
+       body:'{}'});
+     const result=await response.json();
+     if(!response.ok||result.status!=='CLEARED')throw Error(result.error||'Reset not confirmed');
+     allSignals=[];chosen='ALL';
+     for(const b of filters.querySelectorAll('[data-lux-filter]')){
+       b.classList.toggle('selected',b.dataset.luxFilter==='ALL');
+     }
+     draw();await refresh();
+   }catch(e){info.textContent='Visible-history reset failed: '+e.message;}
+   finally{clearButton.disabled=false;}
+ });
+ refreshButton.addEventListener('click',refresh);
+ panel.addEventListener('toggle',()=>{if(panel.open)refresh()});
+ refresh();setInterval(()=>{if(panel.open&&!document.hidden)refresh()},30000);
 })();
 </script>
 <script>
@@ -2998,62 +2715,6 @@ def _csrf_valid():
     return bool(expected and submitted and hmac.compare_digest(submitted,expected))
 
 
-@app.post('/terminal/maintenance/clear')
-def terminal_maintenance_clear():
-    """One-click housekeeping: drop the server's in-memory caches.
-
-    This clears ONLY derived, re-fetchable data: the news feed cache, the
-    public radar/scanner caches, the paper quote cache and the contract
-    multiplier cache. It never touches the database, the trade ledger, open
-    positions, signal receipts or the operator's session, so nothing that
-    matters is lost and nothing needs re-entering.
-
-    The browser half of the cleanup (localStorage, sessionStorage, IndexedDB,
-    Cache Storage, service workers and non-session cookies) is done client
-    side by the button; this endpoint reports what the server dropped.
-    """
-    if not _terminal_permitted():
-        return _terminal_guard()
-    if not _csrf_valid():
-        return jsonify(error='Invalid terminal session verification'), 403
-    cleared = []
-    try:
-        with _news_lock:
-            _news_cache.update(expires_at=0, items=[], fetched_at=None)
-        cleared.append('news')
-    except (NameError, AttributeError, TypeError):
-        pass
-    try:
-        with _radar_lock:
-            _radar_cache.update(at=0.0, data=None)
-        cleared.append('radar')
-    except (NameError, AttributeError, TypeError):
-        pass
-    try:
-        with _scanner_lock:
-            _scanner_cache.update(at=0.0, data=None)
-        cleared.append('scanner')
-    except (NameError, AttributeError, TypeError):
-        pass
-    try:
-        with _paper_live_cache_lock:
-            _paper_live_cache.update(at=0.0, value=None)
-        cleared.append('paper_quotes')
-    except (NameError, AttributeError, TypeError):
-        pass
-    try:
-        _paper_multiplier_cache.clear()
-        cleared.append('contract_specs')
-    except (NameError, AttributeError):
-        pass
-    response = jsonify(status='CACHE_CLEARED', cleared=cleared,
-                       cleared_count=len(cleared),
-                       database_touched=False, session_preserved=True,
-                       orders_placed=0, cleared_at=int(time.time()))
-    response.headers['Cache-Control'] = 'no-store'
-    return response
-
-
 @app.post('/logout')
 def terminal_logout():
     if not _terminal_permitted(): return redirect('/login',code=303)
@@ -3161,7 +2822,7 @@ def _render_legacy_home(*,production_view=False):
             with con.cursor() as cur:
                 cur.execute('SELECT COALESCE(MAX(id), 0) AS latest_id FROM luxalgo_signal_receipts')
                 latest_receipt_id = int(cur.fetchone()['latest_id'])
-    except (psycopg.Error, RuntimeError, OSError, ValueError):
+    except (psycopg.Error, RuntimeError, OSError):
         app.logger.exception('Persistent signal storage unavailable')
         return Response('Persistent signal database temporarily unavailable. No trading is active.', status=503)
     page=PAGE
@@ -4454,7 +4115,7 @@ def bot_status():
         return jsonify(error='Unauthorized'), 401
     try:
         signal_count, recent = _db_status()
-    except (psycopg.Error, RuntimeError, OSError, ValueError):
+    except (psycopg.Error, RuntimeError, OSError):
         app.logger.exception('Persistent signal database unavailable')
         return jsonify(error='Persistent signal database unavailable', orders_enabled=False),503
     return jsonify(mode='DRY_RUN_ONLY', live_trading=False,
@@ -4746,19 +4407,16 @@ def webhook():
     # One-trade handoff: durable first-candidate reservation ONLY. Not an order.
     # Preserves existing webhook receipt behavior and does not call exchange APIs.
     one_trade_candidate = 'NOT_ELIGIBLE'
-    # One slot per timeframe: a 5m and a 15m signal no longer compete for the
-    # same row, so both may hold a position at the same time. The 30-minute
-    # cooldown and every confluence veto are unchanged.
-    if level_status == 'VALID' and _conf_pass and not duplicate and tf in ('5m', '15m'):
+    if level_status == 'VALID' and _conf_pass and not duplicate and tf == '15m':
         try:
             with _db_connect() as con:
                 _ensure_schema(con)
                 with con.cursor() as cur:
                     cur.execute("""INSERT INTO luxalgo_one_trade_candidate
-                        (slot,event_id,symbol,side,timeframe,entry_price,stop_loss,take_profit,status)
-                        VALUES (%s,%s,%s,%s,%s,%s,%s,%s,'WAITING_FOR_VERIFIED_EXECUTION')
-                        ON CONFLICT (slot) DO NOTHING RETURNING event_id""",
-                        (tf,event_id,symbol,allowed[side],tf,entry_price,stop_loss,take_profit))
+                        (singleton_id,event_id,symbol,side,timeframe,entry_price,stop_loss,take_profit,status)
+                        VALUES (1,%s,%s,%s,%s,%s,%s,%s,'WAITING_FOR_VERIFIED_EXECUTION')
+                        ON CONFLICT (singleton_id) DO NOTHING RETURNING event_id""",
+                        (event_id,symbol,allowed[side],tf,entry_price,stop_loss,take_profit))
                     one_trade_candidate = ('RESERVED_NO_ORDER' if cur.fetchone() else 'ALREADY_RESERVED')
         except (psycopg.Error, RuntimeError, OSError):
             app.logger.warning('One-trade candidate reservation failed; no execution permitted')
@@ -6807,71 +6465,6 @@ def terminal_testnet_positions():
         return jsonify(error='Gate Testnet positions unavailable or invalid',orders_enabled=False),502
 
 
-@app.get('/terminal/positions/live-marks')
-def terminal_positions_live_marks():
-    """Fast, read-only mark snapshot for the open position cards.
-
-    Returns the exchange's own mark price and unrealised P&L for every open
-    position, so a card can tick like a live exchange without re-reading the
-    whole account on every browser. One signed GET is shared by all open
-    tabs through a short cache, which keeps the exchange rate limit safe.
-
-    Read-only: no order is ever placed, amended or cancelled here.
-    """
-    if not _terminal_permitted():
-        return _terminal_guard()
-    now = time.monotonic()
-    with _live_marks_lock:
-        cached = _live_marks_cache['value']
-        if cached is not None and now - _live_marks_cache['at'] < 2.0:
-            response = jsonify(**cached)
-            response.headers['Cache-Control'] = 'no-store'
-            return response
-    try:
-        positions = _gate_read_only_positions()
-    except RuntimeError:
-        return jsonify(error='Gate.io read-only credentials unavailable',
-                       orders_enabled=False), 503
-    except HTTPError as exc:
-        return jsonify(error='Gate.io mark feed rejected the read (HTTP %s)' % exc.code,
-                       gate_http_status=exc.code, orders_enabled=False), 502
-    except (URLError, TimeoutError, OSError, ValueError, KeyError, TypeError):
-        return jsonify(error='Gate.io mark feed unavailable', orders_enabled=False), 502
-    marks = {}
-    total = 0.0
-    complete = True
-    for p in positions:
-        contract = p.get('contract')
-        if not contract:
-            continue
-        pnl = p.get('unrealized_pnl')
-        if pnl is None:
-            complete = False
-        else:
-            total += pnl
-        marks[contract] = {
-            'mark_price': p.get('mark_price'),
-            'entry_price': p.get('entry_price'),
-            'unrealized_pnl': pnl,
-            'roi_percent': p.get('roi_percent'),
-            'side': p.get('side'),
-            'size_contracts': p.get('size_contracts'),
-        }
-    payload = {
-        'marks': marks,
-        'count': len(marks),
-        'unrealized_pnl_usdt': round(total, 8) if complete and marks else None,
-        'fetched_at': int(time.time()),
-        'source': 'GATE_IO_EXCHANGE_MARK',
-        'orders_enabled': False,
-    }
-    with _live_marks_lock:
-        _live_marks_cache.update(at=time.monotonic(), value=payload)
-    response = jsonify(**payload)
-    response.headers['Cache-Control'] = 'no-store'
-    return response
-
-
 @app.get('/terminal/positions')
 def terminal_positions():
     if not _terminal_permitted():
@@ -7369,42 +6962,6 @@ def _incoming_visible_since(cursor):
             RETURNING cleared_at""",(seeded,))
         boundary=cursor.fetchone()['cleared_at']
     return boundary
-
-@app.post('/terminal/signals/reset-count')
-def terminal_reset_signal_count():
-    """Rebase the DATABASE SIGNALS tile to zero without deleting a receipt.
-
-    Only the displayed count is rebased. The Incoming LuxAlgo Signals Status
-    table, completed-trade records and every execution journal row are left
-    untouched, so no verified trade disappearing is possible.
-    """
-    if not _terminal_permitted(): return _terminal_guard()
-    if not _csrf_valid(): return jsonify(error='Invalid session verification'),403
-    try:
-        with _db_connect() as con:
-            _ensure_schema(con)
-            with con.cursor() as cur:
-                cur.execute('SELECT COALESCE(MAX(id),0) AS watermark FROM luxalgo_signal_receipts')
-                watermark=int(cur.fetchone()['watermark'])
-                cur.execute("""CREATE TABLE IF NOT EXISTS luxalgo_signal_count_baseline (
-                   id SMALLINT PRIMARY KEY CHECK(id=1),
-                   baseline_id BIGINT NOT NULL,
-                   reset_at TIMESTAMPTZ NOT NULL
-                )""")
-                cur.execute("""INSERT INTO luxalgo_signal_count_baseline(id,baseline_id,reset_at)
-                    VALUES(1,%s,clock_timestamp()) ON CONFLICT(id) DO UPDATE
-                    SET baseline_id=GREATEST(luxalgo_signal_count_baseline.baseline_id,EXCLUDED.baseline_id),
-                        reset_at=GREATEST(luxalgo_signal_count_baseline.reset_at,EXCLUDED.reset_at)
-                    RETURNING baseline_id,reset_at""",(watermark,))
-                saved=cur.fetchone()
-        response=jsonify(status='COUNT_RESET',signal_count=0,
-                         baseline_id=int(saved['baseline_id']),
-                         reset_at=saved['reset_at'].isoformat(),
-                         receipts_preserved=True,orders_placed=0)
-        response.headers['Cache-Control']='private, no-store'
-        return response
-    except (psycopg.Error,RuntimeError,OSError,ValueError,TypeError):
-        return jsonify(error='Signal count reset could not be saved'),503
 
 
 @app.post('/terminal/incoming-signals/reset')
@@ -8117,12 +7674,6 @@ def _paper_open_marks(orders):
 # A brief shared cache prevents each browser polling session from multiplying API load.
 _paper_live_cache_lock = Lock()
 _paper_live_cache = {'at':0.0,'value':None}
-
-# Shared, short-lived mark snapshot for the open position cards. One signed
-# exchange read serves every open tab, so the cards can tick every few seconds
-# without multiplying Gate.io requests.
-_live_marks_lock = Lock()
-_live_marks_cache = {'at': 0.0, 'value': None}
 
 @app.get('/terminal/paper-live-pnl')
 def terminal_paper_live_pnl():
@@ -8876,6 +8427,7 @@ def _production_operator_bootstrap():
         print('LIVE_BOT_SERVER_STATE_' + ('ON' if status['bot_on'] else 'OFF') +
               ' source_locked=' + str('SOURCE_LOCKED' in status['safety_gates']) +
               ' halt=' + str(status['halt_active']) +
+              ' sizing_mode=' + str(status['risk_policy'].get('sizing_mode','risk_percent')) +
               ' per_trade_risk_percent=' + status['risk_policy']['per_trade_risk_percent'] +
               ' aggregate_risk_percent=' + status['risk_policy']['aggregate_risk_percent'],flush=True)
     except (psycopg.Error,RuntimeError,OSError,ValueError,TypeError,KeyError) as exc:
@@ -8934,9 +8486,12 @@ def _production_execution_offline_smoke():
         meta=dict(name="BTC_USDT",quanto_multiplier="0.0001",
                   order_size_min="1",order_size_max="100000",taker_fee_rate="0.00075")
         p=build_plan(s,meta,1000,1000,[],now=now)
-        from live_risk_policy import per_entry_risk
+        from live_risk_policy import per_entry_risk, sizing_mode, SIZING_MODE_FIXED
         assert p["contracts"] > 0
-        assert Decimal(p["estimated_risk_usdt"]) <= Decimal("1000") * min(per_entry_risk(), Decimal("0.025"))
+        if sizing_mode()==SIZING_MODE_FIXED:
+            assert Decimal(p["estimated_risk_usdt"]) <= Decimal("1000") * Decimal("0.025")
+        else:
+            assert Decimal(p["estimated_risk_usdt"]) <= Decimal("1000") * min(per_entry_risk(), Decimal("0.025"))
         assert build_entry_order(p)["size"]==p["contracts"]
         stop=build_protective_trigger(p,"SL")
         take=build_protective_trigger(p,"TP")

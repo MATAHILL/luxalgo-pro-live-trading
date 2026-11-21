@@ -19,7 +19,8 @@ from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation, ROUND_FLOOR
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
-from live_risk_policy import per_entry_risk
+from live_risk_policy import (per_entry_risk, sizing_mode, fixed_notional_usdt,
+                              SIZING_MODE_FIXED)
 
 HOST = "https://api.gateio.ws"
 PREFIX = "/api/v4/futures/usdt"
@@ -269,9 +270,20 @@ def build_plan(signal, metadata, equity, available, positions, reserved_risk=0, 
     reserve=Decimal(str(reserved_risk))
     if not reserve.is_finite() or reserve<0:
         raise LiveSafetyError("Invalid reserved risk")
-    budget=min(eq*per_entry_risk(),eq*MAX_AGGREGATE_RISK-reserve)
-    if budget<=0:
+    aggregate_budget=eq*MAX_AGGREGATE_RISK-reserve
+    if aggregate_budget<=0:
         raise LiveSafetyError("Aggregate risk exhausted")
+    mode=sizing_mode()
+    if mode==SIZING_MODE_FIXED:
+        # Fixed-notional sizing replaces the per-trade risk budget. The
+        # aggregate open-risk cap still applies and is checked below.
+        target_notional=fixed_notional_usdt()
+        budget=aggregate_budget
+    else:
+        target_notional=None
+        budget=min(eq*per_entry_risk(),aggregate_budget)
+        if budget<=0:
+            raise LiveSafetyError("Aggregate risk exhausted")
     # Model stop-distance loss PLUS two taker fees and two 0.1% slippage
     # allowances per contract. This remains a modeled bound: a gap or
     # liquidation can exceed it. Never treat this as guaranteed max loss.
@@ -284,7 +296,6 @@ def build_plan(signal, metadata, equity, available, positions, reserved_risk=0, 
     unit_stop_loss=abs(e-s)*multiplier
     unit_fee_slip=(e*multiplier)*(2*fee+2*slip)
     unit_loss=unit_stop_loss+unit_fee_slip
-    units_by_risk=(budget/unit_loss).to_integral_value(rounding=ROUND_FLOOR)
     unit_margin=(e*multiplier)*(1+slip)*(Decimal(1)/lev+fee)
     units_by_margin=(av/unit_margin).to_integral_value(rounding=ROUND_FLOOR)
     # A loose stop cannot silently turn a proposed 100-USDT order into an
@@ -292,19 +303,36 @@ def build_plan(signal, metadata, equity, available, positions, reserved_risk=0, 
     unit_notional=e*multiplier*(1+slip)
     units_by_notional=(MAX_POSITION_NOTIONAL_USDT/unit_notional).to_integral_value(rounding=ROUND_FLOOR)
     units_by_margin_cap=(MAX_POSITION_INITIAL_MARGIN_USDT/unit_margin).to_integral_value(rounding=ROUND_FLOOR)
-    count=min(units_by_risk,units_by_margin,units_by_notional,
-              units_by_margin_cap,whole_order_size_max)
+    if mode==SIZING_MODE_FIXED:
+        # contracts = target notional / (price * quanto_multiplier), floored.
+        # The target IS the exposure ceiling here, so the notional cap is
+        # measured on raw notional; the slippage buffer is already inside the
+        # margin cap and the modeled risk figure.
+        raw_unit_notional=e*multiplier
+        units_by_target=(target_notional/raw_unit_notional).to_integral_value(rounding=ROUND_FLOOR)
+        units_by_notional=(MAX_POSITION_NOTIONAL_USDT/raw_unit_notional).to_integral_value(rounding=ROUND_FLOOR)
+        count=min(units_by_target,units_by_margin,units_by_notional,
+                  units_by_margin_cap,whole_order_size_max)
+    else:
+        units_by_risk=(budget/unit_loss).to_integral_value(rounding=ROUND_FLOOR)
+        count=min(units_by_risk,units_by_margin,units_by_notional,
+                  units_by_margin_cap,whole_order_size_max)
     if count<order_size_min or count<1:
         raise LiveSafetyError("Insufficient margin/risk for exchange minimum lot")
     risk=count*unit_loss
-    if risk>eq*per_entry_risk() or risk+reserve>eq*MAX_AGGREGATE_RISK:
+    if risk+reserve>eq*MAX_AGGREGATE_RISK:
+        raise LiveSafetyError("Aggregate risk cap crossed")
+    if mode!=SIZING_MODE_FIXED and risk>eq*per_entry_risk():
         raise LiveSafetyError("Risk cap crossed")
-    if count*unit_notional>MAX_POSITION_NOTIONAL_USDT or count*unit_margin>MAX_POSITION_INITIAL_MARGIN_USDT:
+    checked_notional=count*(e*multiplier) if mode==SIZING_MODE_FIXED else count*unit_notional
+    if checked_notional>MAX_POSITION_NOTIONAL_USDT or count*unit_margin>MAX_POSITION_INITIAL_MARGIN_USDT:
         raise LiveSafetyError("Maximum authorized notional or margin exceeded")
     return dict(event_id=event,client_text=text,contract=contract,side=side,timeframe=tf,
                 received_epoch=int(signal['received_epoch']),
                 contracts=int(count),entry=str(e),sl=str(s),tp=str(t),
                 estimated_risk_usdt=str(risk),risk_cap_usdt=str(budget),
+                sizing_mode=mode,
+                target_notional_usdt=str(target_notional) if target_notional is not None else None,
                 risk_includes_modeled_taker_fees_and_slippage=True,
                 modeled_stop_risk_usdt=str(count*unit_stop_loss),
                 modeled_fee_slippage_usdt=str(count*unit_fee_slip),
@@ -379,13 +407,26 @@ def verify_execution_preflight(plan, metadata, snapshot, now=None):
         raise LiveSafetyError('Fee/slippage ceiling exceeded')
     notional=quantity*multiplier*max(entry,mark)*(1+slip)
     margin_with_fees=notional/planned+notional*fee
-    if notional>MAX_POSITION_NOTIONAL_USDT or margin_with_fees>MAX_POSITION_INITIAL_MARGIN_USDT:
+    # In fixed-notional mode the plan's target IS the exposure ceiling, so the
+    # notional ceiling is measured on raw notional (the slippage buffer is
+    # already carried in the margin and modeled-risk figures).
+    if sizing_mode()==SIZING_MODE_FIXED:
+        checked_notional=quantity*multiplier*max(entry,mark)
+    else:
+        checked_notional=notional
+    if checked_notional>MAX_POSITION_NOTIONAL_USDT or margin_with_fees>MAX_POSITION_INITIAL_MARGIN_USDT:
         raise LiveSafetyError('Fresh exposure exceeds authorized notional or margin ceiling')
     if margin_with_fees>available:
         raise LiveSafetyError('Insufficient fresh margin including entry fee and slippage')
     reserved=dec(plan.get('estimated_risk_usdt'),'modeled risk')
     fresh_risk=quantity*multiplier*(abs(entry-sl)+max(entry,mark)*(2*fee+2*slip))
-    if reserved>equity*per_entry_risk() or fresh_risk>min(reserved,equity*per_entry_risk()):
+    if sizing_mode()==SIZING_MODE_FIXED:
+        # Fixed-notional mode has no per-trade risk budget; the modeled risk
+        # recorded in the plan is the ceiling, and the aggregate cap is
+        # enforced by the coordinator's atomic reservation.
+        if fresh_risk>reserved:
+            raise LiveSafetyError('Fresh equity no longer supports modeled risk')
+    elif reserved>equity*per_entry_risk() or fresh_risk>min(reserved,equity*per_entry_risk()):
         raise LiveSafetyError('Fresh equity no longer supports modeled risk')
     return {'verified':True,'orders_sent':0,'actual_leverage':str(actual)}
 

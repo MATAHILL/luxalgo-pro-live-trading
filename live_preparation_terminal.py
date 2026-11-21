@@ -4,7 +4,7 @@ Visible LIVE mode is deliberately NOT permission to send real-money orders.
 Retain legacy recovery access while Testnet positions/unknown orders remain.
 """
 import os
-from live_risk_policy import per_entry_risk
+from live_risk_policy import per_entry_risk, sizing_mode, fixed_notional_usdt, SIZING_MODE_FIXED
 
 def live_preparation_mode():
     return os.getenv("LIVE_TERMINAL_PREPARATION","false").strip().lower()=="true"
@@ -22,7 +22,10 @@ def live_preparation_checks(*,account_ok,positions_ok,db_ok,legacy_count=None,
       {"name":"Durable PostgreSQL signal intake","passed":bool(db_ok and webhook_ok),
        "detail":"Persistent signal receipt and unique event audit; no order dispatch"},
       {"name":"Contract risk sizing calculator","passed":bool(dynamic_sizing_preview_ready),
-       "detail":str(per_entry_risk()*100)+"% risk/entry, 2.5% aggregate cap and 5x ceiling; read-only proposal"},
+       "detail":(str(fixed_notional_usdt())+" USDT fixed notional/entry"
+                 if sizing_mode()==SIZING_MODE_FIXED else
+                 str(per_entry_risk()*100)+"% risk/entry")
+                +", 2.5% aggregate cap and 5x ceiling; read-only proposal"},
       {"name":"Dedicated production sender and order readbacks","passed":bool(execution_release_ready),
        "detail":"Isolated signing and order lifecycle coded; released only when LUXALGO_EXCHANGE_WRITE_RELEASE=true and the environment permission flags are set"},
       {"name":"Real-money native SL/TP plus filled-order recovery","passed":bool(execution_release_ready),
