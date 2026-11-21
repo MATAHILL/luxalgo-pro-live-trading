@@ -2578,6 +2578,19 @@ def authorized(data):
     return isinstance(supplied, str) and hmac.compare_digest(supplied, expected)
 
 
+def _const_eq(supplied, expected):
+    """Constant-time string comparison that tolerates non-ASCII input.
+
+    hmac.compare_digest() only accepts ASCII str; passing a non-ASCII
+    username or password raises TypeError and turns a bad login into a 500.
+    Encoding to UTF-8 first keeps the comparison constant-time and makes any
+    non-ASCII credential a normal failed login.
+    """
+    if not isinstance(supplied, str) or not isinstance(expected, str):
+        return False
+    return hmac.compare_digest(supplied.encode('utf-8'), expected.encode('utf-8'))
+
+
 def _terminal_permitted():
     # Do NOT accept cached HTTP Basic credentials after logout.
     # A signed, HttpOnly session cookie is needed for a reliable logout.
@@ -2621,8 +2634,11 @@ def terminal_login():
         _login_failures[ip]=failures
         limited=len(failures)>=8
     name=request.form.get('username','');password=request.form.get('password','')
-    valid=(not limited and hmac.compare_digest(name,os.getenv('TERMINAL_USER','admin'))
-           and hmac.compare_digest(password,os.getenv('TERMINAL_PASSWORD','')))
+    # hmac.compare_digest() raises TypeError on str arguments containing
+    # non-ASCII characters. Compare UTF-8 bytes instead so a non-ASCII
+    # username or password is simply a failed login, never a 500.
+    valid=(not limited and _const_eq(name,os.getenv('TERMINAL_USER','admin'))
+           and _const_eq(password,os.getenv('TERMINAL_PASSWORD','')))
     if not valid:
         with _login_lock:
             _login_failures.setdefault(ip,[]).append(now)
@@ -7033,7 +7049,7 @@ def terminal_confluence():
                            orders_placed=0)
         response.headers['Cache-Control'] = 'private, no-store'
         return response
-    except (psycopg.Error, RuntimeError, OSError, ValueError, TypeError):
+    except (psycopg.Error, RuntimeError, OSError, ValueError, TypeError, ImportError):
         return jsonify(error='Confluence audit unavailable'), 503
 
 
