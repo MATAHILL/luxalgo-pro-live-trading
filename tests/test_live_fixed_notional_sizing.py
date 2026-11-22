@@ -65,11 +65,15 @@ class SizingModeSwitchTests(unittest.TestCase):
                 sizing_mode()
 
     def test_fixed_notional_config_fails_closed(self):
-        for value in ("", "NaN", "Infinity", "-1", "0", "100.01", "true"):
+        # MAX_FIXED_NOTIONAL_USDT is None (switched off), so a value above the
+        # old 100 ceiling is now accepted. Malformed values still fail closed.
+        for value in ("", "NaN", "Infinity", "-1", "0", "true"):
             with self.subTest(value=value), patch.dict(
                     os.environ, LUXALGO_LIVE_FIXED_NOTIONAL_USDT=value):
                 with self.assertRaises(ValueError):
                     fixed_notional_usdt()
+        with patch.dict(os.environ, LUXALGO_LIVE_FIXED_NOTIONAL_USDT="25000"):
+            self.assertEqual(fixed_notional_usdt(), Decimal("25000"))
 
     def test_policy_status_reports_active_mode(self):
         with fixed_env():
@@ -110,18 +114,27 @@ class FixedNotionalSizingTests(unittest.TestCase):
         self.assertEqual(plan["contracts"], 4)
         self.assertEqual(plan["side"], "SHORT")
 
-    def test_notional_ceiling_still_enforced(self):
-        with fixed_env():
+    def test_notional_ceiling_switched_off_allows_large_size(self):
+        # MAX_POSITION_NOTIONAL_USDT is None (switched off), so a large target
+        # is no longer clipped to 100 USDT. The aggregate risk budget and the
+        # available margin are what bound the order now.
+        self.assertIsNone(MAX_POSITION_NOTIONAL_USDT)
+        with fixed_env(LUXALGO_LIVE_FIXED_NOTIONAL_USDT="20000"):
             plan = build_plan(SIGNAL, META, "100000", "100000", [], now=NOW)
-        self.assertLessEqual(Decimal(plan["contracts"]) * Decimal("2.5") * Decimal("10"),
-                             MAX_POSITION_NOTIONAL_USDT)
+        self.assertEqual(plan["maximum_notional_usdt"], "unlimited")
+        self.assertGreater(Decimal(plan["contracts"]) * Decimal("2.5") * Decimal("10"),
+                           Decimal("100"))
 
-    def test_margin_ceiling_still_enforced(self):
-        with fixed_env():
-            plan = build_plan(SIGNAL, META, "1000", "1000", [], now=NOW)
+    def test_margin_ceiling_switched_off_allows_large_size(self):
+        # MAX_POSITION_INITIAL_MARGIN_USDT is None (switched off), so the
+        # 60-USDT margin ceiling no longer clips the order.
+        self.assertIsNone(MAX_POSITION_INITIAL_MARGIN_USDT)
+        with fixed_env(LUXALGO_LIVE_FIXED_NOTIONAL_USDT="20000"):
+            plan = build_plan(SIGNAL, META, "100000", "100000", [], now=NOW)
+        self.assertEqual(plan["maximum_initial_margin_usdt"], "unlimited")
         margin = (Decimal(plan["contracts"]) * Decimal("2.5") * Decimal("10")
                   * (Decimal(1) / Decimal(5) + Decimal("0.00075")))
-        self.assertLessEqual(margin, MAX_POSITION_INITIAL_MARGIN_USDT)
+        self.assertGreater(margin, Decimal("60"))
 
     def test_insufficient_available_margin_fails_closed(self):
         with fixed_env():
@@ -179,12 +192,15 @@ class FixedNotionalPreflightTests(unittest.TestCase):
         self.assertEqual(result["orders_sent"], 0)
 
     def test_preflight_still_rejects_oversize_plan(self):
-        plan = dict(received_epoch=NOW - 1, contract="XRP_USDT", contracts=40,
+        # With both ceilings switched off, the preflight no longer rejects on
+        # notional/margin. It still rejects when the fresh margin exceeds what
+        # the account actually has available -- that is the real bound now.
+        plan = dict(received_epoch=NOW - 1, contract="XRP_USDT", contracts=4000,
                     side="LONG", entry="2.5", sl="2.45", tp="2.6",
                     position_mode="single", leverage="5",
                     max_entry_slippage_ratio="0.001", estimated_risk_usdt="100")
         with fixed_env():
-            with self.assertRaisesRegex(LiveSafetyError, "notional or margin ceiling"):
+            with self.assertRaisesRegex(LiveSafetyError, "Insufficient fresh margin"):
                 verify_execution_preflight(plan, self._meta(), self._snap(), now=NOW)
 
 

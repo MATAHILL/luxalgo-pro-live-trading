@@ -35,26 +35,32 @@ META = {
 
 class LiveRiskAndSourceTests(unittest.TestCase):
     def test_trade_size_is_bounded_even_with_large_available_balance(self):
+        # Both per-position ceilings are switched off (None), so the bound is
+        # now the 2.5% aggregate open-risk budget, not a fixed USDT cap.
         p = build_plan(SIGNAL, META, "100000", "100000", [], now=NOW)
         q = Decimal(p["contracts"])
         one_notional = Decimal(SIGNAL["entry"]) * Decimal(META["quanto_multiplier"])
-        fee = Decimal(META["taker_fee_rate"])
-        slip = Decimal(p["max_entry_slippage_ratio"])
-        self.assertLessEqual(q * one_notional * (1 + slip), MAX_POSITION_NOTIONAL_USDT)
-        self.assertLessEqual(
-            q * one_notional * (1 + slip) * (Decimal(1) / Decimal(5) + fee),
-            MAX_POSITION_INITIAL_MARGIN_USDT)
-        self.assertEqual(p["maximum_notional_usdt"], "100")
-        self.assertEqual(p["maximum_initial_margin_usdt"], "60")
+        self.assertIsNone(MAX_POSITION_NOTIONAL_USDT)
+        self.assertIsNone(MAX_POSITION_INITIAL_MARGIN_USDT)
+        self.assertEqual(p["maximum_notional_usdt"], "unlimited")
+        self.assertEqual(p["maximum_initial_margin_usdt"], "unlimited")
+        # The modeled risk of the order may not exceed 2.5% of equity.
+        self.assertLessEqual(Decimal(p["estimated_risk_usdt"]),
+                             Decimal("100000") * Decimal("0.025"))
+        self.assertGreater(q * one_notional, Decimal("100"))
         self.assertFalse(p["verified_live_order"])
 
     def test_exchange_minimum_above_owner_exposure_cap_fails_closed(self):
+        # A contract whose single lot costs more than the account can fund is
+        # still refused: the margin bound is what fails closed now.
         meta = dict(META, quanto_multiplier="0.01")
         with self.assertRaisesRegex(LiveSafetyError, "Insufficient margin/risk"):
-            build_plan(SIGNAL, meta, "100000", "100000", [], now=NOW)
+            build_plan(SIGNAL, meta, "100", "100", [], now=NOW)
 
     def test_fresh_readback_rejects_manual_oversize_plan(self):
         # A constructed plan cannot bypass the live preflight risk boundaries.
+        # With the notional/margin ceilings switched off, the fresh-margin
+        # check is the boundary that rejects an unfundable plan.
         p = dict(received_epoch=1000, contract="BTC_USDT", contracts=40,
                  side="LONG", entry="80000", sl="79000", tp="82000",
                  position_mode="single", leverage="5",
@@ -63,10 +69,10 @@ class LiveRiskAndSourceTests(unittest.TestCase):
                     market_order_size_max=100, order_price_round="0.1",
                     leverage_min="1", leverage_max="100", mark_price="80000")
         snap = dict(account=dict(currency="USDT", position_mode="single",
-                                 total="100000", unrealised_pnl="0", available="10000"),
+                                 total="100000", unrealised_pnl="0", available="10"),
                     position_settings=[dict(contract="BTC_USDT", mode="single",
                                             leverage="5")])
-        with self.assertRaisesRegex(LiveSafetyError, "notional or margin ceiling"):
+        with self.assertRaisesRegex(LiveSafetyError, "Insufficient fresh margin"):
             verify_execution_preflight(p, meta, snap, now=1001)
 
     def test_only_allowlisted_exchange_symbols_are_accepted(self):
