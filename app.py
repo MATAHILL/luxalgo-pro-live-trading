@@ -319,6 +319,13 @@ CREATE TABLE IF NOT EXISTS luxalgo_stage14_final_diagnostics (
   PRIMARY KEY(run_id,event_id)
 );
 CREATE INDEX IF NOT EXISTS idx_stage14_run ON luxalgo_stage14_final_diagnostics(run_id);
+-- Displayed-count baseline for the DATABASE SIGNALS RESET TO 0 button.
+-- Rebases only the displayed number; receipts are never deleted.
+CREATE TABLE IF NOT EXISTS luxalgo_signal_count_baseline (
+ id SMALLINT PRIMARY KEY CHECK(id=1),
+ baseline_id BIGINT NOT NULL DEFAULT 0,
+ reset_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
 CREATE TABLE IF NOT EXISTS luxalgo_dry_run_intents (
  event_id TEXT PRIMARY KEY,
  received_at TIMESTAMPTZ NOT NULL,
@@ -425,12 +432,24 @@ def terminal_bot_control_post():
     except (psycopg.Error,RuntimeError,OSError):
         return jsonify(error='Unable to save bot state; treat as OFF',orders_enabled=False),503
 
+def _signal_count(cur):
+    """Displayed DATABASE SIGNALS count, rebased by the RESET TO 0 baseline.
+
+    Only the displayed number is rebased. Receipts are never deleted, so the
+    Incoming LuxAlgo Signals Status table and every verified trade record stay
+    exactly as they are. No baseline row means nothing has been reset yet.
+    """
+    cur.execute("""SELECT COUNT(*) AS total FROM luxalgo_signal_receipts r
+                   WHERE r.id > COALESCE((SELECT baseline_id
+                                          FROM luxalgo_signal_count_baseline
+                                          WHERE id=1),0)""")
+    return int(cur.fetchone()['total'])
+
 def _db_recent():
     with _db_connect() as con:
         _ensure_schema(con)
         with con.cursor() as cur:
-            cur.execute('SELECT COUNT(*) AS total FROM luxalgo_signal_receipts')
-            count = cur.fetchone()['total']
+            count = _signal_count(cur)
             cur.execute('''SELECT received_at, event_id, symbol, side, timeframe FROM luxalgo_signal_receipts r
                            WHERE NOT EXISTS (SELECT 1 FROM luxalgo_hidden_signal_rows h WHERE h.event_id=r.event_id)
                            ORDER BY r.id DESC LIMIT 20''')
@@ -442,8 +461,7 @@ def _db_status():
     with _db_connect() as con:
         _ensure_schema(con)
         with con.cursor() as cur:
-            cur.execute('SELECT COUNT(*) AS total FROM luxalgo_signal_receipts')
-            count = cur.fetchone()['total']
+            count = _signal_count(cur)
             cur.execute('''SELECT event_id, received_at, symbol, side, timeframe, status
                            FROM luxalgo_dry_run_intents ORDER BY received_at DESC LIMIT 15''')
             intents = [dict(event_id=r['event_id'], time=r['received_at'].isoformat(),
@@ -822,19 +840,9 @@ header.terminal-header{border-radius:17px!important}
 <div class="metric"><small>UNREALIZED P&amp;L (USDT)</small><strong id="unrealizedPositionPnl">—</strong><span>Read-only, refreshed every 30s</span></div>
 <div class="metric"><small>TOTAL REALIZED P&amp;L</small><strong id="metricRealizedPnl">—</strong><span id="metricRealizedPnlNote">Verified closed trades, net of fees</span></div>
 <div class="metric"><small>WIN RATE</small><strong id="metricWinRate">—</strong><span id="metricWinRateNote">Winning ÷ decided closed trades</span></div>
-<div class="metric"><small>DATABASE SIGNALS</small><strong>{{ count }}</strong><span>Webhook: {{ 'configured' if configured else 'not configured' }}</span></div>
+<div class="metric"><small>DATABASE SIGNALS</small><strong id="databaseSignalCount">{{ count }}</strong><span>Webhook: {{ 'configured' if configured else 'not configured' }}</span><button class="btn gloss-action" type="button" id="resetSignalCount" style="margin-top:8px;font-size:11px;padding:4px 10px">↺ RESET TO 0</button><span id="resetSignalCountStatus" role="status" aria-live="polite" style="display:block;margin-top:6px;font-size:11px;color:#9de7ff"></span></div>
 </div><section class="panel position-panel" id="openPositionPanel"><div class="panel-heading"><h2>Open Position <span class="gloss-cyan">– Gate.io Futures</span></h2><button class="btn gloss-action" id="positionRefresh" type="button">↻ Refresh Positions</button></div>
 <div id="gatePositionsBody" class="position-card-list" aria-live="polite"><p class="light">Checking read-only Gate.io open positions…</p></div><p id="gatePositionsUpdated" class="light">Read-only Gate.io account data. Each card refreshes itself from the exchange. SL/TP status is read from Gate.io's resting triggers.</p></section>
-<section class="panel" id="liveFuturesOrderTable" aria-label="Live futures order table">
-<div class="panel-heading"><h2>LIVE FUTURES ORDER TABLE <span class="gloss-cyan">· GATE.IO FUTURES</span></h2><button class="btn gloss-action" id="orderTableRefresh" type="button">↻ Refresh Orders</button></div>
-<p class="light" id="orderTableStatus" role="status" aria-live="polite">Reading open orders, protective triggers and positions from Gate.io…</p>
-<div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(150px,1fr));margin-bottom:12px">
-<div class="metric"><small>OPEN EXCHANGE ORDERS</small><strong id="orderTableOrderCount">—</strong><span>Unfilled orders at Gate.io</span></div>
-<div class="metric"><small>PROTECTIVE TRIGGERS (SL/TP)</small><strong id="orderTableTriggerCount">—</strong><span>Resting close-position triggers</span></div>
-<div class="metric"><small>OPEN POSITIONS</small><strong id="orderTablePositionCount">—</strong><span>Verified Gate.io positions</span></div>
-</div>
-<div class="tablewrap"><table style="min-width:900px;width:100%"><thead><tr><th>S/N</th><th>TYPE</th><th>CONTRACT</th><th>SIDE</th><th>QTY</th><th>REMAINING</th><th>PRICE</th><th>STATUS</th><th>CREATED (IST)</th><th>ORDER ID</th></tr></thead><tbody id="orderTableBody"><tr><td colspan="10">Loading…</td></tr></tbody></table></div>
-<p class="light">Read-only. An empty table means Gate.io genuinely reports no open orders, triggers or positions — never a failed read. A failed read is shown as an error above, not as an empty table.</p></section>
 <section class="panel" id="v4Workspace" aria-label="Gate.io Testnet individual position cards">
 <div class="v4-head"><div><strong>LUXALGO PRO · TESTNET POSITION CARDS</strong><p class="light">Gate.io Testnet exchange positions only. Unrealized P&amp;L comes from the exchange; real-money trading is OFF.</p></div>
 <button id="v4DemoToggle" type="button">SHOW SAMPLE LAYOUT</button></div>
@@ -1632,92 +1640,6 @@ loadPositions();loadPnlSummary();setInterval(()=>{if(!document.hidden){loadPosit
 })();
 </script>
 <script>
-/* LIVE FUTURES ORDER TABLE v1 — open orders, protective triggers and positions.
-   Reads Gate.io directly. A failed read is an explicit error, never an empty
-   table, so "no rows" always means the exchange genuinely has none. */
-(function(){
-'use strict';
-const otBody=document.getElementById('orderTableBody');
-const otStatus=document.getElementById('orderTableStatus');
-const otButton=document.getElementById('orderTableRefresh');
-if(!otBody||!otStatus||!otButton)return;
-const otPut=(id,v)=>{const el=document.getElementById(id);if(el)el.textContent=v;};
-const otIst=ts=>{
- if(!ts)return '—';
- const n=Number(ts);
- if(!Number.isFinite(n)||n<=0)return '—';
- return new Date(n*1000).toLocaleString('en-IN',{timeZone:'Asia/Kolkata',hour12:true});
-};
-const otCell=(tr,value,cls)=>{
- const td=document.createElement('td');
- td.textContent=value===null||value===undefined||value===''?'—':String(value);
- if(cls)td.className=cls;
- tr.appendChild(td);return td;
-};
-let otBusy=false;
-async function otLoad(){
- if(otBusy||document.hidden)return;otBusy=true;otButton.disabled=true;
- try{
-  const r=await fetch('/terminal/exchange-orders',{cache:'no-store'});
-  const d=await r.json();
-  if(!r.ok)throw Error(d.error||('HTTP '+r.status));
-  const orders=Array.isArray(d.orders)?d.orders:[];
-  const triggers=Array.isArray(d.triggers)?d.triggers:[];
-  const positions=Array.isArray(d.positions)?d.positions:[];
-  otPut('orderTableOrderCount',String(d.order_count??orders.length));
-  otPut('orderTableTriggerCount',String(d.protective_trigger_count??0));
-  otPut('orderTablePositionCount',String(d.position_count??positions.length));
-  otBody.replaceChildren();
-  const rows=[];
-  for(const o of orders){
-   rows.push(['ORDER',o.contract,o.side,o.size,o.remaining,o.price,o.status,otIst(o.created_at),o.order_id]);
-  }
-  for(const t of triggers){
-   rows.push([t.protective?'SL/TP TRIGGER':'TRIGGER',t.contract,t.side,t.size,'—',t.price,
-              (t.status||'')+(t.order_type?' · '+t.order_type:''),otIst(t.created_at),t.order_id]);
-  }
-  for(const p of positions){
-   rows.push(['POSITION',p.contract,p.side,p.size,'—',p.mark_price,
-              'OPEN · mark '+p.mark_price,otIst(null),'—']);
-  }
-  if(!rows.length){
-   const tr=otBody.insertRow(),td=tr.insertCell();
-   td.colSpan=10;td.className='empty-state';
-   td.textContent='Gate.io reports no open orders, no resting protective triggers and no open positions.';
-  }else{
-   // Serial number 1,2,3... in front of every row, so the operator can refer
-   // to a specific order unambiguously.
-   rows.forEach((row,idx)=>{
-    const tr=otBody.insertRow();
-    otCell(tr,String(idx+1),'ot-serial');
-    row.forEach((v,i)=>{
-     let cls='';
-     if(i===2)cls=v==='BUY'?'positive':v==='SELL'?'negative':'';
-     otCell(tr,v,cls);
-    });
-   });
-  }
-  otStatus.textContent=orders.length+' open order(s) · '+triggers.length+' trigger(s) ('
-    +d.protective_trigger_count+' protective) · '+positions.length+' position(s) · '
-    +new Date(d.fetched_at*1000).toLocaleTimeString('en-IN',{timeZone:'Asia/Kolkata',hour12:true})+' IST';
- }catch(e){
-  // Never leave a stale table looking authoritative, and never show an empty
-  // table for a failed read.
-  otBody.replaceChildren();
-  const tr=otBody.insertRow(),td=tr.insertCell();
-  td.colSpan=10;td.className='negative';
-  td.textContent='Order table unavailable: '+String(e.message).slice(0,120);
-  otPut('orderTableOrderCount','—');otPut('orderTableTriggerCount','—');otPut('orderTablePositionCount','—');
-  otStatus.textContent='Gate.io order read failed. This is NOT an empty account — the data could not be read.';
- }finally{otBusy=false;otButton.disabled=false;}
-}
-otButton.addEventListener('click',otLoad);
-otLoad();
-setInterval(()=>{if(!document.hidden)otLoad();},30000);
-document.addEventListener('visibilitychange',()=>{if(!document.hidden)otLoad();});
-})();
-</script>
-<script>
 (function(){
 'use strict';
 const radarBody=document.getElementById('radarBody'), radarStatus=document.getElementById('radarStatus');
@@ -1899,6 +1821,46 @@ loadRadar();loadScanner();setInterval(()=>{if(!document.hidden)loadRadar()},6000
  document.addEventListener('visibilitychange',()=>{if(!document.hidden)check();});
  check();
  setInterval(()=>{if(failures<3||!document.hidden)check();},4000);
+})();
+
+
+// DATABASE SIGNALS reset. Rebases the displayed count to zero; never deletes
+// a receipt, so the Incoming LuxAlgo Signals Status table and every verified
+// trade record stay exactly as they are.
+(function(){
+ 'use strict';
+ const btn=document.getElementById('resetSignalCount');
+ const out=document.getElementById('resetSignalCountStatus');
+ const tile=document.getElementById('databaseSignalCount');
+ if(!btn||!out)return;
+ btn.addEventListener('click',async()=>{
+  if(!window.confirm('Reset the DATABASE SIGNALS count to 0?\\n\\nStored signals and trade history are NOT deleted. Only the displayed count restarts at zero.'))return;
+  const csrf=document.querySelector('input[name="csrf_token"]')?.value;
+  if(!csrf){out.textContent='No valid session token. Refresh the page and sign in again.';return;}
+  btn.disabled=true;
+  out.textContent='Resetting count\u2026';
+  try{
+   const r=await fetch('/terminal/signals/reset-count',{
+    method:'POST',cache:'no-store',credentials:'same-origin',
+    headers:{'Content-Type':'application/json','X-Terminal-CSRF':csrf},
+    body:'{}'
+   });
+   const d=await r.json().catch(()=>({}));
+   if(!r.ok){
+    out.textContent='Reset FAILED \u00b7 '+String(d.error||d.detail||('HTTP '+r.status))
+      +(r.status===401?' \u00b7 sign in again':'')
+      +(r.status===403?' \u00b7 refresh the page and retry':'');
+    return;
+   }
+   if(tile)tile.textContent='0';
+   out.textContent='\u2713 Count reset to 0 \u00b7 baseline #'+d.baseline_id
+     +' \u00b7 stored signals preserved';
+   setTimeout(()=>{window.location.reload();},1200);
+  }catch(e){
+   out.textContent='Reset outcome UNKNOWN \u00b7 '+String(e.message).slice(0,80)
+     +' \u00b7 reload the page to see the current count.';
+  }finally{btn.disabled=false;}
+ });
 })();
 
 // Stage 16 V4 presentation. Reads existing paper table only; does not mutate trades.
@@ -6929,6 +6891,38 @@ def _incoming_visible_since(cursor):
             RETURNING cleared_at""",(seeded,))
         boundary=cursor.fetchone()['cleared_at']
     return boundary
+
+
+@app.post('/terminal/signals/reset-count')
+def terminal_reset_signal_count():
+    """Rebase the DATABASE SIGNALS tile to zero without deleting a receipt.
+
+    Only the displayed count is rebased. The Incoming LuxAlgo Signals Status
+    table, completed-trade records and every execution journal row are left
+    untouched, so no verified trade disappearing is possible.
+    """
+    if not _terminal_permitted(): return _terminal_guard()
+    if not _csrf_valid(): return jsonify(error='Invalid session verification'),403
+    try:
+        with _db_connect() as con:
+            _ensure_schema(con)
+            with con.cursor() as cur:
+                cur.execute('SELECT COALESCE(MAX(id),0) AS watermark FROM luxalgo_signal_receipts')
+                watermark=int(cur.fetchone()['watermark'])
+                cur.execute("""INSERT INTO luxalgo_signal_count_baseline(id,baseline_id,reset_at)
+                    VALUES(1,%s,clock_timestamp()) ON CONFLICT(id) DO UPDATE
+                    SET baseline_id=GREATEST(luxalgo_signal_count_baseline.baseline_id,EXCLUDED.baseline_id),
+                        reset_at=GREATEST(luxalgo_signal_count_baseline.reset_at,EXCLUDED.reset_at)
+                    RETURNING baseline_id,reset_at""",(watermark,))
+                saved=cur.fetchone()
+        response=jsonify(status='COUNT_RESET',signal_count=0,
+                         baseline_id=int(saved['baseline_id']),
+                         reset_at=saved['reset_at'].isoformat(),
+                         receipts_preserved=True,orders_placed=0)
+        response.headers['Cache-Control']='private, no-store'
+        return response
+    except (psycopg.Error,RuntimeError,OSError,ValueError,TypeError):
+        return jsonify(error='Signal count reset could not be saved'),503
 
 
 @app.post('/terminal/incoming-signals/reset')
