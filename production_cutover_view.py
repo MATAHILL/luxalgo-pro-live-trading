@@ -59,62 +59,9 @@ PRODUCTION_CONTROL='''<section class="bot-control-panel" aria-label="Production 
 <p class="gate-result" id="productionGateResult" role="status" aria-live="polite"></p>
 </div></section>'''
 
-PRODUCTION_ORDERS=r'''<section class="panel production-live-orders-panel" id="productionOrdersPanel" aria-label="Current live Futures orders read only">
-<div class="v4-head"><div><strong>LIVE FUTURES ORDERS</strong>
-<p class="light">Current authenticated exchange inventory only · No historical test-order details · Read only</p></div>
-<button class="btn gloss-action" type="button" id="productionOrdersRefresh">↻ Refresh Orders</button></div>
-<div class="production-orders-grid">
-<div><span class="production-orders-key">OPEN EXCHANGE ORDERS</span><strong id="productionOpenOrders">CHECKING…</strong></div>
-<div><span class="production-orders-key">PROTECTIVE TRIGGERS</span><strong id="productionOpenTriggers">CHECKING…</strong></div>
-<div><span class="production-orders-key">OPEN POSITIONS</span><strong id="productionOpenPositions">CHECKING…</strong></div>
-</div>
-<p class="light" id="productionOrdersStatus" role="status" aria-live="polite">Waiting for authenticated live exchange readback. Orders are never hidden if they exist.</p>
-</section>
-<script>(function(){'use strict';
-const orders=document.getElementById('productionOpenOrders'),
- triggers=document.getElementById('productionOpenTriggers'),
- positions=document.getElementById('productionOpenPositions'),
- status=document.getElementById('productionOrdersStatus'),
- refresh=document.getElementById('productionOrdersRefresh');
-if(!orders||!triggers||!positions||!status||!refresh)return;
-const validCount=value=>typeof value==='number'&&Number.isSafeInteger(value)&&value>=0;
-let busy=false;
-async function update(){
- if(busy)return;busy=true;refresh.disabled=true;
- const controller=new AbortController();
- const timer=setTimeout(()=>controller.abort(),12000);
- try{
-  const response=await fetch('/terminal/live-execution/snapshot',{
-    credentials:'same-origin',cache:'no-store',signal:controller.signal
-  });
-  if(!response.ok)throw Error('Exchange readback unavailable');
-  const snapshot=await response.json();
-  const o=snapshot.exchange_open_orders,t=snapshot.exchange_open_triggers,p=snapshot.open_positions;
-  if(!Array.isArray(snapshot.positions)||!validCount(o)||!validCount(t)||
-     !validCount(p)||p!==snapshot.positions.length)
-    throw Error('Incomplete authenticated order inventory');
-  orders.textContent=o===0?'0 · EMPTY':String(o)+' · OPEN';
-  triggers.textContent=t===0?'0 · EMPTY':String(t)+' · OPEN';
-  positions.textContent=p===0?'0 · EMPTY':String(p)+' · OPEN';
-  const updated=typeof snapshot.fetched_at==='number'?
-    new Date(snapshot.fetched_at*1000):new Date(snapshot.fetched_at);
-  const timestamp=Number.isFinite(updated.getTime())?
-   updated.toLocaleString('en-IN',{timeZone:'Asia/Kolkata'})+' IST':'time unknown';
-  status.textContent=(o===0&&t===0&&p===0?
-    'Exchange confirms no open orders, protective triggers or positions.':
-    'Active exchange exposure detected. Review live positions and orders directly on Gate.io.')+
-    ' Readback: '+timestamp+'. Real-money order controls remain subject to production safety gates.';
- }catch(error){
-  // Never show stale zeros as current when the authenticated API readback fails.
-  orders.textContent='UNVERIFIED';
-  triggers.textContent='UNVERIFIED';
-  positions.textContent='UNVERIFIED';
-  status.textContent='Unable to verify live exchange inventory. This is NOT an empty-order confirmation. Execution remains subject to safety locks.';
- }finally{clearTimeout(timer);busy=false;refresh.disabled=false;}
-}
-refresh.addEventListener('click',update);update();
-setInterval(()=>{if(!document.hidden)update();},60000);
-})();</script>'''
+# The live futures order-inventory panel was removed at the operator's request.
+# The read-only /terminal/live-execution/snapshot endpoint is left intact; nothing
+# in the rendered page calls it any more.
 # Keep the original separate control panel above Radar, with original two-button
 # appearance and both banner/state indicators. Never route it to retired Testnet.
 PRODUCTION_BOT_SCRIPT=r'''<script>(function(){'use strict';
@@ -567,14 +514,6 @@ body.production-view .gate-emergency-row{margin-top:14px;padding:12px;border:1px
 body.production-view .gate-btn-emergency{color:#fff3f5;border:1px solid #ff6b86;background:linear-gradient(160deg,#b32b46,#7d1428 52%,#5c0d1c);font-weight:700}
 body.production-view .gate-btn-emergency:disabled{opacity:.38;cursor:not-allowed}
 body.production-view .gate-emergency-hint{margin:8px 0 0;font-size:11.5px;line-height:1.5}
-body.production-view .production-live-orders-panel{margin-top:12px;padding-bottom:12px}
-body.production-view .production-live-orders-panel .v4-head{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}
-body.production-view .production-orders-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;padding:13px 18px}
-body.production-view .production-orders-grid>div{padding:12px;border:1px solid #355a7b;border-radius:10px;background:rgba(13,33,56,.55);min-width:0}
-body.production-view .production-orders-grid strong{display:block;font-size:13px;overflow-wrap:anywhere;margin-top:6px}
-body.production-view .production-orders-key{display:block;font-size:11px;opacity:.8}
-body.production-view #productionOrdersStatus{padding:3px 18px}
-@media(max-width:650px){body.production-view .production-orders-grid{grid-template-columns:1fr}}
 @media(max-width:550px){body.production-view .production-position-card .v4-numbers{grid-template-columns:repeat(2,minmax(0,1fr))}}
 '''
 
@@ -602,7 +541,6 @@ def production_monitor_page(page):
     # This never conceals nonzero exchange orders or affects safety/audit state.
     if out.count(PRODUCTION_CONTROL)!=1:
         raise ValueError("Restored production BOT controls not unique")
-    out=out.replace(PRODUCTION_CONTROL,PRODUCTION_CONTROL+'\n'+PRODUCTION_ORDERS,1)
     # Keep the Radar heading unchanged; BOT buttons are above in the old panel.
     if out.count('</body>')!=1:raise ValueError("Dashboard closing body missing")
     out=out.replace('</body>',PRODUCTION_BOT_SCRIPT+'</body>',1)
