@@ -618,7 +618,12 @@ def production_monitor_page(page):
     # The Incoming LuxAlgo Signals table is replaced by the trade status table
     # (live + closed rows). The old signal panel and its fetch are gone, so
     # there is no heading or endpoint left to relabel here.
-    if out.count('id="signalStatusPanel"')!=1:
-        raise ValueError("Trade status panel missing from dashboard")
+    #
+    # This marker is OPTIONAL. It is absent from every current app.py PAGE, so
+    # treating it as mandatory raised ValueError and turned the whole dashboard
+    # into a 500 whenever PRODUCTION_TERMINAL_VIEW=true. Only a DUPLICATE is a
+    # real fault; a missing marker simply means there is nothing to relabel.
+    if out.count('id="signalStatusPanel"') > 1:
+        raise ValueError("Trade status panel duplicated in dashboard")
     return out
 
