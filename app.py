@@ -605,6 +605,18 @@ h2{font-size:15px;font-weight:850;letter-spacing:.3px}
 .glossy-logout:hover{filter:brightness(1.14);box-shadow:inset 0 2px 3px #fff9,0 4px 22px #25b7ff90}
 .glossy-logout:focus-visible,.profile-change:focus-visible{outline:3px solid #ffe39e;outline-offset:2px}
 @media(max-width:680px){.profile-right{align-items:flex-start}.profile-name{font-size:12px}}
+/* One-click maintenance: clears browser storage, cached files and server caches. */
+.maint-clear{border:1px solid #7fd4ff;border-radius:9px;cursor:pointer;padding:8px 13px;font-size:11px;
+ font-weight:850;letter-spacing:.03em;color:#eafcff;
+ background:linear-gradient(155deg,#3f8fbd,#1a4f78 52%,#123a5c);box-shadow:inset 0 1px 0 #ffffff55,0 2px 9px #0a8aff44}
+.maint-clear:hover{filter:brightness(1.14)}
+.maint-clear:disabled{opacity:.55;cursor:wait}
+.maint-clear:focus-visible{outline:2px solid #ffe39e;outline-offset:2px}
+.maint-status{display:block;max-width:290px;font-size:10.5px;line-height:1.45;color:#9de7ff;text-align:right}
+.maint-status[data-state="ok"]{color:#8dffc9}
+.maint-status[data-state="warn"]{color:#ffd79a}
+.maint-status[data-state="err"]{color:#ff9db0}
+@media(max-width:680px){.maint-status{text-align:left}}
 
 /* Glossy control upgrades — cosmetic only. Distinct from account LOGOUT. */
 .btn.gloss-action,.btn.gloss-safe-disabled,.bot-control-actions .btn{
@@ -826,7 +838,7 @@ header.terminal-header{border-radius:17px!important}
 </style><script type="module" src="https://widgets.tradingview-widget.com/w/en/tv-advanced-chart.js"></script></head><body><div class="wrap"><header class="terminal-header"><div class="terminal-brand"><h1>LUXALGO PRO · TESTNET FUTURES TERMINAL</h1><p>Gate.io USDT Perpetual · LuxAlgo 5m / 15m · Coded by · SUBHASISH</p>
 <div class="profile-greeting"><div class="profile-avatar" id="avatarDisplay"><span>SD</span></div>
 <div><div class="profile-name">Hello SUBHASISH</div><label class="profile-change" for="profileImageInput" tabindex="0">Change Photo</label><input type="file" id="profileImageInput" accept="image/png,image/jpeg,image/webp" hidden></div></div></div><section class="news-slot" aria-label="Latest crypto news"><div class="news-heading"><span>● CRYPTO NEWS</span><span style="display:flex;align-items:center;gap:7px"><span id="newsFeedStatus">Loading headlines…</span><button type="button" id="newsRefresh" aria-label="Refresh crypto news" title="Refresh crypto news">↻</button></span></div><div class="news-viewport" id="newsViewport"><div class="news-stack" id="newsStack"><span class="news-empty">Retrieving publisher headlines…</span></div></div></section><div class="profile-right">
-<form method="post" action="/logout"><input type="hidden" name="csrf_token" value="{{ csrf_token|e }}"><button class="glossy-logout" type="submit">⇥ LOGOUT</button></form><span id="signalLiveSync" role="status" aria-live="polite" style="font-size:11px;color:#9de7ff">● Signals auto-sync: connecting…</span></div></header>
+<form method="post" action="/logout"><input type="hidden" name="csrf_token" value="{{ csrf_token|e }}"><button class="glossy-logout" type="submit">⇥ LOGOUT</button></form><button class="maint-clear" type="button" id="maintenanceClear" title="Clears this browser's cache, cookies and leftover storage, plus the server's in-memory caches. Does not touch trades, positions or signal history.">✦ CLEAR CACHE &amp; COOKIES</button><span class="maint-status" id="maintenanceStatus" role="status" aria-live="polite">Clears browser cache, cookies and leftover junk in one click.</span><span id="signalLiveSync" role="status" aria-live="polite" style="font-size:11px;color:#9de7ff">● Signals auto-sync: connecting…</span></div></header>
  <section class="live-ops-banner" aria-label="Live trading execution status"><div><strong>GATE.IO FUTURES · TESTNET TRADING MODE</strong><p>Only Gate.io Futures TESTNET automatic orders are permitted. Entry and native protection must pass exchange validation. Real-money orders remain disabled.</p></div><span class="live-ops-state">TESTNET ONLY</span></section>
 <section class="bot-control-panel" aria-label="Remote bot control">
  <div><div class="bot-status-line"><strong id="botControlLabel">BOT OFF · TESTNET SIGNALS PAUSED</strong><span id="botStateIndicator" class="bot-state-indicator unknown" role="status" aria-live="polite">● CHECKING</span></div><p id="botControlDetail">New LuxAlgo signals remain logged. No live orders are possible.</p></div>
@@ -1637,6 +1649,95 @@ body.addEventListener('click',async e=>{
  }finally{all.forEach(x=>x.disabled=false);}
 });
 loadPositions();loadPnlSummary();setInterval(()=>{if(!document.hidden){loadPositions();loadPnlSummary();}},30000);
+/* One-click maintenance. Clears this browser's cache, cookies and leftover
+   storage, then asks the server to drop its derived caches. The signed-in
+   session cookie is HttpOnly, so it is never exposed to or removed by this
+   code: you stay signed in. No trade, position or signal record is touched. */
+(function(){
+ const btn=document.getElementById('maintenanceClear');
+ const out=document.getElementById('maintenanceStatus');
+ if(!btn||!out)return;
+ const say=(t,state)=>{out.textContent=t;if(state)out.dataset.state=state;else delete out.dataset.state;};
+ btn.addEventListener('click',async()=>{
+  if(btn.disabled)return;
+  if(!window.confirm("Clear this browser's cache, cookies and leftover junk, "
+    +"plus the server's temporary caches?\n\nYour trades, positions, signal "
+    +"history and sign-in are NOT affected."))return;
+  btn.disabled=true;
+  const done=[];
+  const failed=[];
+  say('Clearing browser storage\u2026');
+  // 1. Local and session storage.
+  try{localStorage.clear();done.push('localStorage');}catch(e){failed.push('localStorage');}
+  try{sessionStorage.clear();done.push('sessionStorage');}catch(e){failed.push('sessionStorage');}
+  // 2. IndexedDB databases.
+  try{
+   if(window.indexedDB&&indexedDB.databases){
+    const dbs=await indexedDB.databases();
+    for(const db of dbs){
+     if(!db||!db.name)continue;
+     await new Promise(res=>{
+      const req=indexedDB.deleteDatabase(db.name);
+      req.onsuccess=req.onerror=req.onblocked=()=>res();
+     });
+    }
+    done.push('indexedDB');
+   }
+  }catch(e){failed.push('indexedDB');}
+  // 3. Cache Storage (the HTTP cache the browser keeps for this origin).
+  try{
+   if(window.caches){
+    const keys=await caches.keys();
+    await Promise.all(keys.map(k=>caches.delete(k)));
+    done.push('cacheStorage');
+   }
+  }catch(e){failed.push('cacheStorage');}
+  // 4. Service workers, so a stale worker cannot serve an old page.
+  try{
+   if(navigator.serviceWorker&&navigator.serviceWorker.getRegistrations){
+    const regs=await navigator.serviceWorker.getRegistrations();
+    await Promise.all(regs.map(r=>r.unregister()));
+    if(regs.length)done.push('serviceWorkers');
+   }
+  }catch(e){failed.push('serviceWorkers');}
+  // 5. Readable cookies. The HttpOnly session cookie is invisible here and is
+  //    deliberately left alone, so the operator is not signed out.
+  try{
+   const names=document.cookie?document.cookie.split(';').map(c=>c.split('=')[0].trim()).filter(Boolean):[];
+   for(const n of names){
+    document.cookie=n+'=; Max-Age=0; path=/';
+    document.cookie=n+'=; Max-Age=0; path=/; SameSite=Lax';
+   }
+   if(names.length)done.push(names.length+' cookie(s)');
+  }catch(e){failed.push('cookies');}
+  // 6. Server-side derived caches.
+  say('Clearing server caches\u2026');
+  let serverCleared=0;
+  try{
+   const csrf=document.querySelector('input[name="csrf_token"]')?.value;
+   if(!csrf)throw Error('no session token');
+   const r=await fetch('/terminal/maintenance/clear',{method:'POST',cache:'no-store',
+    headers:{'Content-Type':'application/json','X-Terminal-CSRF':csrf},body:'{}'});
+   const d=await r.json();
+   if(!r.ok)throw Error(d.error||('HTTP '+r.status));
+   serverCleared=d.cleared_count||0;
+   done.push(serverCleared+' server cache(s)');
+  }catch(e){
+   failed.push('server caches: '+String(e.message).slice(0,60));
+  }
+  // 7. Repopulate the page from fresh data, no reload and no sign-out.
+  try{await loadPositions();}catch(e){}
+  try{await loadPnlSummary();}catch(e){}
+  try{if(typeof loadRadar==='function')loadRadar();}catch(e){}
+  try{if(typeof loadScanner==='function')loadScanner();}catch(e){}
+  btn.disabled=false;
+  if(failed.length){
+   say('\u26a0 Cleared '+done.length+' item(s) \u00b7 could not clear: '+failed.join(', '),'warn');
+  }else{
+   say('\u2713 Cleared '+done.join(' \u00b7 ')+' \u00b7 you are still signed in','ok');
+  }
+ });
+})();
 })();
 </script>
 <script>
@@ -2698,6 +2799,62 @@ def _csrf_valid():
     submitted=request.form.get('csrf_token','') or request.headers.get('X-Terminal-CSRF','')
     expected=session.get('csrf_token','')
     return bool(expected and submitted and hmac.compare_digest(submitted,expected))
+
+
+@app.post('/terminal/maintenance/clear')
+def terminal_maintenance_clear():
+    """One-click housekeeping: drop the server's in-memory caches.
+
+    This clears ONLY derived, re-fetchable data: the news feed cache, the
+    public radar/scanner caches, the paper quote cache and the contract
+    multiplier cache. It never touches the database, the trade ledger, open
+    positions, signal receipts or the operator's session, so nothing that
+    matters is lost and nothing needs re-entering.
+
+    The browser half of the cleanup (localStorage, sessionStorage, IndexedDB,
+    Cache Storage, service workers and non-session cookies) is done client
+    side by the button; this endpoint reports what the server dropped.
+    """
+    if not _terminal_permitted():
+        return _terminal_guard()
+    if not _csrf_valid():
+        return jsonify(error='Invalid terminal session verification'), 403
+    cleared = []
+    try:
+        with _news_lock:
+            _news_cache.update(expires_at=0, items=[], fetched_at=None)
+        cleared.append('news')
+    except (NameError, AttributeError, TypeError):
+        pass
+    try:
+        with _radar_lock:
+            _radar_cache.update(at=0.0, data=None)
+        cleared.append('radar')
+    except (NameError, AttributeError, TypeError):
+        pass
+    try:
+        with _scanner_lock:
+            _scanner_cache.update(at=0.0, data=None)
+        cleared.append('scanner')
+    except (NameError, AttributeError, TypeError):
+        pass
+    try:
+        with _paper_live_cache_lock:
+            _paper_live_cache.update(at=0.0, value=None)
+        cleared.append('paper_quotes')
+    except (NameError, AttributeError, TypeError):
+        pass
+    try:
+        _paper_multiplier_cache.clear()
+        cleared.append('contract_specs')
+    except (NameError, AttributeError):
+        pass
+    response = jsonify(status='CACHE_CLEARED', cleared=cleared,
+                       cleared_count=len(cleared),
+                       database_touched=False, session_preserved=True,
+                       orders_placed=0, cleared_at=int(time.time()))
+    response.headers['Cache-Control'] = 'no-store'
+    return response
 
 
 @app.post('/logout')

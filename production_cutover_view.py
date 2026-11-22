@@ -513,6 +513,21 @@ const sizeRow=document.getElementById('tradeSizeRow'),
 if(!sizeRow||!sizeToggle||!sizeBody||!sizeSummary||!sizeCurrent||!sizeSource||
    !sizeInput||!sizeSave||!sizeClear||!sizeResult)return;
 const sizeUrl='/terminal/trade-size';
+/* This script is its own IIFE, so postJson() from PRODUCTION_BOT_SCRIPT is NOT
+   in scope here. Calling it threw "postJson is not defined" and SAVE SIZE did
+   nothing. This local helper mirrors that function's contract exactly:
+   {ok, status, data} and the same CSRF header. */
+async function sizePost(url,body){
+ const el=document.querySelector('input[name="csrf_token"]');
+ const csrf=el?el.value:'';
+ if(!csrf)throw Error('Your sign-in token is missing. Reload the page and sign in again.');
+ const resp=await fetch(url,{method:'POST',credentials:'same-origin',cache:'no-store',
+   headers:{'Content-Type':'application/json','X-Terminal-CSRF':csrf},
+   body:JSON.stringify(body||{})});
+ let data=null;
+ try{data=await resp.json();}catch(_){data=null;}
+ return {ok:resp.ok,status:resp.status,data:data||{}};
+}
 /* Collapsed by default. The arrow toggles it; Escape closes it again. */
 function sizeSetOpen(open){
  sizeToggle.setAttribute('aria-expanded',open?'true':'false');
@@ -568,7 +583,7 @@ sizeSave.addEventListener('click',async()=>{
  if(!raw){sizeSay('Type a USDT size first, for example 250.','bad');return;}
  sizeLock(true);sizeSay('Saving\u2026');
  try{
-  const r=await postJson(sizeUrl,{notional_usdt:raw});
+  const r=await sizePost(sizeUrl,{notional_usdt:raw});
   if(r.status===401){sizeSay('Your session expired. Reload the page and sign in again.','bad');return;}
   if(r.status===403){sizeSay('The page security token was rejected. Reload the page and try again.','bad');return;}
   if(r.ok&&r.data.active===true){
@@ -586,7 +601,7 @@ sizeSave.addEventListener('click',async()=>{
 sizeClear.addEventListener('click',async()=>{
  sizeLock(true);sizeSay('Clearing\u2026');
  try{
-  const r=await postJson(sizeUrl,{clear:true});
+  const r=await sizePost(sizeUrl,{clear:true});
   if(r.ok){
    sizeRender(r.data);
    sizeSay('Cleared. New trades follow the deployment environment policy again.','good');
