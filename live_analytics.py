@@ -200,8 +200,20 @@ def compute_analytics(con, client=None, limit=500):
     total_net = Decimal("0")
     pnl_known = 0
     pnl_unknown = 0
+    # Per-trade outcome rows, so a timeframe-filtered view (1D/7D/15D/30D)
+    # can re-bucket the SAME verified numbers instead of recomputing them.
+    # Each row is one already-de-duplicated trade with its verified net P&L.
+    closed_rows = []
     for row in closed:
         net, _source, _agg = _row_net_pnl(row, client)
+        closed_at = row.get("updated_at") or row.get("created_at")
+        closed_rows.append({
+            "event_id": row.get("event_id"),
+            "contract": row.get("contract"),
+            "closed_at": (closed_at.isoformat() if hasattr(closed_at, "isoformat")
+                          else (str(closed_at) if closed_at else None)),
+            "net_pnl": float(net) if net is not None else None,
+        })
         if net is None:
             pnl_unknown += 1
             continue
@@ -231,6 +243,7 @@ def compute_analytics(con, client=None, limit=500):
         "realized_pnl_trades_unknown": pnl_unknown,
         "open_executed_trades": executed_open,
         "pending_trades": pending,
+        "closed_rows": closed_rows,
         "source": "GATE_MY_TRADES_AND_LEDGER",
         "deduplicated_by": "event_id",
     }

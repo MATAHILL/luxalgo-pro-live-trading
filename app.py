@@ -525,7 +525,7 @@ h2{font-size:15px;font-weight:850;letter-spacing:.3px}
 .perf-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:12px 0}
 .perf-grid>div{background:linear-gradient(130deg,#0e1c31,#14314b);border:1px solid #2b4d70;border-radius:8px;padding:12px}
 .perf-grid span{display:block;color:#9dbbd6;font-size:11px}
-.perf-grid strong{display:block;font-size:19px;margin-top:6px;color:#dcefff}
+.perf-grid strong{display:block;font-size:19px;margin-top:6px;color:#dcefff}.perf-split{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:12px;margin-top:14px;align-items:stretch}.perf-split>.panel{margin-top:0;min-width:0}.performance-panel .perf-grid{grid-template-columns:1fr 1fr;gap:8px}.winrate-panel{display:flex;flex-direction:column}.winrate-panel .panel-heading{flex-wrap:wrap}.wr-tabs{display:flex;flex-wrap:wrap;gap:6px;margin:2px 0 12px}.wr-tab{background:#0b1a2b;color:#dcefff;border:2px solid #3c3c3e;border-radius:25px;padding:7px 16px;font:inherit;font-size:11px;font-weight:800;letter-spacing:.5px;cursor:pointer;transition:border-color .15s,box-shadow .15s}.wr-tab:hover{border-color:#5ae6e9}.wr-tab.selected{border-color:#00ff00;box-shadow:0 0 15px #00ff0088;color:#fff}.wr-gauge-wrap{display:flex;justify-content:center;padding:4px 0 14px}.wr-gauge{position:relative;width:210px;height:210px;border-radius:50%;background:conic-gradient(from 180deg,#00ff00 0deg var(--wr-win,0deg),#ff0000 var(--wr-win,0deg) 360deg);box-shadow:0 0 22px #00ff0033,inset 0 0 18px #00000099}.wr-gauge::after{content:"";position:absolute;inset:0;border-radius:50%;background:linear-gradient(180deg,#ffffff2e,#ffffff00 42%);pointer-events:none}.wr-gauge-well{position:absolute;inset:26px;border-radius:50%;background:radial-gradient(circle at 50% 32%,#141a20,#05080b 72%);box-shadow:inset 0 3px 12px #000000cc;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;text-align:center}.wr-gauge-well::before{content:"";position:absolute;left:14%;right:14%;top:50%;height:1px;background:rgba(255,255,255,.2)}.wr-gauge-title{color:#fff;font-size:12px;font-weight:600}.wr-gauge-value{color:#00ff00;font-size:30px;font-weight:850;line-height:1.1;text-shadow:0 0 12px #00ff0066}.wr-gauge-sub{color:#fff;font-size:11px;font-weight:600;margin-top:3px}.wr-gauge-loss{color:#ff0000;font-size:19px;font-weight:850;line-height:1.1;text-shadow:0 0 10px #ff000066}.wr-stats{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:auto}.wr-stat{border-radius:25px;background:#000;padding:12px 14px;display:flex;flex-direction:column;gap:6px}.wr-stat-win{border:2.5px solid #00ff00;box-shadow:0 0 10px 2px #00ff0055}.wr-stat-loss{border:2.5px solid #ff0000;box-shadow:0 0 10px 2px #ff000055}.wr-stat-top{display:flex;align-items:center;justify-content:space-between;gap:8px}.wr-spark{display:inline-flex;line-height:0}.wr-stat-win .wr-spark{color:#00ff00}.wr-stat-loss .wr-spark{color:#ff0000}.wr-stat-label{color:#fff;font-size:11px;font-weight:700;text-align:right}.wr-stat-value{font-size:26px;font-weight:850;text-align:center;line-height:1.15}.wr-stat-win .wr-stat-value{color:#00ff00;text-shadow:0 0 12px #00ff0066}.wr-stat-loss .wr-stat-value{color:#ff0000;text-shadow:0 0 12px #ff000066}@media(max-width:1100px){.perf-split{grid-template-columns:1fr}}@media(max-width:420px){.wr-gauge{width:170px;height:170px}.wr-gauge-well{inset:22px}.wr-gauge-value{font-size:25px}}
 .label-muted{font-size:10px;color:#a2bbd6;letter-spacing:.4px}
 .tag{font-weight:800}
 .btn:not(:disabled):hover{border-color:#5ae6e9;box-shadow:0 0 15px #13c9e334}
@@ -906,7 +906,7 @@ header.terminal-header{border-radius:17px!important}
 <div class="tablewrap market-scroll"><table><thead><tr><th>PAIR · CHART ↗</th><th>BIAS</th><th>SCORE</th><th>RSI</th><th>VOL RATIO</th></tr></thead><tbody id="scannerBody"><tr><td colspan="5">Scanning…</td></tr></tbody></table></div>
 <p class="light">Technical labels reflect EMA trend, RSI, recent price-range break and candle volume. They are not LuxAlgo orders.</p>
 </section></div>
-<div class="bottom-grid"><section class="panel performance-panel"><div class="panel-heading"><h2>PERFORMANCE ANALYTICS</h2><span class="label-muted" id="perfStatus">VERIFIED FILLS ONLY</span></div><div class="perf-grid"><div><span>Total Closed Trades</span><strong id="perfClosed">—</strong></div><div><span>Winning Trades</span><strong id="perfWins">—</strong></div><div><span>Losing Trades</span><strong id="perfLosses">—</strong></div><div><span>Win Rate</span><strong id="perfWinRate">—</strong></div><div><span>Losing Rate</span><strong id="perfLosingRate">—</strong></div><div><span>Total Close Rate</span><strong id="perfCloseRate">—</strong></div><div><span>Total Realized P&amp;L (USDT)</span><strong id="perfRealized">—</strong></div><div><span>Unrealized P&amp;L (USDT)</span><strong id="perfUnrealized">—</strong></div></div><p class="light" id="perfNote">Waiting for authenticated position and fill synchronization. No synthetic P&amp;L or win statistics.</p></section></div><section class="panel legacy-paper-panel"><div class="panel-heading"><h2>PAPER TRADE MONITOR <span class="tag">SIMULATION ONLY</span></h2><button class="btn gloss-action" id="paperRefresh" type="button">↻ Check Paper Trades</button></div><p class="light" id="paperStatus" role="status" aria-live="polite">Checks queued simulated orders when the dashboard is open; historical outcomes remain estimates, not fills.</p><div class="tablewrap"><table><thead><tr><th>CREATED (IST)</th><th>PAIR</th><th>SIDE</th><th>SIM ENTRY</th><th>SIM SL</th><th>SIM TP</th><th>STATE</th><th>LAST PRICE</th><th>UNREALIZED P&amp;L</th><th>EST. CLOSED P&amp;L</th></tr></thead><tbody id="paperBody"><tr><td colspan="10">No simulated positions loaded.</td></tr></tbody></table></div><p id="paperOpenPnlTotal" class="light" role="status" aria-live="polite">Open paper unrealized P&amp;L: not yet available.</p><p class="light">Simulation outcomes assume the reference entry was achievable and exclude fees, slippage and funding. If both SL and TP are touched in one candle, SL is assumed first. Historical-data gaps are not guessed. Simulated P&amp;L is never included in verified real-trade analytics.</p></section><div class="foot">LUXALGO PRO · Private terminal · Market data is public Gate.io data. Scanners are technical watchlists, not LuxAlgo entry signals. No account positions, fills, profit or loss are available until authenticated exchange sync is implemented. Live order placement is controlled by the PRODUCTION BOT switch above: when it reads BOT ON, enabled signals are sent to Gate.io and the panels above show the real result; when it reads BOT OFF or a gate is listed, no orders are placed.</div></div><script>
+<div class="perf-split"><section class="panel performance-panel"><div class="panel-heading"><h2>PERFORMANCE ANALYTICS</h2><span class="label-muted" id="perfStatus">VERIFIED FILLS ONLY</span></div><div class="perf-grid"><div><span>Total Closed Rate</span><strong id="perfCloseRate">—</strong></div><div><span>Losing Rate</span><strong id="perfLosingRate">—</strong></div><div><span>Total Realized P&amp;L (USDT)</span><strong id="perfRealized">—</strong></div><div><span>Winning Trades</span><strong id="perfWins">—</strong></div><div><span>Win Rate</span><strong id="perfWinRate">—</strong></div><div><span>Unrealized P&amp;L (USDT)</span><strong id="perfUnrealized">—</strong></div></div><p class="light" id="perfNote">Waiting for authenticated position and fill synchronization. No synthetic P&amp;L or win statistics.</p></section><section class="panel winrate-panel" id="winRateWidget"><div class="panel-heading"><h2>REAL-TIME TRADING WIN RATE</h2><span class="label-muted" id="winRateStatus">VERIFIED FILLS ONLY</span></div><div class="wr-tabs" role="tablist" aria-label="Win rate timeframe"><button class="wr-tab selected" type="button" role="tab" aria-selected="true" data-wr="1d">1D</button><button class="wr-tab" type="button" role="tab" aria-selected="false" data-wr="7d">7D</button><button class="wr-tab" type="button" role="tab" aria-selected="false" data-wr="15d">15D</button><button class="wr-tab" type="button" role="tab" aria-selected="false" data-wr="30d">30D</button><button class="wr-tab" type="button" role="tab" aria-selected="false" data-wr="all">ALL</button></div><div class="wr-gauge-wrap"><div class="wr-gauge" id="wrGauge" role="img" aria-label="Win rate gauge"><div class="wr-gauge-well"><span class="wr-gauge-title">Win Rate</span><strong class="wr-gauge-value" id="wrWinPct">—</strong><span class="wr-gauge-sub">Loss</span><strong class="wr-gauge-loss" id="wrLossPct">—</strong></div></div></div><div class="wr-stats"><div class="wr-stat wr-stat-win"><div class="wr-stat-top"><span class="wr-spark" aria-hidden="true"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="2,17 8,11 12,14 22,4"/><polyline points="16,4 22,4 22,10"/></svg></span><span class="wr-stat-label">Winning Trades</span></div><strong class="wr-stat-value" id="wrWins">—</strong></div><div class="wr-stat wr-stat-loss"><div class="wr-stat-top"><span class="wr-spark" aria-hidden="true"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="2,7 8,13 12,10 22,20"/><polyline points="16,20 22,20 22,14"/></svg></span><span class="wr-stat-label">Losing Trades</span></div><strong class="wr-stat-value" id="wrLosses">—</strong></div></div><p class="light" id="winRateNote">Win rate is computed from verified closed trades only, de-duplicated by event id.</p></section></div><section class="panel legacy-paper-panel"><div class="panel-heading"><h2>PAPER TRADE MONITOR <span class="tag">SIMULATION ONLY</span></h2><button class="btn gloss-action" id="paperRefresh" type="button">↻ Check Paper Trades</button></div><p class="light" id="paperStatus" role="status" aria-live="polite">Checks queued simulated orders when the dashboard is open; historical outcomes remain estimates, not fills.</p><div class="tablewrap"><table><thead><tr><th>CREATED (IST)</th><th>PAIR</th><th>SIDE</th><th>SIM ENTRY</th><th>SIM SL</th><th>SIM TP</th><th>STATE</th><th>LAST PRICE</th><th>UNREALIZED P&amp;L</th><th>EST. CLOSED P&amp;L</th></tr></thead><tbody id="paperBody"><tr><td colspan="10">No simulated positions loaded.</td></tr></tbody></table></div><p id="paperOpenPnlTotal" class="light" role="status" aria-live="polite">Open paper unrealized P&amp;L: not yet available.</p><p class="light">Simulation outcomes assume the reference entry was achievable and exclude fees, slippage and funding. If both SL and TP are touched in one candle, SL is assumed first. Historical-data gaps are not guessed. Simulated P&amp;L is never included in verified real-trade analytics.</p></section><div class="foot">LUXALGO PRO · Private terminal · Market data is public Gate.io data. Scanners are technical watchlists, not LuxAlgo entry signals. No account positions, fills, profit or loss are available until authenticated exchange sync is implemented. Live order placement is controlled by the PRODUCTION BOT switch above: when it reads BOT ON, enabled signals are sent to Gate.io and the panels above show the real result; when it reads BOT OFF or a gate is listed, no orders are placed.</div></div><script>
 
 // Read-only advanced watchlist: uses completed 5m/15m public candles and validated LuxAlgo receipt records.
 (function(){
@@ -2089,6 +2089,59 @@ const note=document.getElementById('perfNote');
 if(!status||!note)return;
 const put=(id,v)=>{const el=document.getElementById(id);if(el)el.textContent=v;};
 const setCls=(id,cls)=>{const el=document.getElementById(id);if(el)el.className=cls;};
+/* ---- Right half: real-time win-rate widget -------------------------
+   Reads the SAME server-computed payload as the metric tiles on the
+   left, so the two halves can never disagree. It adds no new maths on
+   the server: the gauge only re-buckets already-verified closed rows. */
+const wrGauge=document.getElementById('wrGauge');
+const wrStatus=document.getElementById('winRateStatus');
+const wrNote=document.getElementById('winRateNote');
+const wrTabs=Array.prototype.slice.call(document.querySelectorAll('.wr-tab'));
+let wrPayload=null;
+let wrWindow='1d';
+const WR_DAYS={'1d':1,'7d':7,'15d':15,'30d':30,'all':null};
+const DASH='\u2014';
+function wrPaint(winPct,lossPct,wins,losses){
+  if(wrGauge)wrGauge.style.setProperty('--wr-win',((Number(winPct)||0)*3.6)+'deg');
+  put('wrWinPct',(winPct===null||winPct===undefined)?DASH:Number(winPct).toFixed(2)+'%');
+  put('wrLossPct',(lossPct===null||lossPct===undefined)?DASH:Number(lossPct).toFixed(2)+'%');
+  put('wrWins',(wins===null||wins===undefined)?DASH:wins);
+  put('wrLosses',(losses===null||losses===undefined)?DASH:losses);
+}
+function wrRender(){
+  const d=wrPayload||{};
+  const days=WR_DAYS[wrWindow];
+  const rows=d.closed_rows;
+  if(!Array.isArray(rows)||days===null){
+    /* ALL, or a payload without per-trade rows: use the exact server
+       totals, i.e. the same definition the metric tiles use. */
+    wrPaint(d.win_rate_pct,d.losing_rate_pct,d.winning_trades,d.losing_trades);
+    return;
+  }
+  const cut=Date.now()-days*86400000;
+  let w=0,l=0;
+  for(let i=0;i<rows.length;i++){
+    const r=rows[i]||{};
+    const t=Date.parse(r.closed_at||'');
+    if(isNaN(t)||t<cut)continue;
+    const n=r.net_pnl;
+    if(n===null||n===undefined)continue;
+    if(Number(n)>0)w++;else if(Number(n)<0)l++;
+  }
+  const decided=w+l;
+  wrPaint(decided?w/decided*100:null,decided?l/decided*100:null,w,l);
+}
+wrTabs.forEach(function(el){
+  el.addEventListener('click',function(){
+    wrWindow=el.getAttribute('data-wr')||'1d';
+    wrTabs.forEach(function(x){
+      const on=(x===el);
+      x.classList.toggle('selected',on);
+      x.setAttribute('aria-selected',on?'true':'false');
+    });
+    wrRender();
+  });
+});
 const money2=v=>Number(v).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2});
 let busy=false;
 async function load(){
@@ -2097,9 +2150,8 @@ async function load(){
   const r=await fetch('/terminal/performance-analytics',{cache:'no-store'});
   const d=await r.json();
   if(!r.ok)throw Error(d.error||('HTTP '+r.status));
-  put('perfClosed',d.total_closed_trades??0);
+  wrPayload=d;wrRender();
   put('perfWins',d.winning_trades??0);
-  put('perfLosses',d.losing_trades??0);
   if(d.win_rate_pct===null||d.win_rate_pct===undefined){
    put('perfWinRate','—');setCls('perfWinRate','');
   }else{
@@ -2129,6 +2181,7 @@ async function load(){
    setCls('perfUnrealized',v>0?'gloss-pnl-profit':v<0?'gloss-pnl-loss':'gloss-pnl-neutral');
   }
   status.textContent='VERIFIED FILLS ONLY · '+new Date().toLocaleTimeString('en-IN',{timeZone:'Asia/Kolkata',hour12:true})+' IST';
+  if(wrStatus)wrStatus.textContent=status.textContent;
   let text='Counted once per trade, de-duplicated by event id. Realized P&L is net of Gate.io fees.';
   if(d.realized_pnl_trades_unknown){
    text+=' '+d.realized_pnl_trades_unknown+' closed trade(s) have no exchange fill record yet and are excluded from P&L.';
@@ -2138,9 +2191,12 @@ async function load(){
   }
   note.textContent=text;
  }catch(e){
-  ['perfClosed','perfWins','perfLosses','perfWinRate','perfLosingRate',
+  ['perfWins','perfWinRate','perfLosingRate',
    'perfCloseRate','perfRealized','perfUnrealized'].forEach(id=>put(id,'—'));
   status.textContent='ANALYTICS UNAVAILABLE';
+  wrPayload=null;wrPaint(null,null,null,null);
+  if(wrStatus)wrStatus.textContent='WIN RATE UNAVAILABLE';
+  if(wrNote)wrNote.textContent='Win rate could not be read from the verified records. No figures are shown rather than showing wrong ones.';
   note.textContent='Performance analytics could not be read: '+String(e.message).slice(0,90)
     +'. No figures are shown rather than showing wrong ones.';
  }finally{busy=false;}

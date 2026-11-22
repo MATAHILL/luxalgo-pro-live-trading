@@ -49,7 +49,8 @@ assert(!page.includes('COMPLETED TRADES \u00b7 EXIT RECORD'),'Old completed trad
 // Untouched sections must survive.
 assert(page.includes('id="v4PaperCards"'),'Original protected position cards must stay');
 assert(page.includes('id="orderTableBody"'),'Live futures order table must stay');
-assert(page.includes('id="perfClosed"'),'Performance analytics must stay');
+assert(page.includes('id="perfWinRate"'),'Performance analytics must stay');
+assert(page.includes('id="wrGauge"'),'Real-time win rate widget must stay');
 assert(page.includes('id="radarBody"'),'Market radar must stay');
 
 // Signal receipt and audit must remain intact on the backend.
