@@ -208,8 +208,12 @@ class Prompt6SignalsAndAnalytics(unittest.TestCase):
 
     def test_analytics_panel_has_all_metrics(self):
         html = backend.PAGE
-        for probe in ("perfClosed", "perfWins", "perfLosses", "perfWinRate",
-                      "perfLosingRate", "perfCloseRate", "perfRealized", "perfUnrealized"):
+        for probe in ("perfWins", "perfWinRate", "perfLosingRate",
+                      "perfCloseRate", "perfRealized", "perfUnrealized"):
+            self.assertIn(probe, html)
+        # The right half is the real-time win-rate widget.
+        for probe in ("winrate-panel", "wrGauge", "wrWinPct", "wrLossPct",
+                      "wrWins", "wrLosses"):
             self.assertIn(probe, html)
 
     def test_close_rate_uses_executed_open(self):
