@@ -633,13 +633,23 @@ body.production-view #productionBotOn{color:#eefff5;border:1px solid #6effb6;bac
 body.production-view #productionBotOff{color:#fff0f0;border:1px solid #ff8da3;background:linear-gradient(160deg,#ff8ba4,#de335e 48%,#921f3e 50%,#e84b72 100%)}
 body.production-view .bot-control-actions .btn:disabled{opacity:.38;cursor:not-allowed}
 /* Gate unlock controls: CLEAR HALT / CERTIFY, beside the BOT ON/OFF pair. */
-body.production-view .gate-unlock-row{flex-basis:100%;margin-top:12px;padding-top:12px;border-top:1px solid #2c4a68}
+body.production-view .gate-unlock-row{flex-basis:100%;min-width:0;margin-top:12px;padding-top:12px;border-top:1px solid #2c4a68}
 body.production-view .gate-unlock-head strong{display:block;font-size:12px;letter-spacing:.06em;color:#9de7ff}
 body.production-view .gate-unlock-head p{margin:4px 0 0;font-size:12px}
-body.production-view .gate-unlock-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
-body.production-view .gate-btn{color:#eaf7ff;border:1px solid #4bb8f2;background:linear-gradient(160deg,#2a7fb8,#12507c 50%,#0b3a5c 52%,#1d6f9f 100%)}
+body.production-view .gate-unlock-actions{display:flex;gap:8px;flex-wrap:wrap;align-items:flex-start;margin-top:10px;min-width:0}
+/* Compact, explicitly sized gate buttons. Pinning size here stops a stale or
+   inherited rule from inflating CLEAR HALT until it covers CERTIFY and the
+   EMERGENCY button. Every button stays in normal flow, so none can overlap. */
+body.production-view .gate-btn{position:relative;z-index:0;flex:0 1 auto;width:auto;max-width:100%;
+  min-width:0;height:auto;font-size:12px;line-height:1.25;padding:7px 11px;white-space:normal;
+  overflow-wrap:anywhere;color:#eaf7ff;border:1px solid #4bb8f2;
+  background:linear-gradient(160deg,#2a7fb8,#12507c 50%,#0b3a5c 52%,#1d6f9f 100%)}
 body.production-view .gate-btn:disabled{opacity:.38;cursor:not-allowed}
 body.production-view .gate-btn-quiet{color:#cfe6f5;border-color:#3d5f7d;background:#16324b}
+@media(max-width:560px){
+  body.production-view .gate-unlock-actions{flex-direction:column;align-items:stretch}
+  body.production-view .gate-unlock-actions .gate-btn{width:100%}
+}
 body.production-view .gate-certify-form{margin-top:12px;padding:12px;border:1px solid #355a7b;border-radius:10px;background:rgba(13,33,56,.55);max-width:640px}
 body.production-view .gate-certify-form[hidden]{display:none!important}
 body.production-view .gate-certify-form label{display:block;margin-top:10px;font-size:12px}

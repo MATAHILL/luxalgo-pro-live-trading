@@ -1660,9 +1660,7 @@ loadPositions();loadPnlSummary();setInterval(()=>{if(!document.hidden){loadPosit
  const say=(t,state)=>{out.textContent=t;if(state)out.dataset.state=state;else delete out.dataset.state;};
  btn.addEventListener('click',async()=>{
   if(btn.disabled)return;
-  if(!window.confirm("Clear this browser's cache, cookies and leftover junk, "
-    +"plus the server's temporary caches?\n\nYour trades, positions, signal "
-    +"history and sign-in are NOT affected."))return;
+  if(!window.confirm("Clear this browser's cache, cookies and leftover junk, plus the server's temporary caches?\\n\\nYour trades, positions, signal history and sign-in are NOT affected."))return;
   btn.disabled=true;
   const done=[];
   const failed=[];
