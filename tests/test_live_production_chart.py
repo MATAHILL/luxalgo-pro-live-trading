@@ -1,10 +1,11 @@
 """Position card layout, per-card indicators and per-card action buttons.
 
-Covers the four v19 requirements:
-  1. two cards per row on desktop, stacking below
-  2. clicking the token name slides that card's indicator table down
-  3. every card's action buttons are wired (no silent no-op)
-  4. the legacy locked card is gone (asserted in test_live_production_card_dom)
+Covers the v20 requirements:
+  1. three compact cards per row on desktop, stacking below
+  2. the indicator table starts CLOSED and never auto-expands after a trade
+  3. clicking the token name slides that card's indicator table down
+  4. every card's action buttons are wired (no silent no-op)
+  5. the legacy locked card is gone (asserted in test_live_production_card_dom)
 """
 import pathlib
 import re
@@ -18,13 +19,13 @@ SRC = SOURCE.read_text(encoding='utf-8')
 
 
 class PositionCardLayoutTests(unittest.TestCase):
-    def test_two_cards_per_row_on_desktop(self):
+    def test_three_cards_per_row_on_desktop(self):
         self.assertIn(
-            '.position-card-list{display:grid;grid-template-columns:repeat(2,minmax(0,1fr))',
-            PAGE)
-        # The old three-per-row rule must be gone.
-        self.assertNotIn(
             '.position-card-list{display:grid;grid-template-columns:repeat(3,minmax(0,1fr))',
+            PAGE)
+        # The old two-per-row rule must be gone.
+        self.assertNotIn(
+            '.position-card-list{display:grid;grid-template-columns:repeat(2,minmax(0,1fr))',
             PAGE)
 
     def test_stacks_to_one_column_on_small_screens(self):
@@ -45,10 +46,11 @@ class PerCardIndicatorTests(unittest.TestCase):
     def test_each_card_owns_its_own_indicator_panel(self):
         # The panel is created inside the per-position loop, so it is per-card.
         self.assertIn("const ind=element('div','position-indicators')", PAGE)
-        # Every rendered card is an ACTIVE trade, so the panel starts OPEN and
-        # its indicators load immediately. The token still collapses it.
-        self.assertIn("ind.dataset.indOpen='true'", PAGE)
-        self.assertIn("loadIndicators();", PAGE)
+        # The panel starts CLOSED. A card must never auto-expand its indicator
+        # table after a trade; only an explicit token click opens it.
+        self.assertIn("ind.dataset.indOpen='false'", PAGE)
+        self.assertNotIn("ind.dataset.indOpen='true'", PAGE)
+        self.assertNotIn("loadIndicators();", PAGE)
 
     def test_second_click_collapses_only_that_card(self):
         self.assertIn("const opening=ind.dataset.indOpen!=='true'", PAGE)
