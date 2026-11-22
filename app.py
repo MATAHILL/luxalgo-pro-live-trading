@@ -625,11 +625,12 @@ h2{font-size:15px;font-weight:850;letter-spacing:.3px}
 
 
 /* Individual read-only position cards; each position is independently expandable. */
-/* TWO readable cards per row on desktop; responsive stacking below. */
-.position-card-list{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:13px;margin-top:13px;align-items:start}
+/* THREE compact cards per row on desktop; responsive stacking below. */
+.position-card-list{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-top:12px;align-items:start}
+@media(max-width:1100px){.position-card-list{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:900px){.position-card-list{grid-template-columns:1fr}}
-.position-card{border:1px solid #345c83;border-radius:13px;background:linear-gradient(150deg,#142d49,#0b1c31);box-shadow:inset 0 1px 0 #ffffff12,0 8px 20px #0003;overflow:hidden;min-width:0}
-.position-card-head{padding:12px 14px;display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap}
+.position-card{border:1px solid #345c83;border-radius:11px;background:linear-gradient(150deg,#142d49,#0b1c31);box-shadow:inset 0 1px 0 #ffffff12,0 6px 15px #0003;overflow:hidden;min-width:0}
+.position-card-head{padding:9px 11px;display:flex;justify-content:space-between;align-items:center;gap:6px;flex-wrap:wrap}
 .position-card-head:focus-visible{outline:2px solid #66e6ff;outline-offset:-3px}
 /* Token name toggles this card's own indicator table; it does not collapse the card. */
 .position-token-toggle{border:0;background:transparent;color:#a9e9ff;font:inherit;font-weight:850;
@@ -649,22 +650,22 @@ h2{font-size:15px;font-weight:850;letter-spacing:.3px}
 .position-indicators td{color:#dceaf8;font-weight:650;overflow-wrap:anywhere}
 .position-indicators .ind-note{font-size:10.5px;color:#8fa8c2;margin:8px 0 0;line-height:1.5}
 .position-indicators .ind-loading{font-size:11px;color:#a8bed6;padding:7px 0}
-.position-head{display:flex;align-items:center;gap:7px;flex-wrap:wrap;min-width:0}
-.position-symbol{font-size:15px;font-weight:850;color:#e8f7ff}
-.position-side{font-size:11px;font-weight:850;border-radius:5px;padding:3px 6px}
+.position-head{display:flex;align-items:center;gap:5px;flex-wrap:wrap;min-width:0}
+.position-symbol{font-size:13px;font-weight:850;color:#e8f7ff}
+.position-side{font-size:10px;font-weight:850;border-radius:4px;padding:2px 5px}
 .position-side.long{background:#17765c;color:#d9fff1}.position-side.short{background:#9b3453;color:#fff0f3}
-.position-leverage{font-size:11px;background:#223e5c;border:1px solid #42688c;color:#d7e9fa;padding:3px 7px;border-radius:5px}
-.position-summary-pnl{font-weight:850;font-size:15px;white-space:nowrap}
-.position-card-inner{padding:0 14px 14px}
-.position-facts{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
-.position-fact{background:#0b2037;border:1px solid #234969;border-radius:8px;padding:8px;min-width:0}
-.position-fact small{display:block;color:#9eb9d1;font-size:10px;margin-bottom:2px}
-.position-fact strong{font-size:13px;overflow-wrap:anywhere}
-.position-card-actions{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
-.position-card-actions button{font-size:11px;padding:6px 9px}
+.position-leverage{font-size:10px;background:#223e5c;border:1px solid #42688c;color:#d7e9fa;padding:2px 5px;border-radius:4px}
+.position-summary-pnl{font-weight:850;font-size:13px;white-space:nowrap}
+.position-card-inner{padding:0 11px 11px}
+.position-facts{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px}
+.position-fact{background:#0b2037;border:1px solid #234969;border-radius:7px;padding:6px;min-width:0}
+.position-fact small{display:block;color:#9eb9d1;font-size:9px;margin-bottom:1px;line-height:1.25}
+.position-fact strong{font-size:12px;overflow-wrap:anywhere}
+.position-card-actions{display:flex;flex-wrap:wrap;gap:5px;margin-top:8px}
+.position-card-actions button{font-size:10px;padding:5px 7px}
 .position-card-actions button:disabled{opacity:.44;cursor:not-allowed;filter:grayscale(.35)}
 .position-chart-action{background:linear-gradient(150deg,#63d6ff,#227bb0 53%,#104d89 54%,#319bd0);border-color:#83deff;font-weight:750}
-.position-readonly-hint{font-size:10.5px;color:#afc3d9;margin-top:8px;line-height:1.45}
+.position-readonly-hint{font-size:9.5px;color:#afc3d9;margin-top:6px;line-height:1.4}
 /* Glossy exchange realized P&L: green for profit, red for loss, neutral otherwise. */
 .gloss-pnl-profit{color:#7dffc4!important;text-shadow:0 0 10px #2bff9e66,0 1px 0 #003d24;font-weight:850}
 .gloss-pnl-loss{color:#ff9db0!important;text-shadow:0 0 10px #ff3d6a55,0 1px 0 #3d0010;font-weight:850}
@@ -1426,6 +1427,8 @@ function renderPositions(positions){
   grid && inner.append(grid);
   // Per-card indicator table. Each card owns its own element, so opening one
   // never affects another. Nothing here is shared or global.
+  // It starts CLOSED and is never auto-opened or auto-loaded: the card shows
+  // only its own figures until the operator explicitly clicks the token name.
   const ind=element('div','position-indicators');
   ind.dataset.indOpen='false';
   ind.setAttribute('aria-hidden','true');
