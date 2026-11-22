@@ -3055,6 +3055,58 @@ def terminal_production_bot_update():
                        error='Operator state could not be persisted; treating as HALT'),503
 
 
+@app.get('/terminal/trade-size')
+def terminal_trade_size_read():
+    """Read the operator-saved per-trade USDT size. Never places an order."""
+    if not _terminal_permitted():return _terminal_guard()
+    try:
+        import live_trade_size
+        with _db_connect() as con:
+            data=live_trade_size.state(con)
+        response=jsonify(data)
+        response.headers['Cache-Control']='private, no-store'
+        return response
+    except (psycopg.Error,RuntimeError,OSError,ValueError,TypeError,KeyError):
+        app.logger.warning('Trade size read failed closed',exc_info=False)
+        return jsonify(active=False,notional_usdt=None,cap_usdt=None,
+                       cap_unlimited=True,min_usdt='1',
+                       error='Saved trade size could not be read; treating it as unset',
+                       orders_submitted=0),503
+
+
+@app.post('/terminal/trade-size')
+def terminal_trade_size_write():
+    """Save or clear the per-trade USDT size. Never places an order.
+
+    The value is stored in luxalgo_prod_trade_size_control, so it survives a
+    restart and is shared by every worker. It only sets the TARGET for the next
+    new trade; the engine still bounds the order it actually sends.
+    """
+    if not _terminal_permitted():return _terminal_guard()
+    if not _csrf_valid():return jsonify(error='Invalid CSRF',active=False),403
+    request_data=request.get_json(silent=True) if request.is_json else None
+    if not isinstance(request_data,dict):
+        return jsonify(error='JSON body required',active=False),400
+    try:
+        import live_trade_size
+        actor=session.get('user','') or ''
+        with _db_connect() as con:
+            if request_data.get('clear') is True:
+                data=live_trade_size.clear_size(con,actor=actor)
+            else:
+                data=live_trade_size.set_size(con,request_data.get('notional_usdt'),
+                                              actor=actor)
+        response=jsonify(data)
+        response.headers['Cache-Control']='private, no-store'
+        return response
+    except live_trade_size.TradeSizeBlocked as exc:
+        return jsonify(error=str(exc),active=False,orders_submitted=0),422
+    except (psycopg.Error,RuntimeError,OSError,ValueError,TypeError,KeyError):
+        app.logger.warning('Trade size write failed closed',exc_info=False)
+        return jsonify(active=False,orders_submitted=0,
+                       error='Trade size could not be persisted; nothing was saved'),503
+
+
 @app.get('/terminal/acceptance-test/status')
 def terminal_acceptance_test_status():
     """Read-only BTC one-lot test audit. NEVER claims a ledger is a fill.
@@ -8430,6 +8482,24 @@ if os.getenv('PRODUCTION_TERMINAL_VIEW','false').strip().lower()=='true':
     from threading import Thread
     Thread(target=_probe_live_public_market_once,daemon=True,
            name='gate-live-public-market-probe').start()
+
+    # Keep the process-local trade-size cache warm. The engine reads the saved
+    # size from this cache so plan construction never waits on a database
+    # query; this worker re-reads the durable row every 30 seconds so a size
+    # saved by another worker reaches this one shortly after.
+    def _trade_size_cache_worker():
+        import time as _time
+        import live_trade_size
+        while True:
+            try:
+                live_trade_size.refresh()
+            except Exception:
+                app.logger.warning('Trade size cache refresh failed closed',
+                                   exc_info=False)
+            _time.sleep(30)
+
+    Thread(target=_trade_size_cache_worker,daemon=True,
+           name='luxalgo-trade-size-cache').start()
 
 
 

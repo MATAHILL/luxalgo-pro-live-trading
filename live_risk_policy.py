@@ -17,7 +17,11 @@ SIZING_MODE_FIXED = 'fixed_notional'
 
 # Hard ceiling for the fixed-notional target. It may never exceed the
 # independently enforced per-position notional cap.
-MAX_FIXED_NOTIONAL_USDT = Decimal('100')
+#
+# Set to None to switch the ceiling OFF: the operator may then save any USDT
+# size from the terminal. The engine still bounds the order it actually sends
+# (available margin, exchange lot limits, leverage, aggregate open risk).
+MAX_FIXED_NOTIONAL_USDT = None
 
 
 def sizing_mode():
@@ -42,8 +46,9 @@ def fixed_notional_usdt():
         raise ValueError('Invalid fixed notional amount') from None
     if not amount.is_finite() or amount <= 0:
         raise ValueError('Fixed notional must be positive')
-    if amount > MAX_FIXED_NOTIONAL_USDT:
-        raise ValueError('Fixed notional must not exceed the 100 USDT position cap')
+    if MAX_FIXED_NOTIONAL_USDT is not None and amount > MAX_FIXED_NOTIONAL_USDT:
+        raise ValueError('Fixed notional must not exceed the %s USDT position cap'
+                         % MAX_FIXED_NOTIONAL_USDT)
     return amount
 
 

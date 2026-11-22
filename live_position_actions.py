@@ -377,19 +377,22 @@ def reverse_position(con, event_id, stop_loss, take_profit, client=None):
     unit_margin = (entry * multiplier) * (1 + slip) * (Decimal(1) / MAX_LEVERAGE + fee)
     unit_notional = entry * multiplier * (1 + slip)
     budget = min(equity * per_entry_risk(), equity * Decimal("0.025"))
+    # A ceiling of None is switched off, so it contributes no bound at all.
+    # Comparing against None would raise; comparing against 0 would block.
+    def _cap_units(ceiling, unit_cost):
+        if ceiling is None or unit_cost <= 0:
+            return None
+        return int(Decimal(str(ceiling)) / unit_cost)
+    notional_cap_units = _cap_units(MAX_POSITION_NOTIONAL_USDT, unit_notional)
+    margin_cap_units = _cap_units(MAX_POSITION_INITIAL_MARGIN_USDT, unit_margin)
+    margin_units = int(available / unit_margin) if unit_margin > 0 else 0
     if sizing_mode() == SIZING_MODE_FIXED:
         units_by_target = int(fixed_notional_usdt() / (entry * multiplier)) if entry * multiplier > 0 else 0
-        count = min(units_by_target,
-                    int(available / unit_margin) if unit_margin > 0 else 0,
-                    int(MAX_POSITION_NOTIONAL_USDT / unit_notional) if unit_notional > 0 else 0,
-                    int(MAX_POSITION_INITIAL_MARGIN_USDT / unit_margin) if unit_margin > 0 else 0,
-                    int(qty))
+        bounds = [units_by_target, margin_units, int(qty)]
     else:
-        count = min(int(budget / unit_loss) if unit_loss > 0 else 0,
-                    int(available / unit_margin) if unit_margin > 0 else 0,
-                    int(MAX_POSITION_NOTIONAL_USDT / unit_notional) if unit_notional > 0 else 0,
-                    int(MAX_POSITION_INITIAL_MARGIN_USDT / unit_margin) if unit_margin > 0 else 0,
-                    int(qty))
+        bounds = [int(budget / unit_loss) if unit_loss > 0 else 0, margin_units, int(qty)]
+    bounds += [b for b in (notional_cap_units, margin_cap_units) if b is not None]
+    count = min(bounds)
     if count < 1:
         return {"state": "REVERSE_ABORTED_SIZE", "orders_sent": 1,
                 "detail": "Position was closed, but the opposite entry does not "

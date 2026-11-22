@@ -43,8 +43,20 @@ MAX_AGGREGATE_RISK = Decimal("0.025")
 MAX_LEVERAGE = Decimal("5")
 # Owner's requested maximum trade exposure, independently of the risk model.
 # Caps only; they never force an order or override the 0.5% equity risk limit.
-MAX_POSITION_NOTIONAL_USDT = Decimal("100")
-MAX_POSITION_INITIAL_MARGIN_USDT = Decimal("60")
+#
+# Both are set to None to switch them OFF, so the operator can save any USDT
+# size from the terminal. None means "no ceiling": the bound is left out of the
+# constraint set entirely (never compared as zero, which would block every
+# order). Set either back to a Decimal to re-arm it without touching logic.
+#
+# What still bounds the executed order with both switched off:
+#   * available margin (the exchange will not fill what you cannot fund),
+#   * the exchange lot limits (order_size_min / order_size_max),
+#   * MAX_LEVERAGE (5x),
+#   * MAX_POSITIONS (5) and the duplicate-symbol rule,
+#   * MAX_AGGREGATE_RISK (2.5% of equity) across all open positions.
+MAX_POSITION_NOTIONAL_USDT = None
+MAX_POSITION_INITIAL_MARGIN_USDT = None
 MAX_SIGNAL_AGE_SECONDS = 60
 CONTRACT_RE = re.compile(r"^[A-Z0-9]{2,28}_USDT$")
 ORDER_RE = re.compile(r"^[1-9][0-9]{0,19}$")
@@ -220,6 +232,38 @@ def active_positions(positions):
         if size: out.append(p)
     return out
 
+def _saved_trade_size():
+    """The operator-saved USDT size, or None when no override is saved.
+
+    Imported lazily: live_trade_size reaches back into this module for the
+    ceilings, so a module-scope import would be circular. Any failure here
+    returns None, which means "no override" -- the environment policy applies
+    and every remaining safety gate still runs unchanged.
+    """
+    try:
+        from live_trade_size import active_notional_cached
+        return active_notional_cached()
+    except Exception:
+        return None
+
+
+def _ceiling_units(ceiling, unit_cost):
+    """Whole units allowed by a ceiling, or None when the ceiling is switched off.
+
+    A ceiling of None means the operator removed it, so it must contribute NO
+    bound. Returning None (rather than 0) keeps it out of the min() entirely;
+    comparing against 0 would block every order.
+    """
+    if ceiling is None:
+        return None
+    return (Decimal(str(ceiling))/unit_cost).to_integral_value(rounding=ROUND_FLOOR)
+
+
+def _present(*bounds):
+    """Drop the switched-off (None) bounds so min() only sees real limits."""
+    return tuple(b for b in bounds if b is not None)
+
+
 def build_plan(signal, metadata, equity, available, positions, reserved_risk=0, now=None):
     """Contract-count plan with configured per-entry / preserved 2.5% aggregate cap.
 
@@ -274,10 +318,17 @@ def build_plan(signal, metadata, equity, available, positions, reserved_risk=0, 
     if aggregate_budget<=0:
         raise LiveSafetyError("Aggregate risk exhausted")
     mode=sizing_mode()
+    # An operator-saved size in the terminal overrides the environment policy
+    # for the NEXT new trade. It is read from a process-local cache, so plan
+    # construction never waits on a database query. A saved size always means
+    # fixed-notional sizing; clearing it falls back to the environment policy.
+    override=_saved_trade_size()
+    if override is not None:
+        mode=SIZING_MODE_FIXED
     if mode==SIZING_MODE_FIXED:
         # Fixed-notional sizing replaces the per-trade risk budget. The
         # aggregate open-risk cap still applies and is checked below.
-        target_notional=fixed_notional_usdt()
+        target_notional=override if override is not None else fixed_notional_usdt()
         budget=aggregate_budget
     else:
         target_notional=None
@@ -298,11 +349,12 @@ def build_plan(signal, metadata, equity, available, positions, reserved_risk=0, 
     unit_loss=unit_stop_loss+unit_fee_slip
     unit_margin=(e*multiplier)*(1+slip)*(Decimal(1)/lev+fee)
     units_by_margin=(av/unit_margin).to_integral_value(rounding=ROUND_FLOOR)
-    # A loose stop cannot silently turn a proposed 100-USDT order into an
-    # arbitrarily larger exposure when the account balance is high.
+    # A loose stop cannot silently turn a proposed order into an arbitrarily
+    # larger exposure when the account balance is high. A ceiling of None is
+    # switched off, so it contributes no bound at all.
     unit_notional=e*multiplier*(1+slip)
-    units_by_notional=(MAX_POSITION_NOTIONAL_USDT/unit_notional).to_integral_value(rounding=ROUND_FLOOR)
-    units_by_margin_cap=(MAX_POSITION_INITIAL_MARGIN_USDT/unit_margin).to_integral_value(rounding=ROUND_FLOOR)
+    units_by_notional=_ceiling_units(MAX_POSITION_NOTIONAL_USDT,unit_notional)
+    units_by_margin_cap=_ceiling_units(MAX_POSITION_INITIAL_MARGIN_USDT,unit_margin)
     if mode==SIZING_MODE_FIXED:
         # contracts = target notional / (price * quanto_multiplier), floored.
         # The target IS the exposure ceiling here, so the notional cap is
@@ -310,13 +362,13 @@ def build_plan(signal, metadata, equity, available, positions, reserved_risk=0, 
         # margin cap and the modeled risk figure.
         raw_unit_notional=e*multiplier
         units_by_target=(target_notional/raw_unit_notional).to_integral_value(rounding=ROUND_FLOOR)
-        units_by_notional=(MAX_POSITION_NOTIONAL_USDT/raw_unit_notional).to_integral_value(rounding=ROUND_FLOOR)
-        count=min(units_by_target,units_by_margin,units_by_notional,
-                  units_by_margin_cap,whole_order_size_max)
+        units_by_notional=_ceiling_units(MAX_POSITION_NOTIONAL_USDT,raw_unit_notional)
+        count=min(units_by_target,units_by_margin,whole_order_size_max,
+                  *_present(units_by_notional,units_by_margin_cap))
     else:
         units_by_risk=(budget/unit_loss).to_integral_value(rounding=ROUND_FLOOR)
-        count=min(units_by_risk,units_by_margin,units_by_notional,
-                  units_by_margin_cap,whole_order_size_max)
+        count=min(units_by_risk,units_by_margin,whole_order_size_max,
+                  *_present(units_by_notional,units_by_margin_cap))
     if count<order_size_min or count<1:
         raise LiveSafetyError("Insufficient margin/risk for exchange minimum lot")
     risk=count*unit_loss
@@ -325,7 +377,9 @@ def build_plan(signal, metadata, equity, available, positions, reserved_risk=0, 
     if mode!=SIZING_MODE_FIXED and risk>eq*per_entry_risk():
         raise LiveSafetyError("Risk cap crossed")
     checked_notional=count*(e*multiplier) if mode==SIZING_MODE_FIXED else count*unit_notional
-    if checked_notional>MAX_POSITION_NOTIONAL_USDT or count*unit_margin>MAX_POSITION_INITIAL_MARGIN_USDT:
+    if ((MAX_POSITION_NOTIONAL_USDT is not None and checked_notional>MAX_POSITION_NOTIONAL_USDT)
+            or (MAX_POSITION_INITIAL_MARGIN_USDT is not None
+                and count*unit_margin>MAX_POSITION_INITIAL_MARGIN_USDT)):
         raise LiveSafetyError("Maximum authorized notional or margin exceeded")
     return dict(event_id=event,client_text=text,contract=contract,side=side,timeframe=tf,
                 received_epoch=int(signal['received_epoch']),
@@ -337,8 +391,8 @@ def build_plan(signal, metadata, equity, available, positions, reserved_risk=0, 
                 modeled_stop_risk_usdt=str(count*unit_stop_loss),
                 modeled_fee_slippage_usdt=str(count*unit_fee_slip),
                 max_entry_slippage_ratio=str(slip),
-                maximum_notional_usdt=str(MAX_POSITION_NOTIONAL_USDT),
-                maximum_initial_margin_usdt=str(MAX_POSITION_INITIAL_MARGIN_USDT),
+                maximum_notional_usdt=str(MAX_POSITION_NOTIONAL_USDT) if MAX_POSITION_NOTIONAL_USDT is not None else "unlimited",
+                maximum_initial_margin_usdt=str(MAX_POSITION_INITIAL_MARGIN_USDT) if MAX_POSITION_INITIAL_MARGIN_USDT is not None else "unlimited",
                 leverage=str(lev),position_mode=position_mode,verified_live_order=False)
 
 
@@ -414,7 +468,9 @@ def verify_execution_preflight(plan, metadata, snapshot, now=None):
         checked_notional=quantity*multiplier*max(entry,mark)
     else:
         checked_notional=notional
-    if checked_notional>MAX_POSITION_NOTIONAL_USDT or margin_with_fees>MAX_POSITION_INITIAL_MARGIN_USDT:
+    if ((MAX_POSITION_NOTIONAL_USDT is not None and checked_notional>MAX_POSITION_NOTIONAL_USDT)
+            or (MAX_POSITION_INITIAL_MARGIN_USDT is not None
+                and margin_with_fees>MAX_POSITION_INITIAL_MARGIN_USDT)):
         raise LiveSafetyError('Fresh exposure exceeds authorized notional or margin ceiling')
     if margin_with_fees>available:
         raise LiveSafetyError('Insufficient fresh margin including entry fee and slippage')

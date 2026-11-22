@@ -57,6 +57,29 @@ PRODUCTION_CONTROL='''<section class="bot-control-panel" aria-label="Production 
 </div>
 </div>
 <p class="gate-result" id="productionGateResult" role="status" aria-live="polite"></p>
+</div>
+<div class="trade-size-row" id="tradeSizeRow">
+<button class="trade-size-toggle" id="tradeSizeToggle" type="button" aria-expanded="false" aria-controls="tradeSizeBody">
+<span class="trade-size-chevron" aria-hidden="true">&#9662;</span>
+<strong>TRADE SIZE &middot; USDT PER TRADE</strong>
+<span class="trade-size-summary env" id="tradeSizeSummary">ENV DEFAULT</span>
+</button>
+<div class="trade-size-body" id="tradeSizeBody" hidden>
+<div class="trade-size-current"><span class="light">CURRENT SIZE</span>
+<strong id="tradeSizeCurrent" aria-live="polite">&mdash;</strong>
+<span class="light" id="tradeSizeSource">checking&hellip;</span></div>
+<div class="trade-size-form">
+<label for="tradeSizeInput"><strong>New size (USDT)</strong>
+<span class="light">Any value from 1 USDT upward. No maximum.</span></label>
+<input id="tradeSizeInput" type="number" inputmode="decimal" min="1" step="0.01" placeholder="e.g. 250" autocomplete="off">
+<div class="trade-size-actions">
+<button class="btn gate-btn" id="tradeSizeSave" type="button">SAVE SIZE</button>
+<button class="btn gate-btn gate-btn-quiet" id="tradeSizeClear" type="button">USE ENV DEFAULT</button>
+</div>
+<p class="light trade-size-hint">One size for every trade from every LuxAlgo signal &mdash; not per coin. Available margin, the exchange lot limits, the 5&times; leverage ceiling and the 2.5% aggregate risk budget still bound the order the bot actually sends.</p>
+</div>
+<p class="gate-result" id="tradeSizeResult" role="status" aria-live="polite"></p>
+</div>
 </div></section>'''
 
 # The live futures order-inventory panel was removed at the operator's request.
@@ -473,6 +496,111 @@ certSubmit.addEventListener('click',async()=>{
 });
 })();</script>'''
 
+# Operator trade size (USDT per trade). Appended to the bot script so it runs
+# after postJson is defined. It never places an order: the server only stores
+# the number, and the live engine applies it to the NEXT new trade.
+PRODUCTION_TRADE_SIZE_SCRIPT=r'''<script>(function(){'use strict';
+const sizeRow=document.getElementById('tradeSizeRow'),
+      sizeToggle=document.getElementById('tradeSizeToggle'),
+      sizeBody=document.getElementById('tradeSizeBody'),
+      sizeSummary=document.getElementById('tradeSizeSummary'),
+      sizeCurrent=document.getElementById('tradeSizeCurrent'),
+      sizeSource=document.getElementById('tradeSizeSource'),
+      sizeInput=document.getElementById('tradeSizeInput'),
+      sizeSave=document.getElementById('tradeSizeSave'),
+      sizeClear=document.getElementById('tradeSizeClear'),
+      sizeResult=document.getElementById('tradeSizeResult');
+if(!sizeRow||!sizeToggle||!sizeBody||!sizeSummary||!sizeCurrent||!sizeSource||
+   !sizeInput||!sizeSave||!sizeClear||!sizeResult)return;
+const sizeUrl='/terminal/trade-size';
+/* Collapsed by default. The arrow toggles it; Escape closes it again. */
+function sizeSetOpen(open){
+ sizeToggle.setAttribute('aria-expanded',open?'true':'false');
+ if(open){sizeBody.removeAttribute('hidden');}
+ else{sizeBody.setAttribute('hidden','');}
+}
+sizeToggle.addEventListener('click',function(){
+ sizeSetOpen(sizeToggle.getAttribute('aria-expanded')!=='true');
+});
+sizeBody.addEventListener('keydown',function(e){
+ if(e.key==='Escape'||e.keyCode===27){sizeSetOpen(false);sizeToggle.focus();}
+});
+function sizeSay(text,kind){
+ sizeResult.textContent=text||'';
+ sizeResult.className='gate-result'+(kind?(' gate-'+kind):'');
+}
+function sizeRender(d){
+ const active=d&&d.active===true;
+ if(active){
+  sizeCurrent.textContent=String(d.notional_usdt)+' USDT';
+  sizeCurrent.className='';
+  sizeSource.textContent='saved in the terminal';
+  sizeSummary.textContent=String(d.notional_usdt)+' USDT';
+  sizeSummary.className='trade-size-summary';
+ }else{
+  sizeCurrent.textContent='ENV DEFAULT';
+  sizeCurrent.className='env';
+  sizeSource.textContent='no saved size \u00b7 deployment policy applies';
+  sizeSummary.textContent='ENV DEFAULT';
+  sizeSummary.className='trade-size-summary env';
+ }
+ // No maximum is applied to the input. If a ceiling is ever re-armed on the
+ // server it is reflected here; otherwise the field stays unbounded.
+ if(d&&d.cap_usdt){sizeInput.max=String(d.cap_usdt);}
+ else{sizeInput.removeAttribute('max');}
+}
+async function sizeRefresh(){
+ try{
+  const r=await fetch(sizeUrl,{cache:'no-store',credentials:'same-origin'});
+  const d=await r.json();
+  if(!r.ok)throw Error(d&&d.error?d.error:'unavailable');
+  sizeRender(d);
+ }catch(e){
+  sizeCurrent.textContent='\u2014';sizeCurrent.className='env';
+  sizeSource.textContent='cannot read saved size';
+  sizeSummary.textContent='\u2014';sizeSummary.className='trade-size-summary env';
+  sizeSay('Could not read the saved size: '+e.message+'. Treat it as unset.','bad');
+ }
+}
+function sizeLock(state){sizeSave.disabled=state;sizeClear.disabled=state;}
+sizeSave.addEventListener('click',async()=>{
+ const raw=String(sizeInput.value||'').trim();
+ if(!raw){sizeSay('Type a USDT size first, for example 250.','bad');return;}
+ sizeLock(true);sizeSay('Saving\u2026');
+ try{
+  const r=await postJson(sizeUrl,{notional_usdt:raw});
+  if(r.status===401){sizeSay('Your session expired. Reload the page and sign in again.','bad');return;}
+  if(r.status===403){sizeSay('The page security token was rejected. Reload the page and try again.','bad');return;}
+  if(r.ok&&r.data.active===true){
+   sizeRender(r.data);
+   sizeSay('Saved. The next new trade will target '+r.data.notional_usdt+' USDT. '+
+           'Whole contracts are used, so the filled size can land slightly below that.','good');
+  }else{
+   sizeSay('NOT SAVED \u2014 the server refused (HTTP '+r.status+'). '+
+           (r.data.error||'No reason given.'),'bad');
+  }
+ }catch(e){
+  sizeSay('Could not reach the server: '+e.message+' Nothing was saved.','bad');
+ }finally{sizeLock(false);}
+});
+sizeClear.addEventListener('click',async()=>{
+ sizeLock(true);sizeSay('Clearing\u2026');
+ try{
+  const r=await postJson(sizeUrl,{clear:true});
+  if(r.ok){
+   sizeRender(r.data);
+   sizeSay('Cleared. New trades follow the deployment environment policy again.','good');
+  }else{
+   sizeSay('NOT CLEARED \u2014 the server refused (HTTP '+r.status+'). '+
+           (r.data.error||'No reason given.'),'bad');
+  }
+ }catch(e){
+  sizeSay('Could not reach the server: '+e.message+' Nothing was cleared.','bad');
+ }finally{sizeLock(false);}
+});
+sizeRefresh();
+})();</script>'''
+
 PRODUCTION_CSS='''
 /* Production mode applies to the existing original dashboard only. */
 body.production-view #v4Workspace,
@@ -514,6 +642,36 @@ body.production-view .gate-emergency-row{margin-top:14px;padding:12px;border:1px
 body.production-view .gate-btn-emergency{color:#fff3f5;border:1px solid #ff6b86;background:linear-gradient(160deg,#b32b46,#7d1428 52%,#5c0d1c);font-weight:700}
 body.production-view .gate-btn-emergency:disabled{opacity:.38;cursor:not-allowed}
 body.production-view .gate-emergency-hint{margin:8px 0 0;font-size:11.5px;line-height:1.5}
+/* Operator trade-size control: one collapsed row under the gate controls.
+   Closed by default; the arrow toggles it open and closed. */
+body.production-view .trade-size-row{flex-basis:100%;margin-top:12px;padding-top:12px;border-top:1px solid #2c4a68}
+body.production-view .trade-size-toggle{display:flex;align-items:center;gap:9px;width:100%;padding:7px 10px;
+  border:1px solid #2c4a68;border-radius:8px;background:#0e2137;color:#9de7ff;font:inherit;cursor:pointer;text-align:left}
+body.production-view .trade-size-toggle:hover{border-color:#4bb8f2;background:#122b45}
+body.production-view .trade-size-toggle:focus-visible{outline:2px solid #66e6ff;outline-offset:1px}
+body.production-view .trade-size-toggle strong{font-size:12px;letter-spacing:.06em;font-weight:700}
+body.production-view .trade-size-chevron{display:inline-block;font-size:11px;line-height:1;color:#7fd4ff;
+  transition:transform .18s ease}
+body.production-view .trade-size-toggle[aria-expanded="true"] .trade-size-chevron{transform:rotate(180deg)}
+body.production-view .trade-size-summary{margin-left:auto;font-size:11.5px;font-weight:700;color:#7dffc0;letter-spacing:.02em}
+body.production-view .trade-size-summary.env{color:#ffd18d}
+body.production-view .trade-size-body{margin-top:11px;display:grid;
+  grid-template-columns:minmax(0,.85fr) minmax(0,1.15fr);gap:14px;align-items:start}
+body.production-view .trade-size-body[hidden]{display:none!important}
+body.production-view .trade-size-current{display:flex;flex-direction:column;gap:2px;padding:9px 12px;border-radius:9px;
+  border:1px solid #355a7b;background:rgba(13,33,56,.55)}
+body.production-view .trade-size-current strong{font-size:20px;color:#7dffc0;line-height:1.15}
+body.production-view .trade-size-current strong.env{color:#ffd18d}
+body.production-view .trade-size-current .light{font-size:10.5px;letter-spacing:.05em}
+body.production-view .trade-size-form label{display:block;font-size:12px}
+body.production-view .trade-size-form label span{display:block;font-weight:400;margin-top:2px;font-size:11px;line-height:1.45}
+body.production-view .trade-size-form input{display:block;width:100%;margin-top:5px;padding:8px 10px;border-radius:7px;
+  border:1px solid #3d5f7d;background:#0a1d32;color:#eaf7ff;font-size:13px;box-sizing:border-box}
+body.production-view .trade-size-form input:focus{outline:2px solid #66e6ff;outline-offset:1px}
+body.production-view .trade-size-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}
+body.production-view .trade-size-hint{margin:8px 0 0;font-size:11px;line-height:1.45}
+body.production-view .trade-size-body .gate-result{grid-column:1/-1;margin-top:0}
+@media(max-width:820px){body.production-view .trade-size-body{grid-template-columns:1fr}}
 @media(max-width:550px){body.production-view .production-position-card .v4-numbers{grid-template-columns:repeat(2,minmax(0,1fr))}}
 '''
 
@@ -543,7 +701,7 @@ def production_monitor_page(page):
         raise ValueError("Restored production BOT controls not unique")
     # Keep the Radar heading unchanged; BOT buttons are above in the old panel.
     if out.count('</body>')!=1:raise ValueError("Dashboard closing body missing")
-    out=out.replace('</body>',PRODUCTION_BOT_SCRIPT+'</body>',1)
+    out=out.replace('</body>',PRODUCTION_BOT_SCRIPT+PRODUCTION_TRADE_SIZE_SCRIPT+'</body>',1)
     # Remove legacy TESTNET panels from the rendered production page entirely.
     # Original PAGE and authenticated /terminal/legacy-testnet remain intact
     # for active exchange-side protection/recovery until positions are flat.
