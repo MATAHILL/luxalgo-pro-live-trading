@@ -33,13 +33,21 @@ Anything else stays open and keeps the HALT latched. Unknown is never closed.
 from __future__ import annotations
 
 import json
+import logging
+import time
 from datetime import datetime, timezone
 from decimal import Decimal, InvalidOperation
 
 from live_futures_engine import PREFIX, LiveSafetyError, GateLiveClient
 
+logger = logging.getLogger(__name__)
+
 # States that can legitimately end in a verified close.
 CLOSEABLE_STATES = ("PROTECTED", "ENTRY_CONFIRMED", "PROTECTION_PENDING", "HALTED")
+
+# Seconds to wait before the confirming second readback. Zero keeps the read
+# path non-blocking; raise it if Gate.io propagation lag is observed.
+CLOSE_CONFIRM_DELAY_SECONDS = 0.0
 
 
 def _contract_exposure(snapshot, contract):
@@ -56,6 +64,53 @@ def _contract_exposure(snapshot, contract):
         if initial.get("contract") == contract:
             triggers.append(o)
     return positions, orders, triggers
+
+
+def _second_readback_flat(client, contract):
+    """Independent second readback of one contract's exposure.
+
+    Returns ``True`` when the contract is flat, ``False`` when any position,
+    open order or resting trigger is still present, and ``None`` when the
+    exchange could not answer. ``None`` is never treated as flat.
+    """
+    if CLOSE_CONFIRM_DELAY_SECONDS:
+        time.sleep(CLOSE_CONFIRM_DELAY_SECONDS)
+    try:
+        snapshot = client.snapshot()
+    except Exception:
+        return None
+    if not isinstance(snapshot, dict):
+        return None
+    positions, orders, triggers = _contract_exposure(snapshot, contract)
+    return not (positions or orders or triggers)
+
+
+def _closing_fill_proves_close(verified, row):
+    """True when the exchange's own closing fill belongs to THIS trade.
+
+    A closing fill is only proof when it happened after the row was opened.
+    Without that bound, a previous trade's exit on the same contract would
+    look like proof and could close a live position.
+    """
+    if not isinstance(verified, dict):
+        return False
+    try:
+        count = int(verified.get("closing_fill_count") or 0)
+    except (TypeError, ValueError):
+        return False
+    if count <= 0:
+        return False
+    opened = row.get("created_at")
+    exit_ts = verified.get("exit_timestamp")
+    if opened is None or exit_ts is None:
+        # Cannot bound the fill to this trade: not proof on its own.
+        return False
+    try:
+        opened_epoch = (opened.timestamp() if hasattr(opened, "timestamp")
+                        else float(opened))
+        return float(exit_ts) >= opened_epoch
+    except (TypeError, ValueError, OSError, OverflowError):
+        return False
 
 
 def _close_fill_price(client, contract, entry_order_id):
@@ -134,7 +189,8 @@ def detect_and_record_closes(con, client=None):
 
     with con.cursor() as cur:
         cur.execute("""SELECT event_id,contract,side,state,contracts,entry_price,
-                              stop_loss,take_profit,entry_order_id,client_text
+                              stop_loss,take_profit,entry_order_id,client_text,
+                              created_at
                        FROM luxalgo_prod_execution_ledger
                        WHERE state = ANY(%s)""", (list(CLOSEABLE_STATES),))
         rows = [dict(r) for r in cur.fetchall()]
@@ -159,6 +215,27 @@ def detect_and_record_closes(con, client=None):
         # time, gross P&L, fees and NET P&L. Partial closes are summed and
         # de-duplicated inside _verified_exit.
         verified = _verified_exit(client, contract, row.get("entry_order_id"))
+
+        # ONE empty readback is not proof of a close. It is also what a
+        # read-permission problem, a different sub-account, or Gate.io
+        # propagation lag right after a fill produces. Closing on a single
+        # empty snapshot silently erased live positions from the panel.
+        # Require independent proof: the exchange's own closing fill for THIS
+        # trade, or a second readback that is also flat.
+        if _closing_fill_proves_close(verified, row):
+            confirmed_by = "CLOSING_FILL"
+        else:
+            second = _second_readback_flat(client, contract)
+            if second is None:
+                skipped.append({"event_id": row.get("event_id"),
+                                "reason": "CLOSE_UNVERIFIED_READBACK_FAILED"})
+                continue
+            if not second:
+                skipped.append({"event_id": row.get("event_id"),
+                                "reason": "STILL_OPEN_ON_SECOND_READBACK"})
+                continue
+            confirmed_by = "SECOND_FLAT_READBACK"
+
         if verified is not None:
             realized = verified["net_realized_pnl_usdt"]
             exit_price = verified["exit_fill_price"]
@@ -166,6 +243,7 @@ def detect_and_record_closes(con, client=None):
                 "close_detected_by": "EXCHANGE_FLAT_READBACK",
                 "close_note": ("exchange reported no position, no open order and no "
                                "resting trigger for this contract"),
+                "close_confirmed_by": confirmed_by,
                 "realized_pnl_usdt": str(realized),
                 "net_realized_pnl_usdt": str(realized),
                 "gross_realized_pnl_usdt": str(verified["gross_realized_pnl_usdt"]),
@@ -185,6 +263,7 @@ def detect_and_record_closes(con, client=None):
                 "close_detected_by": "EXCHANGE_FLAT_READBACK",
                 "close_note": ("exchange reported no position, no open order and no "
                                "resting trigger for this contract"),
+                "close_confirmed_by": confirmed_by,
                 "realized_pnl_usdt": None,
                 "net_realized_pnl_usdt": None,
                 "realized_pnl_source": "UNAVAILABLE",
@@ -231,6 +310,16 @@ def record_closes_safely(con, client=None):
     try:
         return detect_and_record_closes(con, client)
     except Exception:
+        # A failed statement aborts the transaction in psycopg. Without this
+        # rollback the NEXT query on the same connection fails too, which
+        # blanked both the positions and the signals panels with a 503.
+        # Rolling back discards any partial close writes (they are re-detected
+        # on the next read) and leaves the connection usable.
+        try:
+            con.rollback()
+        except Exception:
+            pass
+        logger.exception("Close detection failed; transaction rolled back")
         return {"recorded": [], "skipped": [], "recorded_count": 0,
                 "skipped_count": 0, "orders_sent": 0, "unavailable": True}
 
