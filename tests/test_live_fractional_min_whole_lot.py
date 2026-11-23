@@ -52,11 +52,30 @@ class FractionalMinimumWholeLotTests(unittest.TestCase):
 
     def test_incompatible_fractional_granularity_fail_closed(self):
         for minimum, maximum in (("0.3", "10"), ("1.1", "10"),
-                                 ("0.1", "0.9"), ("0", "10"),
+                                 ("0.1", "0.9"),
                                  ("0.1", "0.0"), ("NaN", "10")):
             with self.subTest(minimum=minimum, maximum=maximum):
                 with self.assertRaises(LiveSafetyError):
                     plan(dict(META, order_size_min=minimum, order_size_max=maximum))
+
+    def test_zero_minimum_is_treated_as_no_published_minimum(self):
+        # Gate.io publishes order_size_min=0 for XRP_USDT, ETH_USDT and
+        # SOL_USDT. Zero is an unpopulated field, not a real minimum: it must
+        # not refuse the symbol before sizing. The whole-contract sender still
+        # floors to one contract, and every other cap still applies.
+        result = plan(dict(META, order_size_min="0", order_size_max="10"))
+        # The point is that it no longer raises before sizing. The count is
+        # whatever the risk budget and the other caps allow, floored to whole
+        # contracts and never above the exchange maximum.
+        self.assertGreaterEqual(result["contracts"], 1)
+        self.assertLessEqual(result["contracts"], 10)
+        self.assertEqual(build_entry_order(result)["size"], result["contracts"])
+
+    def test_missing_minimum_is_treated_as_no_published_minimum(self):
+        meta = dict(META)
+        meta.pop("order_size_min")
+        result = plan(meta)
+        self.assertEqual(result["contracts"], 1)
 
     def test_insufficient_risk_and_margin_never_force_one_lot(self):
         for equity, available in (("1", "100"), ("100", "0.1")):
