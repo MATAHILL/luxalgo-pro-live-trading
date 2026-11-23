@@ -1,4 +1,4 @@
-"""XRP-only LuxAlgo signal confluence gate (pure logic + read-only candle fetch).
+"""LuxAlgo signal confluence gate (pure logic + read-only candle fetch).
 
 A PASS is permission to CONTINUE through the existing safety-locked execution
 path. It is never an order, never an authorization, and never a guarantee of
@@ -8,7 +8,7 @@ Design rules
 ------------
 * No exchange write of any kind lives in this module.
 * Missing, stale or malformed market data BLOCKS; it never defaults to PASS.
-* BTC (and any symbol outside the allowlist) is blocked before any scoring.
+* BTC (and any symbol on the block list) is blocked before any scoring.
 * The score is a *quality* measure; the hard gates are *veto* conditions.
   A high score cannot override a veto.
 """
@@ -28,7 +28,11 @@ TF_SECONDS = {"5m": 300, "15m": 900, "1h": 3600, "4h": 14400}
 SIGNAL_TIMEFRAMES = ("5m", "15m")
 HTF_FOR = {"5m": "15m", "15m": "1h"}
 
-DEFAULT_ALLOWLIST = "XRPUSDT"
+# No allowlist. An empty value means "no restriction", never "nothing": every
+# non-BTC symbol is admitted here, and the exchange contract preflight decides
+# whether Gate.io actually lists it. The name is kept so any external reference
+# keeps working.
+DEFAULT_ALLOWLIST = ""
 DEFAULT_BLOCKED = "BTCUSDT,BTCDOMUSDT,BTCUSDT.P,BTCUSD"
 
 # Component ceilings. They sum to 100 so the score is directly readable.
@@ -70,7 +74,18 @@ def _env_bool(name, default):
 
 
 def _csv_set(raw):
-    return frozenset(x.strip().upper() for x in str(raw).split(",") if x.strip())
+    """Parse a comma-separated env value into bare, normalized symbols.
+
+    Entries are normalized the same way incoming alerts are, so a value copied
+    straight from TradingView ("GATEIO:ETHUSDT.P") still matches the bare
+    symbol the webhook delivers. An empty value yields an empty set.
+    """
+    out = set()
+    for item in str(raw).split(","):
+        bare = _bare_symbol(item)
+        if bare:
+            out.add(bare)
+    return frozenset(out)
 
 
 class ConfluenceConfig:
@@ -83,7 +98,7 @@ class ConfluenceConfig:
     )
 
     def __init__(self, **kw):
-        self.allowlist = kw.get("allowlist", frozenset({DEFAULT_ALLOWLIST}))
+        self.allowlist = kw.get("allowlist", frozenset())
         self.blocked = kw.get("blocked", _csv_set(DEFAULT_BLOCKED))
         self.min_score = kw.get("min_score", 60)
         self.min_rr = kw.get("min_rr", 1.5)
@@ -140,15 +155,20 @@ def _bare_symbol(symbol):
 
 
 def symbol_permitted(symbol, config=None):
-    """Return (allowed: bool, reason: str). BTC is blocked unconditionally."""
+    """Return (allowed: bool, reason: str). BTC is blocked unconditionally.
+
+    There is no allowlist. Every non-BTC symbol is permitted here; the block
+    list (LUXALGO_BLOCKED_SYMBOLS) and the BTC prefix veto are the only symbol
+    restrictions. A symbol still has to pass the exchange contract preflight
+    downstream, so this answers "is it policy-permitted", not "does Gate.io
+    list it".
+    """
     cfg = config or ConfluenceConfig.from_env()
     bare = _bare_symbol(symbol)
     if not bare:
         return False, "SYMBOL_MISSING"
     if bare in cfg.blocked or bare.startswith("BTC"):
         return False, "BTC_BLOCKED"
-    if bare not in cfg.allowlist:
-        return False, "SYMBOL_NOT_ALLOWED"
     return True, "OK"
 
 

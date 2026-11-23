@@ -813,6 +813,7 @@ header.terminal-header{border-radius:17px!important}
 #signalStatusInfo{font-size:11px}
 .status-live{color:#ffd28a;font-weight:800}
 .status-closed{color:#8ed7ff;font-weight:800}
+.status-signal{color:#ffb0b0;font-weight:800}
 @media(max-width:700px){.incoming-lux-scroll{max-height:505px}}
 #v4PaperCards>.v4-trade{align-self:start}
 .v45-tools{display:flex;gap:7px;align-items:center;flex-wrap:wrap}
@@ -2374,6 +2375,7 @@ if(!body)return;
 const num=v=>{if(v===null||v===undefined||v==='')return '\u2014';const n=Number(v);return Number.isFinite(n)?n.toLocaleString(undefined,{maximumFractionDigits:6}):'\u2014';};
 const ist=iso=>{if(!iso)return '\u2014';const d=new Date(iso);return Number.isNaN(d.getTime())?'\u2014':d.toLocaleString('en-IN',{timeZone:'Asia/Kolkata',hour12:true});};
 const pair=c=>String(c||'').replace('_','/');
+const sigPair=s=>{const t=String(s||'');return t.endsWith('USDT')?t.slice(0,-4)+'/USDT':t;};
 let busy=false;
 async function getJson(url){
  const r=await fetch(url,{cache:'no-store',credentials:'same-origin'});
@@ -2418,8 +2420,10 @@ async function load(){
   if(sigRes&&sigRes.status==='rejected')errors.push('signals: '+String(sigRes.reason&&sigRes.reason.message||sigRes.reason).slice(0,70));
   body.replaceChildren();
   let n=0;
+  const shown=new Set();
   for(const p of live){
    n+=1;
+   if(p.event_id)shown.add(p.event_id);
    addRow([
     n,
     ist(p.created_at),
@@ -2438,6 +2442,7 @@ async function load(){
   }
   for(const t of closed){
    n+=1;
+   if(t.event_id)shown.add(t.event_id);
    const pnl=Number(t.net_realized_pnl_usdt!==null&&t.net_realized_pnl_usdt!==undefined
                      ?t.net_realized_pnl_usdt:t.realized_pnl_usdt);
    const hasPnl=((t.net_realized_pnl_usdt!==null&&t.net_realized_pnl_usdt!==undefined)
@@ -2466,13 +2471,38 @@ async function load(){
     11:'status-closed'
    });
   }
+  // A signal refused before any order was placed produces neither a live
+  // position nor a closed trade, so it had no row to carry its refusal reason.
+  // Render those signals here so the WHY NOT EXECUTED column actually shows
+  // why the bot did not trade.
+  let sigShown=0;
+  for(const s of sigs){
+   if(!s||!s.event_id||shown.has(s.event_id))continue;
+   n+=1;
+   sigShown+=1;
+   addRow([
+    n,
+    ist(s.time),
+    sigPair(s.symbol),
+    s.side||'\u2014',
+    num(s.entry),
+    '\u2014',
+    '\u2014',
+    '\u2014',
+    '\u2014',
+    '\u2014',
+    s.status_label||s.state||'NOT EXECUTED',
+    'Signal',
+    whyByEvent[s.event_id]||'\u2014'
+   ],{10:'negative',11:'status-signal'});
+  }
   if(!n){
    const tr=body.insertRow(),td=tr.insertCell();
    td.colSpan=13;td.className='empty-state';
-   td.textContent='No bot trades yet. A live row appears when the bot opens a position; a closed row appears once the exchange reports it fully closed.';
+   td.textContent='No bot trades yet. A live row appears when the bot opens a position; a closed row appears once the exchange reports it fully closed; a Signal row appears for a received signal that was refused before any order.';
   }
   const stamp=new Date().toLocaleTimeString('en-IN',{timeZone:'Asia/Kolkata',hour12:true});
-  status.textContent=live.length+' live \u00b7 '+closed.length+' closed \u00b7 updated '+stamp+' IST'
+  status.textContent=live.length+' live \u00b7 '+closed.length+' closed \u00b7 '+sigShown+' signal-only \u00b7 updated '+stamp+' IST'
    +(errors.length?' \u00b7 '+errors.join(' \u00b7 '):'');
  }catch(e){
   status.textContent='Trade status unavailable: '+String(e.message).slice(0,90);
@@ -4526,16 +4556,18 @@ def webhook():
         return jsonify(error='Invalid symbol, LuxAlgo entry direction, or timeframe'), 422
     received_at = datetime.now(timezone.utc)
     tf = '5m' if tf.startswith('5') else '15m'
-    # XRP-ONLY SCOPE. BTC is blocked by policy before any scoring, storage or
-    # dispatch. This is a hard veto, not a preference: an alert for any other
-    # symbol is acknowledged and refused, never silently traded.
-    from testnet_coin_scope import selected_webhook_symbol
+    # SYMBOL SCOPE. BTC (and anything on LUXALGO_BLOCKED_SYMBOLS) is blocked by
+    # policy before any scoring, storage or dispatch. This is a hard veto, not a
+    # preference: such an alert is acknowledged and refused, never silently
+    # traded. There is no allowlist, so every other symbol proceeds to the
+    # confluence gate and the exchange contract preflight.
+    from testnet_coin_scope import selected_webhook_symbol, BLOCKED_SYMBOLS
     if not selected_webhook_symbol(symbol):
         _scope_reason = ('BTC_BLOCKED' if symbol.startswith('BTC')
-                         else 'SYMBOL_NOT_ALLOWED')
+                         else 'SYMBOL_BLOCKED')
         app.logger.warning('LuxAlgo webhook refused by symbol scope: %s', _scope_reason)
         return jsonify(status='signal_refused', mode='SIGNAL_ONLY', symbol=symbol,
-                       reason=_scope_reason, allowed_symbols=['XRPUSDT'],
+                       reason=_scope_reason, blocked_symbols=sorted(BLOCKED_SYMBOLS),
                        orders_placed=0), 403
     # Missing/invalid LuxAlgo prices never authorize an exchange order.
     # Preserve legacy signal reception but flag missing/invalid levels in audit.
@@ -7461,7 +7493,8 @@ def terminal_incoming_signals():
                     s.status AS simulated_status,b.enabled AS bot_enabled,ot.order_type,
                     j.state AS testnet_execution_state,j.payload AS testnet_payload,
                     j.details AS testnet_details,j.client_id AS testnet_client_id,
-                    a.state AS attempt_state,a.detail AS attempt_detail
+                    a.state AS attempt_state,a.detail AS attempt_detail,
+                    r.reason AS refusal_reason,r.stage AS refusal_stage
                     FROM luxalgo_dry_run_intents i
                     LEFT JOIN luxalgo_signal_levels l ON l.event_id=i.event_id
                     LEFT JOIN luxalgo_auto_paper_queue q ON q.event_id=i.event_id
@@ -7470,6 +7503,7 @@ def terminal_incoming_signals():
                     LEFT JOIN luxalgo_signal_order_types ot ON ot.event_id=i.event_id
                     LEFT JOIN luxalgo_testnet_protected_journal j ON j.signal_id=i.event_id
                     LEFT JOIN luxalgo_testnet_execution_attempts a ON a.event_id=i.event_id
+                    LEFT JOIN luxalgo_live_execution_refusals r ON r.event_id=i.event_id
                     WHERE i.received_at > %s
                     ORDER BY i.received_at DESC LIMIT 25''',(cutoff,))
                 rows=cur.fetchall()
@@ -7527,6 +7561,8 @@ def terminal_incoming_signals():
                         explain_testnet_attempt(r['attempt_state'],r['attempt_detail'],
                                                 worker_armed=worker_armed)),
                 level_status=r['level_status'] or 'UNKNOWN',
+                refusal_reason=r.get('refusal_reason'),
+                refusal_stage=r.get('refusal_stage'),
                 status_label=state))
             if production_monitor:
                 # Never portray archived Testnet execution as a REAL-MONEY fill.

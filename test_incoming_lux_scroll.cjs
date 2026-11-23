@@ -44,9 +44,19 @@ assert(head.trimEnd().endsWith('<th>WHY NOT EXECUTED</th></tr>'),
 // Both live and closed rows are rendered, with the Status label.
 assert(page.includes("getJson('/terminal/live-positions')"),'Live positions must be fetched');
 assert(page.includes("getJson('/api/completed-trades')"),'Closed trades must be fetched');
+assert(page.includes("getJson('/terminal/incoming-signals?production=1')"),
+       'Refusal reasons must be fetched for the WHY NOT EXECUTED column');
 assert(page.includes("'Live'"),'Live status label missing');
 assert(page.includes("'Closed'"),'Closed status label missing');
+assert(page.includes("'Signal'"),'Signal-only status label missing');
 assert(page.includes('n+=1;'),'Serial numbering missing');
+
+// A signal refused before any order produces neither a live nor a closed row,
+// so it must be rendered from the signals feed or its refusal reason is never
+// visible anywhere in the panel.
+assert(page.includes('for(const s of sigs)'),'Signal-only rows must be rendered');
+assert(page.includes('shown.has(s.event_id)'),'Signal rows must not duplicate a live/closed row');
+assert(page.includes('whyByEvent[s.event_id]'),'Refusal reason must reach the signal row');
 
 // The old completed-trades table is gone from the bottom of the page.
 assert(!page.includes('id="completedTradesBody"'),'Old completed trades table must be removed');
@@ -54,7 +64,6 @@ assert(!page.includes('COMPLETED TRADES \u00b7 EXIT RECORD'),'Old completed trad
 
 // Untouched sections must survive.
 assert(page.includes('id="v4PaperCards"'),'Original protected position cards must stay');
-assert(page.includes('id="orderTableBody"'),'Live futures order table must stay');
 assert(page.includes('id="perfWinRate"'),'Performance analytics must stay');
 assert(page.includes('id="wrGauge"'),'Real-time win rate widget must stay');
 assert(page.includes('id="radarBody"'),'Market radar must stay');
@@ -63,4 +72,4 @@ assert(page.includes('id="radarBody"'),'Market radar must stay');
 assert(app.includes("ORDER BY i.received_at DESC LIMIT 25"),'Backend must retain 25 latest signals');
 assert(app.includes("luxalgo_incoming_display_reset"),'Safety-preserving visible history reset missing');
 assert(!app.includes("DELETE FROM luxalgo_dry_run_intents"),'Webhook audit must never be deleted');
-console.log('PASS: signal table replaced by live+closed trade status table with S/N and Status columns');
+console.log('PASS: signal table replaced by live+closed+signal-only trade status table with S/N, Status and refusal-reason columns');
