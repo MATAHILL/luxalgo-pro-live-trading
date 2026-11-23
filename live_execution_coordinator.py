@@ -24,7 +24,8 @@ def read_rows(con):
     with con.cursor() as cur:
         cur.execute("""SELECT event_id,client_text,contract,side,timeframe,position_mode,state,
                         risk_usdt,entry_price,stop_loss,take_profit,contracts,
-                        entry_order_id,stop_order_id,take_order_id,created_at,updated_at
+                        entry_order_id,stop_order_id,take_order_id,detail,
+                        created_at,updated_at
                        FROM luxalgo_prod_execution_ledger
                        WHERE state <> 'CLOSED_VERIFIED'
                           OR event_id IN (
@@ -102,12 +103,20 @@ def risk_reserve(con,plan,exchange_positions,account_equity):
             raise LiveSafetyError("Atomic account-wide risk cap")
         cur.execute("""INSERT INTO luxalgo_prod_execution_ledger(
                         event_id,client_text,contract,side,timeframe,position_mode,state,risk_usdt,
-                        entry_price,stop_loss,take_profit,contracts)
-                        VALUES (%s,%s,%s,%s,%s,%s,'RESERVED',%s,%s,%s,%s,%s)
+                        entry_price,stop_loss,take_profit,contracts,detail)
+                        VALUES (%s,%s,%s,%s,%s,%s,'RESERVED',%s,%s,%s,%s,%s,%s::jsonb)
                         ON CONFLICT (event_id) DO NOTHING RETURNING event_id""",
                     (plan["event_id"],plan["client_text"],plan["contract"],
                      plan["side"],plan["timeframe"],plan["position_mode"],incremental,
-                     plan["entry"],plan["sl"],plan["tp"],plan["contracts"]))
+                     plan["entry"],plan["sl"],plan["tp"],plan["contracts"],
+                     # Record the size the engine ACTUALLY sized to, and the mode
+                     # it used. Without this the terminal could only show the
+                     # saved target, never the effective order value.
+                     json.dumps({"target_notional_usdt": plan.get("target_notional_usdt"),
+                                 "sizing_mode": plan.get("sizing_mode"),
+                                 "effective_notional_usdt": plan.get("effective_notional_usdt"),
+                                 "modeled_stop_risk_usdt": plan.get("modeled_stop_risk_usdt"),
+                                 "modeled_fee_slippage_usdt": plan.get("modeled_fee_slippage_usdt")})))
         if not cur.fetchone():
             raise LiveSafetyError("Duplicate TradingView event; no new entry")
     return {"state":"RESERVED","event_id":plan["event_id"],"orders_submitted":0}

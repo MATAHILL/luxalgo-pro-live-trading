@@ -895,7 +895,7 @@ header.terminal-header{border-radius:17px!important}
 <section class="panel" id="signalStatusPanel" style="width:100%;margin:14px 0;max-width:none" aria-label="Incoming LuxAlgo signals status">
 <div class="panel-heading"><h2>INCOMING LUXALGO SIGNALS STATUS</h2><span class="label-muted" id="signalStatusInfo" role="status" aria-live="polite">LOADING…</span></div>
 <p class="light">Every bot trade in the execution ledger. <strong>Live</strong> rows are positions the exchange still holds; <strong>Closed</strong> rows are exchange-verified exits. Exit fill, quantity and net P&amp;L come from the exchange’s own closing fills with fees subtracted; partial closes are summed. A dash means the exchange has not returned that figure — never an estimate.</p>
-<div class="tablewrap incoming-lux-scroll" id="signalStatusScroll" tabindex="0" role="region" aria-label="Incoming LuxAlgo signals status, live and closed trades"><table style="min-width:1120px;width:100%"><thead><tr><th>S/N</th><th>TIME (IST)</th><th>PAIR</th><th>DIRECTION</th><th>ENTRY FILL</th><th>EXIT FILL</th><th>EXIT QTY</th><th>EXIT TIME (IST)</th><th>FEES</th><th>NET REALIZED P&amp;L</th><th>RESULT</th><th>STATUS</th></tr></thead><tbody id="signalStatusBody"><tr><td colspan="12" class="empty-state">Loading trades…</td></tr></tbody></table></div>
+<div class="tablewrap incoming-lux-scroll" id="signalStatusScroll" tabindex="0" role="region" aria-label="Incoming LuxAlgo signals status, live and closed trades"><table style="min-width:1120px;width:100%"><thead><tr><th>S/N</th><th>TIME (IST)</th><th>PAIR</th><th>DIRECTION</th><th>ENTRY FILL</th><th>EXIT FILL</th><th>EXIT QTY</th><th>EXIT TIME (IST)</th><th>FEES</th><th>NET REALIZED P&amp;L</th><th>RESULT</th><th>STATUS</th><th>WHY NOT EXECUTED</th></tr></thead><tbody id="signalStatusBody"><tr><td colspan="13" class="empty-state">Loading trades…</td></tr></tbody></table></div>
 </section><section class="panel advanced-panel" id="advancedScannerPanel"><div class="panel-heading"><h2>LUXALGO PRO · ADVANCED FUTURES OPPORTUNITY SCANNER <span class="gloss-cyan">● MARKET INTELLIGENCE</span></h2><button class="btn gloss-action" id="advancedRefresh" type="button">↻ Scan All Pairs</button></div>
 <p class="light">Gate.io USDT perpetuals · 5m + 15m completed candles · volume / trend / structure screening · up to five watchlist candidates. ATR-based technical levels are estimates only; only genuine stored LuxAlgo alerts confirm SL1/TP1. NEVER PLACES ORDERS.</p>
 <div class="adv-controls"><strong id="advancedScanStatus" class="adv-summary">Ready to inspect markets…</strong><span id="advancedEquityInfo" class="light">Equity risk sizing: verifying read-only account</span></div>
@@ -1439,6 +1439,17 @@ function renderPositions(positions){
   field(grid,'Unrealized P&L (USDT)',(p.unrealized_pnl>=0?'+':'')+money(p.unrealized_pnl),pnlClass(p.unrealized_pnl));
   field(grid,'ROI (based on reported margin)',p.roi_percent===null?'—':(p.roi_percent>=0?'+':'')+p.roi_percent.toFixed(2)+'%',p.roi_percent===null?'':pnlClass(p.roi_percent));
   field(grid,'Position size (USDT)',p.position_value_usdt===null?'—':money(p.position_value_usdt));
+  // The size the BOT actually sized to, from the execution ledger. This is
+  // the effective order value, not the saved target in the trade-size box.
+  if(ledger){
+   const eff=ledger.effective_notional_usdt;
+   const tgt=ledger.target_notional_usdt;
+   const mode=ledger.sizing_mode;
+   field(grid,'Bot order value (USDT)',
+     eff===null||eff===undefined?'—':money(eff)
+       +(tgt!==null&&tgt!==undefined?' | target '+money(tgt):'')
+       +(mode?' | '+String(mode).replace('_',' '):''));
+  }
   field(grid,'Margin (USDT)',p.margin_usdt===null?'—':money(p.margin_usdt));
   field(grid,'Contracts',String(p.size_contracts));
   field(grid,'Entry price',price(p.entry_price));
@@ -2383,14 +2394,28 @@ async function load(){
  try{
   const results=await Promise.allSettled([
    getJson('/terminal/live-positions'),
-   getJson('/api/completed-trades')
+   getJson('/api/completed-trades'),
+   getJson('/terminal/incoming-signals?production=1')
   ]);
-  const liveRes=results[0],closedRes=results[1];
+  const liveRes=results[0],closedRes=results[1],sigRes=results[2];
   const live=(liveRes.status==='fulfilled'&&Array.isArray(liveRes.value.positions))?liveRes.value.positions:[];
   const closed=(closedRes.status==='fulfilled'&&Array.isArray(closedRes.value.trades))?closedRes.value.trades:[];
+  // The refusal reason is the authoritative answer to "why did this signal not
+  // become an order". It was computed by the server and never fetched, so the
+  // panel could only ever show a generic status.
+  const sigs=(sigRes&&sigRes.status==='fulfilled'&&Array.isArray(sigRes.value.signals))?sigRes.value.signals:[];
+  const whyByEvent={};
+  for(const s of sigs){
+   if(!s||!s.event_id)continue;
+   const why=s.refusal_reason
+     ?('Refused at '+String(s.refusal_stage||'DISPATCH')+': '+String(s.refusal_reason))
+     :(s.reason||s.status_label||'');
+   if(why)whyByEvent[s.event_id]=String(why).slice(0,220);
+  }
   const errors=[];
   if(liveRes.status==='rejected')errors.push('live: '+String(liveRes.reason&&liveRes.reason.message||liveRes.reason).slice(0,70));
   if(closedRes.status==='rejected')errors.push('closed: '+String(closedRes.reason&&closedRes.reason.message||closedRes.reason).slice(0,70));
+  if(sigRes&&sigRes.status==='rejected')errors.push('signals: '+String(sigRes.reason&&sigRes.reason.message||sigRes.reason).slice(0,70));
   body.replaceChildren();
   let n=0;
   for(const p of live){
@@ -2407,7 +2432,8 @@ async function load(){
     '\u2014',
     '\u2014',
     p.state||'OPEN',
-    'Live'
+    'Live',
+    whyByEvent[p.event_id]||'\u2014'
    ],{10:'positive',11:'status-live'});
   }
   for(const t of closed){
@@ -2431,7 +2457,8 @@ async function load(){
     hasFees?((fees>0?'+':'')+num(fees)):'\u2014',
     hasPnl?((pnl>0?'+':'')+num(pnl)):'\u2014',
     hasPnl?(pnl>0?'WIN':pnl<0?'LOSS':'FLAT'):'CLOSED',
-    'Closed'
+    'Closed',
+    whyByEvent[t.event_id]||'\u2014'
    ],{
     8:hasFees?(fees>0?'positive':'negative'):'',
     9:hasPnl?(pnl>0?'gloss-pnl-profit':pnl<0?'gloss-pnl-loss':'gloss-pnl-neutral'):'',
@@ -2441,7 +2468,7 @@ async function load(){
   }
   if(!n){
    const tr=body.insertRow(),td=tr.insertCell();
-   td.colSpan=12;td.className='empty-state';
+   td.colSpan=13;td.className='empty-state';
    td.textContent='No bot trades yet. A live row appears when the bot opens a position; a closed row appears once the exchange reports it fully closed.';
   }
   const stamp=new Date().toLocaleTimeString('en-IN',{timeZone:'Asia/Kolkata',hour12:true});
@@ -4049,6 +4076,31 @@ def terminal_live_positions():
         for r in rows:
             if r.get('state') == 'CLOSED_VERIFIED' and r.get('contract') not in open_contracts:
                 continue
+            # The EFFECTIVE order value, not the saved target. The engine
+            # records the notional it actually sized to on the ledger row, so
+            # the panel can show what was really used. Falls back to
+            # contracts x entry when an older row predates that field.
+            _detail = r.get('detail') or {}
+            if isinstance(_detail, str):
+                try:
+                    _detail = json.loads(_detail)
+                except (ValueError, TypeError):
+                    _detail = {}
+            if not isinstance(_detail, dict):
+                _detail = {}
+            _target = _detail.get('target_notional_usdt')
+            _mode = _detail.get('sizing_mode')
+            # The engine records the notional it actually sized to, including
+            # the quanto_multiplier. Recomputing it here from contracts x entry
+            # would be wrong by that multiplier (10x for XRP), so a row that
+            # predates the field reports "unavailable" rather than a wrong
+            # number.
+            _effective = _detail.get('effective_notional_usdt')
+            if _effective is not None:
+                try:
+                    _effective = str(Decimal(str(_effective)).quantize(Decimal('0.01')))
+                except (InvalidOperation, TypeError, ValueError):
+                    _effective = None
             out.append(dict(
                 event_id=r.get('event_id'), contract=r.get('contract'),
                 side=r.get('side'), state=r.get('state'),
@@ -4060,6 +4112,9 @@ def terminal_live_positions():
                 stop_order_id=r.get('stop_order_id'),
                 take_order_id=r.get('take_order_id'),
                 protected=bool(r.get('stop_order_id') and r.get('take_order_id')),
+                target_notional_usdt=(str(_target) if _target is not None else None),
+                sizing_mode=_mode,
+                effective_notional_usdt=_effective,
                 ledger_state_stale=(r.get('state') == 'CLOSED_VERIFIED'
                                     and r.get('contract') in open_contracts),
                 created_at=(r['created_at'].isoformat() if r.get('created_at') else None)))

@@ -20,7 +20,7 @@ from decimal import Decimal, InvalidOperation, ROUND_FLOOR
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 from live_risk_policy import (per_entry_risk, sizing_mode, fixed_notional_usdt,
-                              SIZING_MODE_FIXED)
+                              SIZING_MODE_FIXED, SIZING_MODE_RISK)
 
 HOST = "https://api.gateio.ws"
 PREFIX = "/api/v4/futures/usdt"
@@ -81,6 +81,16 @@ IF to_regclass('luxalgo_prod_execution_control') IS NOT NULL
        SELECT 1 FROM pg_attribute
        WHERE attrelid = to_regclass('luxalgo_prod_execution_ledger')
          AND attname = 'position_mode' AND NOT attisdropped
+   )
+   -- 'detail' is written by every journal transition and by the close
+   -- recorder. It is the one column that had no ADD COLUMN IF NOT EXISTS
+   -- companion, so a ledger created before it existed would fail every
+   -- UPDATE with UndefinedColumn. Check it here so the migration below
+   -- repairs it instead of returning early.
+   AND EXISTS (
+       SELECT 1 FROM pg_attribute
+       WHERE attrelid = to_regclass('luxalgo_prod_execution_ledger')
+         AND attname = 'detail' AND NOT attisdropped
    ) THEN
     RETURN;
 END IF;
@@ -108,6 +118,10 @@ CREATE TABLE IF NOT EXISTS luxalgo_prod_execution_ledger (
 );
 ALTER TABLE luxalgo_prod_execution_ledger
 ADD COLUMN IF NOT EXISTS position_mode TEXT NOT NULL DEFAULT 'UNVERIFIED';
+-- Repair a ledger created before 'detail' existed. Without this the guard
+-- above can never be satisfied and every journal UPDATE fails.
+ALTER TABLE luxalgo_prod_execution_ledger
+ADD COLUMN IF NOT EXISTS detail JSONB NOT NULL DEFAULT '{}'::jsonb;
 CREATE INDEX IF NOT EXISTS idx_prod_ledger_state
 ON luxalgo_prod_execution_ledger(state,updated_at);
 CREATE TABLE IF NOT EXISTS luxalgo_prod_execution_control (
@@ -264,6 +278,37 @@ def _present(*bounds):
     return tuple(b for b in bounds if b is not None)
 
 
+def _lot_minimum(metadata):
+    """The exchange minimum lot, treating 0/absent as "no minimum published".
+
+    Gate.io publishes order_size_min=0 for XRP_USDT, ETH_USDT, SOL_USDT and
+    other contracts. Zero is not a real minimum -- it means the field is
+    unpopulated. Passing it to dec() raised "minimum contract count must be
+    positive" and refused every signal for those symbols BEFORE sizing was
+    ever considered. This sender trades whole contracts, so the effective
+    minimum for such a contract is one whole contract.
+
+    A genuine positive minimum is returned unchanged, so the existing
+    whole-contract compatibility check still applies to it.
+
+    Corrupt data still fails closed: a value that cannot be parsed, or a
+    non-finite one (NaN / Infinity), is not "no minimum" -- it is an
+    unreadable exchange field, and the plan is refused rather than guessed.
+    """
+    raw = metadata.get("order_size_min")
+    if raw is None or isinstance(raw, bool):
+        return Decimal("1")
+    try:
+        value = Decimal(str(raw))
+    except (InvalidOperation, ValueError, TypeError) as exc:
+        raise LiveSafetyError("minimum contract count invalid") from exc
+    if not value.is_finite():
+        raise LiveSafetyError("minimum contract count invalid")
+    if value <= 0:
+        return Decimal("1")
+    return value
+
+
 def build_plan(signal, metadata, equity, available, positions, reserved_risk=0, now=None):
     """Contract-count plan with configured per-entry / preserved 2.5% aggregate cap.
 
@@ -301,7 +346,7 @@ def build_plan(signal, metadata, equity, available, positions, reserved_risk=0, 
         raise LiveSafetyError("Duplicate symbol or conflicting position")
     eq,av=dec(equity,"equity"),dec(available,"available")
     multiplier=dec(metadata.get("quanto_multiplier"),"contract multiplier")
-    order_size_min=dec(metadata.get("order_size_min"),"minimum contract count")
+    order_size_min=_lot_minimum(metadata)
     order_size_max=dec(metadata.get("order_size_max"),"maximum contract count")
     # Some Gate.io Futures contracts (including XRP_USDT) publish a fractional
     # minimum. This execution sender supports WHOLE contracts only. Accept
@@ -387,6 +432,12 @@ def build_plan(signal, metadata, equity, available, positions, reserved_risk=0, 
                 estimated_risk_usdt=str(risk),risk_cap_usdt=str(budget),
                 sizing_mode=mode,
                 target_notional_usdt=str(target_notional) if target_notional is not None else None,
+                # The notional this plan ACTUALLY represents, in USDT:
+                # contracts x quanto_multiplier x entry. The multiplier is
+                # essential -- one XRP contract is 10 XRP, not 1 -- so this is
+                # recorded here rather than reconstructed later from the
+                # contract count alone, which would understate it by 10x.
+                effective_notional_usdt=str(count*(e*multiplier)),
                 risk_includes_modeled_taker_fees_and_slippage=True,
                 modeled_stop_risk_usdt=str(count*unit_stop_loss),
                 modeled_fee_slippage_usdt=str(count*unit_fee_slip),
@@ -409,7 +460,7 @@ def verify_execution_preflight(plan, metadata, snapshot, now=None):
             metadata.get('in_delisting') is not False or metadata.get('status')!='trading'):
         raise LiveSafetyError('Contract not independently verified as trading')
     quantity=dec(plan.get('contracts'),'contracts')
-    minimum=dec(metadata.get('order_size_min'),'minimum lot')
+    minimum=_lot_minimum(metadata)
     maximum=dec(metadata.get('order_size_max'),'maximum lot')
     raw_market=metadata.get('market_order_size_max')
     if raw_market is None or isinstance(raw_market,bool):
@@ -461,10 +512,16 @@ def verify_execution_preflight(plan, metadata, snapshot, now=None):
         raise LiveSafetyError('Fee/slippage ceiling exceeded')
     notional=quantity*multiplier*max(entry,mark)*(1+slip)
     margin_with_fees=notional/planned+notional*fee
+    # Judge the plan by the sizing mode it was BUILT with, not by the current
+    # environment. A saved terminal override forces fixed_notional while the
+    # env still says risk_percent; reading the env here measured a
+    # fixed-notional order against the per-entry risk budget and refused a
+    # fundable order with "Fresh equity no longer supports modeled risk".
+    plan_mode=plan.get('sizing_mode') or sizing_mode()
     # In fixed-notional mode the plan's target IS the exposure ceiling, so the
     # notional ceiling is measured on raw notional (the slippage buffer is
     # already carried in the margin and modeled-risk figures).
-    if sizing_mode()==SIZING_MODE_FIXED:
+    if plan_mode==SIZING_MODE_FIXED:
         checked_notional=quantity*multiplier*max(entry,mark)
     else:
         checked_notional=notional
@@ -476,7 +533,7 @@ def verify_execution_preflight(plan, metadata, snapshot, now=None):
         raise LiveSafetyError('Insufficient fresh margin including entry fee and slippage')
     reserved=dec(plan.get('estimated_risk_usdt'),'modeled risk')
     fresh_risk=quantity*multiplier*(abs(entry-sl)+max(entry,mark)*(2*fee+2*slip))
-    if sizing_mode()==SIZING_MODE_FIXED:
+    if plan_mode==SIZING_MODE_FIXED:
         # Fixed-notional mode has no per-trade risk budget; the modeled risk
         # recorded in the plan is the ceiling, and the aggregate cap is
         # enforced by the coordinator's atomic reservation.

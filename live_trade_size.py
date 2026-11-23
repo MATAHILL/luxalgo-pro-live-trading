@@ -239,16 +239,23 @@ def _remember(value):
 
 
 def refresh():
-    """Re-read the saved size from the database into the process cache."""
+    """Re-read the saved size from the database into the process cache.
+
+    On a read failure the LAST KNOWN GOOD value is kept. Resetting the cache
+    to None would mean "no override", which silently reverts the engine to the
+    environment default (100 USDT) -- a size the operator never chose, with no
+    warning anywhere in the terminal. Keeping the previous value is the
+    fail-safe choice: it is the size the operator actually saved, and every
+    other safety gate still runs unchanged.
+
+    Before the first successful read there is no known value, so None is
+    returned and the environment policy applies as before.
+    """
     try:
         with _connect() as con:
             row = _row_after_install(con)
     except Exception:
-        # Fail closed: an unreadable control row must not silently invent a
-        # size. None means "no override", so the environment policy applies
-        # and every remaining safety gate still runs unchanged.
-        _remember(None)
-        return None
+        return _cached
     _remember(row)
     return row
 

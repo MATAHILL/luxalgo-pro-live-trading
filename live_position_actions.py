@@ -360,6 +360,7 @@ def reverse_position(con, event_id, stop_loss, take_profit, client=None):
                                      MAX_POSITION_INITIAL_MARGIN_USDT,
                                      MAX_LEVERAGE, verified_account_equity)
     from live_risk_policy import per_entry_risk, sizing_mode, fixed_notional_usdt, SIZING_MODE_FIXED
+    from live_futures_engine import _saved_trade_size
     snap2 = client.snapshot()
     meta = client.request("GET", PREFIX + "/contracts/" + row["contract"])
     if not isinstance(meta, dict):
@@ -386,8 +387,15 @@ def reverse_position(con, event_id, stop_loss, take_profit, client=None):
     notional_cap_units = _cap_units(MAX_POSITION_NOTIONAL_USDT, unit_notional)
     margin_cap_units = _cap_units(MAX_POSITION_INITIAL_MARGIN_USDT, unit_margin)
     margin_units = int(available / unit_margin) if unit_margin > 0 else 0
-    if sizing_mode() == SIZING_MODE_FIXED:
-        units_by_target = int(fixed_notional_usdt() / (entry * multiplier)) if entry * multiplier > 0 else 0
+    # A saved terminal size overrides the environment policy for a reverse
+    # entry exactly as it does for a signal entry. Reading fixed_notional_usdt()
+    # here sized the reverse to the env default (100 USDT) while the terminal
+    # showed the operator's saved value.
+    override = _saved_trade_size()
+    effective_mode = SIZING_MODE_FIXED if override is not None else sizing_mode()
+    if effective_mode == SIZING_MODE_FIXED:
+        target = override if override is not None else fixed_notional_usdt()
+        units_by_target = int(target / (entry * multiplier)) if entry * multiplier > 0 else 0
         bounds = [units_by_target, margin_units, int(qty)]
     else:
         bounds = [int(budget / unit_loss) if unit_loss > 0 else 0, margin_units, int(qty)]

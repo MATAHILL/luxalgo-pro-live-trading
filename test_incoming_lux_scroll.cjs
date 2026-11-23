@@ -33,7 +33,13 @@ const head=page.slice(headOpen,headClose);
 assert(head.includes('<th>S/N</th>'),'Serial number column missing');
 assert(head.indexOf('<th>S/N</th>')<head.indexOf('<th>TIME (IST)</th>'),'S/N must precede the time column');
 assert(head.includes('<th>STATUS</th>'),'Status column missing');
-assert(head.trimEnd().endsWith('<th>STATUS</th></tr>'),'Status must be the last column');
+// The refusal reason is the authoritative answer to "why did this signal not
+// become an order", so it is surfaced as the final column.
+assert(head.includes('<th>WHY NOT EXECUTED</th>'),'Refusal reason column missing');
+assert(head.indexOf('<th>STATUS</th>')<head.indexOf('<th>WHY NOT EXECUTED</th>'),
+       'Status must precede the refusal reason column');
+assert(head.trimEnd().endsWith('<th>WHY NOT EXECUTED</th></tr>'),
+       'Refusal reason must be the last column');
 
 // Both live and closed rows are rendered, with the Status label.
 assert(page.includes("getJson('/terminal/live-positions')"),'Live positions must be fetched');
