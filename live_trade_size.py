@@ -140,6 +140,92 @@ def validate(value):
     return quantized
 
 
+# --- executable-size warnings -------------------------------------------
+# A saved size is a USDT TARGET that the engine FLOORS to whole contracts.
+# One Gate.io contract is worth price x quanto_multiplier, which is 20 USDT for
+# XRP_USDT, about 20 for DOGE_USDT, 30 for ETH_USDT and 150 for SOL_USDT at the
+# prices in live_risk_policy's own fixtures. A saved size below that value
+# floors to ZERO contracts and refuses every signal, on every symbol, for as
+# long as it stays saved -- the bot looks armed and silently never trades.
+#
+# validate() cannot refuse these values: 5 USDT is a legitimate size for a
+# cheaper contract, and refusing it would break a size the operator is entitled
+# to choose. So it WARNS instead, and the warning is returned to the terminal at
+# the moment of saving -- the only moment the operator is looking.
+#
+# Price and multiplier are estimates for guidance only. They are deliberately
+# ORDER-OF-MAGNITUDE guidance, not a promise: the engine re-derives the real
+# figure from live contract metadata on every plan.
+
+# Conservative reference notional per whole contract (price x multiplier),
+# rounded UP so the warning never understates the minimum.
+_REFERENCE_CONTRACT_USDT = {
+    "XRP_USDT": Decimal("20"),
+    "DOGE_USDT": Decimal("20"),
+    "TRX_USDT": Decimal("2"),
+    "ADA_USDT": Decimal("6"),
+    "SOL_USDT": Decimal("150"),
+    "ETH_USDT": Decimal("30"),
+    "BNB_USDT": Decimal("6"),
+    "LTC_USDT": Decimal("1"),
+}
+
+# Symbols whose whole-contract notional is large enough that a small saved size
+# silently refuses every signal. A generic floor is used when the symbol is not
+# in the table, because the failure is size-dependent, not symbol-dependent.
+_DEFAULT_REFERENCE_USDT = Decimal("20")
+
+
+def executable_size_warning(amount):
+    """Warn when a saved size cannot fund one whole contract of common symbols.
+
+    Returns None when the size is comfortably executable, otherwise a short
+    sentence naming the symbols it would block and the size that would work.
+    Never raises: a missing warning must not block a save the operator asked for.
+    """
+    try:
+        value = Decimal(str(amount))
+    except (InvalidOperation, ValueError, TypeError):
+        return None
+    if not value.is_finite() or value <= 0:
+        return None
+    blocked = sorted(
+        symbol for symbol, unit in _REFERENCE_CONTRACT_USDT.items()
+        if unit > value)
+    reference = max(
+        [unit for unit in _REFERENCE_CONTRACT_USDT.values()] + [_DEFAULT_REFERENCE_USDT])
+    if not blocked and value >= _DEFAULT_REFERENCE_USDT:
+        return None
+    # The size that works for every symbol in the table; if the size is merely
+    # small (not zero) say so plainly rather than implying it is broken.
+    floors_to_zero = value < min(_REFERENCE_CONTRACT_USDT.values())
+    if floors_to_zero:
+        return (
+            "SAVED BUT TOO SMALL TO TRADE: %s USDT floors to 0 whole contracts, so "
+            "EVERY signal will be refused with 'Insufficient margin/risk for "
+            "exchange minimum lot' while this size is saved. One contract is worth "
+            "roughly %s-%s USDT depending on the symbol (XRP/DOGE ~20, ETH ~30, "
+            "SOL ~150). Save at least %s USDT, or clear the size to fall back to "
+            "the environment policy."
+            % (_fmt_plain(value), _fmt_plain(min(_REFERENCE_CONTRACT_USDT.values())),
+               _fmt_plain(reference), _fmt_plain(reference)))
+    return (
+        "SAVED, BUT SOME SYMBOLS WILL BE REFUSED: %s USDT cannot fund one whole "
+        "contract of %s (each ~%s-150 USDT per contract). Those signals will be "
+        "refused; cheaper symbols will still trade. Save at least %s USDT to cover "
+        "every symbol, or leave it and accept the partial coverage."
+        % (_fmt_plain(value), ", ".join(s.replace("_", "") for s in blocked),
+           _fmt_plain(_DEFAULT_REFERENCE_USDT), _fmt_plain(reference)))
+
+
+def _fmt_plain(value):
+    try:
+        d = Decimal(str(value))
+        return format(d.normalize(), "f")
+    except (InvalidOperation, ValueError, TypeError):
+        return str(value)
+
+
 def _connect():
     url = os.getenv("DATABASE_URL", "").strip()
     if not url:
@@ -197,6 +283,12 @@ def state(con, *, install_schema=True):
 def set_size(con, value, *, actor=""):
     """Persist an operator-chosen size and make it active for new trades."""
     amount = validate(value)
+    # Computed BEFORE the write so the terminal can surface it in the same
+    # response that confirms the save. Saving a size that cannot fund one whole
+    # contract is legal but silently disables trading on those symbols, so the
+    # operator is told at the moment of saving rather than discovering it later
+    # from a dashboard full of refusals.
+    warning = executable_size_warning(amount)
     install(con)
     with con.cursor() as cur:
         cur.execute("SELECT pg_advisory_xact_lock(%s)", (_lock_id(),))
@@ -207,7 +299,10 @@ def set_size(con, value, *, actor=""):
         if cur.rowcount != 1:
             raise RuntimeError("Trade size persistence failed")
     _remember(amount)
-    return state(con, install_schema=False)
+    result = state(con, install_schema=False)
+    result["warning"] = warning
+    result["executable"] = warning is None
+    return result
 
 
 def clear_size(con, *, actor=""):

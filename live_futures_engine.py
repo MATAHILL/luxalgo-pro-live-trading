@@ -309,6 +309,78 @@ def _lot_minimum(metadata):
     return value
 
 
+def _min_lot_reason(*, count, order_size_min, multiplier, price, leverage,
+                    target_notional, available, units_by_target,
+                    units_by_margin, units_by_risk, mode):
+    """Explain WHY the plan floored to fewer than one whole contract.
+
+    Written for an operator reading a dashboard, not for a log file. It answers
+    the three questions a vague refusal cannot: which number was too small, what
+    the smallest workable number is, and which single bound caused it.
+
+    The original phrase is kept as a PREFIX on purpose. It is part of this
+    module's established failure contract: the safety tests assert on it, the
+    dashboard's WHY NOT EXECUTED column groups on it, and an operator who has
+    seen it before will recognise it. Dropping it to add detail would have
+    turned a cosmetic improvement into a silent contract break -- three
+    fail-closed cap tests started failing when I did exactly that. Detail is
+    APPENDED, never substituted.
+
+    Returns a compact, single-line string; the dashboard truncates at 400 chars,
+    so the essentials come first.
+    """
+    reason = "Insufficient margin/risk for exchange minimum lot"
+    try:
+        unit_notional = (Decimal(str(price)) * Decimal(str(multiplier)))
+    except (InvalidOperation, ValueError, TypeError):
+        unit_notional = None
+    parts = []
+    # 1. What one contract actually costs -- the number the operator never sees.
+    if unit_notional is not None:
+        parts.append(
+            "1 contract = %s USDT notional (%s x %s). "
+            % (_fmt(unit_notional), price, multiplier))
+    # 2. Was it the saved TARGET that was too small?
+    if mode == SIZING_MODE_FIXED and target_notional is not None \
+            and unit_notional is not None and unit_notional > 0 \
+            and Decimal(str(target_notional)) < unit_notional:
+        parts.append(
+            "Saved size %s USDT is SMALLER than one contract, so it floors to 0. "
+            "Raise the saved size in the terminal to at least %s USDT to trade this "
+            "symbol. "
+            % (_fmt(target_notional), _fmt(unit_notional.quantize(Decimal('0.01')))))
+    # 3. Otherwise name the bound that actually bit.
+    elif units_by_margin is not None and units_by_margin < 1:
+        parts.append(
+            "Available margin %s USDT cannot fund even one contract at %sx leverage. "
+            "Add funds or lower the size. " % (_fmt(available), leverage))
+    elif units_by_risk is not None and units_by_risk < 1:
+        parts.append(
+            "The per-trade risk budget is too small for one contract at this "
+            "stop distance. Widen the saved size or reduce leverage. ")
+    elif units_by_target is not None and units_by_target < 1:
+        parts.append(
+            "The requested notional is below one contract. ")
+    else:
+        parts.append("The exchange minimum lot (%s) exceeds the whole-contract "
+                     "count this account can fund. " % _fmt(order_size_min))
+    parts.append("Floored count=%s, exchange minimum=%s."
+                 % (_fmt(count), _fmt(order_size_min)))
+    return reason + " -- " + "".join(parts)
+
+
+def _fmt(value):
+    """Render a Decimal for an operator: no exponent, no trailing zeros."""
+    try:
+        d = Decimal(str(value))
+    except (InvalidOperation, ValueError, TypeError):
+        return str(value)
+    if not d.is_finite():
+        return str(value)
+    text = format(d.normalize(), "f")
+    return text
+
+
 def build_plan(signal, metadata, equity, available, positions, reserved_risk=0, now=None):
     """Contract-count plan with configured per-entry / preserved 2.5% aggregate cap.
 
@@ -415,7 +487,25 @@ def build_plan(signal, metadata, equity, available, positions, reserved_risk=0, 
         count=min(units_by_risk,units_by_margin,whole_order_size_max,
                   *_present(units_by_notional,units_by_margin_cap))
     if count<order_size_min or count<1:
-        raise LiveSafetyError("Insufficient margin/risk for exchange minimum lot")
+        # THIS REFUSAL IS THE MOST COMMON CAUSE OF "the bot stopped trading".
+        # A saved size in the terminal is a USDT TARGET that is floored to WHOLE
+        # contracts. One contract is worth price x quanto_multiplier, which for
+        # many Gate.io contracts is 20-150 USDT. A saved size below that value
+        # therefore floors to zero contracts and refuses EVERY signal, on every
+        # symbol, for as long as the saved size stays there.
+        #
+        # The old text ("Insufficient margin/risk for exchange minimum lot")
+        # was true but unactionable: it did not say WHICH number was too small
+        # or what the minimum would be. The operator cannot fix a refusal they
+        # cannot read. Name the numbers.
+        raise LiveSafetyError(_min_lot_reason(
+            count=count, order_size_min=order_size_min,
+            multiplier=multiplier, price=e, leverage=lev,
+            target_notional=target_notional, available=av,
+            units_by_target=locals().get("units_by_target"),
+            units_by_margin=units_by_margin,
+            units_by_risk=locals().get("units_by_risk"),
+            mode=mode))
     risk=count*unit_loss
     if risk+reserve>eq*MAX_AGGREGATE_RISK:
         raise LiveSafetyError("Aggregate risk cap crossed")
